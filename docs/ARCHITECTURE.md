@@ -90,16 +90,26 @@ HYPRLAND_INSTANCE_SIGNATURE=$(hyprsig) hyprctl …      # one-off
 
 ## Theme system
 
-`theme dark|light` switches everything at once with a **symlink-swap**: each
-app keeps `config-dark.<ext>` and `config-light.<ext>` and a `config.<ext>`
-symlink pointing at the active one. `theme` flips the symlinks and reloads each
-daemon. Two integration styles:
+`theme dark|light` switches the desktop-shell apps at once with a
+**symlink-swap**: each app keeps `config-dark.<ext>` and `config-light.<ext>`
+and a `config.<ext>` symlink pointing at the active one. `theme` flips the
+symlinks and reloads each daemon — eww (full restart, see below), swaync, rofi.
 
-- **Symlink** — eww, swaync, GTK, kitty, rofi, yazi, lsd.
-- **Runtime-read** — fzf (`colors.sh` reads `~/.cache/current-theme` when
-  sourced) and lsd, so they don't need a reload.
+GTK is handled differently: dark links a settings/CSS override, light removes
+it (falling back to the system light theme), and `gsettings` sets the
+color-scheme / theme / icon set so portal-aware apps (Firefox, Thunderbird,
+file dialogs) follow along. It uses `prefer-light` rather than `default` so the
+portal exposes `org.freedesktop.appearance color-scheme = 2` — apps like Qt
+6.5+ and Telegram treat `0` ("no preference") as "don't change" and would
+otherwise stay dark.
 
-The active theme is written to `~/.cache/current-theme`.
+The eww restart is required because eww 0.5 caches its CSS provider for the
+daemon's lifetime — `eww reload` re-reads the SCSS but window background colors
+stick, so `theme` does a full `eww kill` + `eww open bar` (detached via
+`setsid -f`).
+
+The active theme is also written to `~/.cache/current-theme` for anything else
+you want to follow it.
 
 ## Wallpapers (hyprpaper 0.8.4)
 

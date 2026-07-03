@@ -48,15 +48,12 @@ link() {
 # Default active-theme symlinks (dark). Flip later with `theme light|dark`.
 # Format: "<relative symlink path> <target>"
 DEFAULT_THEME_LINKS=(
-  "config/eww/eww.scss            eww-dark.scss"
-  "config/kitty/color-scheme.conf color-schemes/dark.conf"
-  "config/kitty/gui-size.conf     gui-sizes/normal.conf"
-  "config/rofi/colorScheme.rasi   colorSchemes/dark.rasi"
-  "config/rofi/guiSize.rasi       guiSizes/normal.rasi"
-  "config/yazi/theme.toml         theme-dark.toml"
-  "config/swaync/style.css        style-dark.css"
-  "config/gtk-3.0/settings.ini    settings-dark.ini"
-  "config/lsd/config.yaml         config-dark.yaml"
+  "config/eww/eww.scss          eww-dark.scss"
+  "config/rofi/colorScheme.rasi colorSchemes/dark.rasi"
+  "config/rofi/guiSize.rasi     guiSizes/normal.rasi"
+  "config/swaync/style.css      style-dark.css"
+  "config/gtk-3.0/settings.ini  settings-dark.ini"
+  "config/gtk-3.0/gtk.css       gtk-dark.css"
 )
 
 head "Active-theme symlinks (default: dark)"

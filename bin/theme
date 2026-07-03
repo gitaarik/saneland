@@ -1,25 +1,21 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #
-# This script attemts to set dark or light theme for these apps:
-#   - Hyprland — common Wayland assets: eww, swaync
-#   - GTK
-#   - rofi
-#   - kitty
-#   - Neovim
-#   - Yazi
-#   - LSD
-#   - FZF (for fzf-tab completion menu)
+# theme — switch the desktop between dark and light.
 #
-# The timeout commands used in the script are to prevent the commands from
-# blocking the script, in case they hang, when the processes don't exist.
+# Flips symlinks and reloads the desktop-shell apps that ship with this
+# project: the eww bar, swaync, GTK, rofi, and the wallpaper. The active
+# theme is recorded in ~/.cache/current-theme so anything else that wants
+# to follow it can read that file.
+#
+# Usage: theme {dark|light|toggle}
 
 case "$1" in
     dark|light)
         COLOR_SCHEME=$1
         ;;
     toggle)
-        # Flip whichever is current. Falls back to switching TO light
-        # if no cache file exists yet (i.e. default boot state is dark).
+        # Flip whichever is current; default to switching TO light when no
+        # cache exists yet (fresh boot state is dark).
         current=$(cat ~/.cache/current-theme 2>/dev/null || echo dark)
         COLOR_SCHEME=$([[ $current == dark ]] && echo light || echo dark)
         ;;
@@ -29,235 +25,70 @@ case "$1" in
         ;;
 esac
 
-# ------------------
-# Shared theme state
-# ------------------
+# Shared state file — read by anything that follows the active theme.
+mkdir -p ~/.cache
+echo "$COLOR_SCHEME" > ~/.cache/current-theme
 
-# Write current theme to shared state file (read by nvchad, fzf, lsd)
-if [[ -n "$COLOR_SCHEME" ]]; then
-    mkdir -p ~/.cache
-    echo "$COLOR_SCHEME" > ~/.cache/current-theme
+# --- swaync — swap style-dark.css / style-light.css and reload ---
+if [[ -d ~/.config/swaync ]]; then
+    (cd ~/.config/swaync/ && ln -sf "style-$COLOR_SCHEME.css" style.css)
+    swaync-client --reload-css &>/dev/null
 fi
 
-# --------------------
-# Wayland compositor theme (eww + swaync + WM-specific reload)
-# --------------------
-
-if [[ -n "$COLOR_SCHEME" ]]; then
-
-    # swaync style — swap style-dark.css / style-light.css and reload.
-    if [[ -d ~/.config/swaync ]]; then
-        (cd ~/.config/swaync/ && ln -sf "style-$COLOR_SCHEME.css" style.css)
-        swaync-client --reload-css &>/dev/null
-    fi
-
-    # eww — flip eww.scss symlink between the dark/light palette variants
-    # (shared rules live in _eww-common.scss). eww 0.5 caches the CSS
-    # provider for the daemon's lifetime: `eww reload` re-reads the SCSS
-    # into memory but doesn't replace the provider, so `window#bar`'s
-    # background-color sticks. The only reliable way to apply a theme
-    # switch to a running bar is a full daemon restart.
-    #
-    # setsid -f detaches the kill+respawn sequence into its own session.
-    # Matters when `theme` is invoked from an eww onclick — without
-    # detaching, `eww kill` would SIGHUP this script's parent chain
-    # before the respawn could land.
-    if [[ -d ~/.config/eww ]] && pgrep -x eww >/dev/null; then
-        (cd ~/.config/eww/ && ln -sf "eww-$COLOR_SCHEME.scss" eww.scss)
-        setsid -f bash -c '
-            eww kill &>/dev/null
-            sleep 0.2
-            eww open bar &>/dev/null
-        ' &>/dev/null
-    fi
-
-    # Hyprland — border colors are hardcoded in hyprland.conf; only reload
-    # if it's actually running.
-    if pgrep -x Hyprland >/dev/null; then
-        hyprctl reload &>/dev/null
-    fi
-
-    # Wallpaper — repaint immediately from the new theme's pool. The rotation
-    # daemon (hypr-wallpaper-rotate) would otherwise keep the old theme's image
-    # until its next tick; hypr-wallpaper picks a random image from
-    # ~/.config/hypr/wallpapers/$scheme/ and applies it via hyprpaper IPC.
-    if [[ -d ~/.config/hypr/wallpapers/$COLOR_SCHEME ]] && pgrep -x hyprpaper >/dev/null; then
-        ~/.local/bin/hypr-wallpaper "$COLOR_SCHEME"
-    fi
-
+# --- eww bar — flip the palette SCSS and restart the daemon ---
+# eww 0.5 caches the CSS provider for the daemon's lifetime, so `eww reload`
+# re-reads the SCSS but doesn't replace the provider — window background
+# colors stick. A full daemon restart is the only reliable way to apply a
+# theme switch to a running bar. setsid -f detaches the kill+respawn so that
+# when `theme` is called from an eww onclick, `eww kill` doesn't SIGHUP this
+# script before the respawn lands.
+if [[ -d ~/.config/eww ]] && pgrep -x eww >/dev/null; then
+    (cd ~/.config/eww/ && ln -sf "eww-$COLOR_SCHEME.scss" eww.scss)
+    setsid -f bash -c 'eww kill &>/dev/null; sleep 0.2; eww open bar &>/dev/null' &>/dev/null
 fi
 
-# ---------
-# GTK theme
-# ---------
-#
-# For Qt, check: https://bbs.archlinux.org/viewtopic.php?id=282463
+# --- Hyprland — border colors are hardcoded in hyprland.conf; reload it ---
+if pgrep -x Hyprland >/dev/null; then
+    hyprctl reload &>/dev/null
+fi
+
+# --- wallpaper — repaint immediately from the new theme's pool ---
+# (hypr-wallpaper picks a random image from ~/.config/hypr/wallpapers/$scheme/;
+# without this the rotation daemon would keep the old image until its next tick.)
+if [[ -d ~/.config/hypr/wallpapers/$COLOR_SCHEME ]] && pgrep -x hyprpaper >/dev/null; then
+    ~/.local/bin/hypr-wallpaper "$COLOR_SCHEME"
+fi
+
+# --- GTK ---
+# Dark links the settings/css overrides; light removes them so GTK falls back
+# to the system light theme. gsettings is what actually drives portal-aware
+# GTK apps (Firefox, Thunderbird, file dialogs) to follow the scheme.
+# Requires materia-gtk-theme + papirus-icon-theme (change the names below to
+# use different themes).
 export QT_QPA_PLATFORMTHEME=gtk2
-
-# Update symlink to light/dark GTK settings theme
-if [[ -n "$COLOR_SCHEME" ]]; then
-
-    if [[ $COLOR_SCHEME = "dark" ]]; then
-        (cd ~/.config/gtk-3.0/ && ln -sf "settings-dark.ini" settings.ini)
-        (cd ~/.config/gtk-3.0/ && ln -sf "gtk-dark.css" gtk.css)
+if [[ -d ~/.config/gtk-3.0 ]]; then
+    if [[ $COLOR_SCHEME == dark ]]; then
+        (cd ~/.config/gtk-3.0/ && ln -sf settings-dark.ini settings.ini && ln -sf gtk-dark.css gtk.css)
     else
-        (cd ~/.config/gtk-3.0/ && rm -f settings.ini)
-        (cd ~/.config/gtk-3.0/ && rm -f gtk.css)
+        (cd ~/.config/gtk-3.0/ && rm -f settings.ini gtk.css)
     fi
-
-    if [[ -x $(command -v gsettings) ]]; then
-
-        gnome_color_theme() {
-            if [[ $COLOR_SCHEME = "dark" ]]; then
-                echo prefer-dark
-            else
-                # Use `prefer-light` (not `default`) so the xdg-desktop-portal
-                # exposes org.freedesktop.appearance color-scheme = 2 ("prefer
-                # light") instead of 0 ("no preference"). Portal-aware apps
-                # that follow the system scheme — notably Telegram Desktop and
-                # Qt 6.5+ apps via QStyleHints::colorScheme() — treat 0 as
-                # "unknown / don't change" and only switch to light on an
-                # explicit 2. `default` left them stuck on dark.
-                echo prefer-light
-            fi
-        }
-
-        gnome_gtk_theme() {
-            if [[ $COLOR_SCHEME = "dark" ]]; then
-                echo Materia-dark
-            else
-                echo Materia-light
-            fi
-        }
-
-        gnome_icon_theme() {
-            if [[ $COLOR_SCHEME = "dark" ]]; then
-                echo Papirus-Dark
-            else
-                echo Papirus-Light
-            fi
-        }
-
-        # Even if you don't use GNOME, some GTK applications (Like Firefox and
-        # Thunderbird) will change when these settings are updated.
-        # https://askubuntu.com/a/1234087/230971
-        gsettings set org.gnome.desktop.interface color-scheme "$(gnome_color_theme "$COLOR_SCHEME")"
-        gsettings set org.gnome.desktop.interface gtk-theme "$(gnome_gtk_theme "$COLOR_SCHEME")"
-        gsettings set org.gnome.desktop.interface icon-theme "$(gnome_icon_theme "$COLOR_SCHEME")"
-        # Note: you might want to set these settings also in `.config/gtk-3.0/settings.ini`
-
+fi
+if command -v gsettings &>/dev/null; then
+    if [[ $COLOR_SCHEME == dark ]]; then
+        gtk_scheme=prefer-dark;  gtk_theme=Materia-dark;  icon_theme=Papirus-Dark
+    else
+        # prefer-light (not "default") so xdg-desktop-portal exposes
+        # org.freedesktop.appearance color-scheme = 2 ("prefer light"). Apps
+        # like Qt 6.5+ and Telegram treat 0 ("no preference") as "don't
+        # change" and would otherwise stay dark.
+        gtk_scheme=prefer-light; gtk_theme=Materia-light; icon_theme=Papirus-Light
     fi
-
+    gsettings set org.gnome.desktop.interface color-scheme "$gtk_scheme"
+    gsettings set org.gnome.desktop.interface gtk-theme   "$gtk_theme"
+    gsettings set org.gnome.desktop.interface icon-theme  "$icon_theme"
 fi
 
-# ----------
-# rofi theme
-# ----------
-
-# Update symlinks to rofi theme
-
-if [[ -x $(command -v rofi) ]]; then
-
-    if [[ -n "$COLOR_SCHEME" ]]; then
-        (cd ~/.config/rofi/ && ln -sf "colorSchemes/$COLOR_SCHEME.rasi" colorScheme.rasi)
-    fi
-
-fi
-
-# -----------
-# kitty theme
-# -----------
-
-if [[ -x $(command -v kitty) ]]; then
-
-    if [[ -n "$COLOR_SCHEME" ]]; then
-
-        (cd ~/.config/kitty/ && ln -sf "color-schemes/$COLOR_SCHEME.conf" color-scheme.conf)
-
-        # Push the new colors to every running kitty instance via its
-        # remote-control socket. Each kitty daemon listens on a path of
-        # the form `/tmp/kitty.sock-<PID>` (kitty.conf sets `listen_on
-        # unix:/tmp/kitty.sock` and kitty appends the PID for instance
-        # isolation). Requires `allow_remote_control yes` in kitty.conf.
-        #
-        # Why not the bare `kitty @ set-colors` form? That implicit-socket
-        # lookup only works from within a kitty terminal (uses
-        # $KITTY_LISTEN_ON). When `theme` is called from an external
-        # trigger (eww onclick, keybind, cron), there's no inherited env
-        # — we have to pass `--to` explicitly.
-        #
-        # Note: doesn't work from inside tmux. Run `theme` outside tmux.
-        for sock in /tmp/kitty.sock-*; do
-            [[ -S $sock ]] || continue
-            timeout 1s kitty @ --to "unix:$sock" \
-                set-colors -a -c "$HOME/.config/kitty/color-scheme.conf" \
-                &>/dev/null
-        done
-
-        # For reference, the other reliable cross-process mechanism is
-        # `--single-instance` — modify `Exec=` in kitty.desktop to
-        # `kitty --single-instance` so all terminals share one daemon.
-        # See: https://sw.kovidgoyal.net/kitty/remote-control/
-
-    fi
-
-fi
-
-# ------------
-# Neovim theme
-# ------------
-
-if [[ -n "$COLOR_SCHEME" && -x $(command -v nvim) ]]; then
-
-    # Update symlink of vim theme.vim
-    (cd ~/.nvim/ && ln -sf "themes/$COLOR_SCHEME.vim" theme.vim)
-    # Load the `theme.vim` file in your `init.vim` with:
-    #   source /path/to/theme.vim
-
-    # Here we want to trigger a `:set bg=light/dark` in running nvim instances.
-    #
-    # Nvim automatically creates listening sockets in `/run/user/1000/`. where
-    # `1000` is your user ID, check the `id` command to be sure. The socket
-    # files are named something like `nvim.221992.0` for each nvim instance. If
-    # the path is not correct, you can check it with `:echo v:servername`
-    # within an nvim instance.
-    #
-    # We can send commands to those running instances with:
-    #
-    #   nvim --server /run/user/1000/nvim.221992.0 --remote-send ':echo "hello there"<CR>'
-    #
-    # In the following snippet, we set the background on all running instances.
-    # This uses the command `fd`, which is a modern `find` alternative: https://github.com/sharkdp/fd
-
-    for socket in $(fd "^nvim.*.0$" /run/user/1000/); do
-        sleep 0.5s
-        # nvim --server $socket --remote-send ":set bg=$COLOR_SCHEME<CR>" &> /dev/null
-        # Using NvChad now, which has this `toggle_theme()` function
-        nvim --server "$socket" --remote-send ":lua require('base46').toggle_theme()<CR>" &>/dev/null
-    done
-
-fi
-
-# ----------
-# Yazi theme
-# ----------
-
-if [[ -n "$COLOR_SCHEME" && -x $(command -v yazi) ]]; then
-    (cd ~/.config/yazi/ && ln -sf "theme-$COLOR_SCHEME.toml" theme.toml)
-fi
-
-# ---------
-# LSD theme
-# ---------
-
-# LSD reads from ~/.cache/current-theme via shell function in .sh_plugins/lsd.sh
-
-# ----------
-# FZF colors
-# ----------
-
-# FZF colors.sh reads from ~/.cache/current-theme directly.
-# Touch flag file so running shells know to re-source colors.
-if [[ -n "$COLOR_SCHEME" ]]; then
-    touch ~/.cache/fzf-theme-updated
+# --- rofi — flip the color scheme include ---
+if command -v rofi &>/dev/null && [[ -d ~/.config/rofi ]]; then
+    (cd ~/.config/rofi/ && ln -sf "colorSchemes/$COLOR_SCHEME.rasi" colorScheme.rasi)
 fi

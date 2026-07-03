@@ -24,9 +24,8 @@ one-command **light/dark theme switcher** that repaints the whole session.
   another popup on the next click.
 - **Start menu** popup with pinned apps + a rofi "all apps" fallback, and
   inline confirmation for power actions.
-- **One-command theming** — `theme dark` / `theme light` flips eww, swaync,
-  GTK, kitty, rofi, yazi, lsd, fzf and the wallpaper together via a
-  symlink-swap pattern.
+- **One-command theming** — `theme dark` / `theme light` flips the eww bar,
+  swaync, GTK, rofi and the wallpaper together via a symlink-swap pattern.
 - **Wallpaper rotation** with per-theme image pools (hyprpaper).
 - **Quality-of-life Hyprland scripts** — MRU Alt-Tab, window snapping /
   centering / maximize-toggle, scroll-to-switch workspaces, brightness &
@@ -38,7 +37,9 @@ one-command **light/dark theme switcher** that repaints the whole session.
 config/          # → ~/.config/*  (whole-dir symlinks)
   eww/           # the bar: eww.yuck + _eww-common.scss + per-theme SCSS + scripts/
   hypr/          # hyprland.conf, hyprpaper.conf, hyprlock.conf, hypridle.conf
-  swaync/ rofi/ kitty/ gtk-3.0/ gtk-4.0/ yazi/ lsd/ fzf/   # theme-integrated apps
+  swaync/        # notification daemon (theme-integrated)
+  rofi/          # launcher — the start menu's "all apps" fallback (theme-integrated)
+  gtk-3.0/ gtk-4.0/   # GTK app theming, so Firefox/dialogs follow light/dark
 bin/             # → ~/.local/bin/*  (per-file symlinks): hypr-* helpers, theme, hyprsig …
 wallpapers/      # drop your own images into dark/ and light/
 docs/            # ARCHITECTURE.md — the non-obvious design notes & gotchas
@@ -59,6 +60,7 @@ Core (required):
 | Network            | `networkmanager` (`nmcli`) |
 | Bluetooth          | `bluez`, `bluez-utils` (`bluetoothctl`), `blueman` |
 | Battery/power      | `upower`, `power-profiles-daemon` |
+| GTK theme/icons    | `materia-gtk-theme`, `papirus-icon-theme` (the names `theme` sets via gsettings — swap in the script for others) |
 | Misc CLI           | `jq`, `python`, `nmap` (`ncat`), `brightnessctl`, `rfkill`, `libnotify` |
 | Wallpaper          | `hyprpaper` |
 | Fonts              | `ttf-adwaita`/Adwaita Sans, `ttf-jetbrains-mono-nerd` |
@@ -105,9 +107,12 @@ theme light
 
 Each app keeps `config-dark.<ext>` and `config-light.<ext>` files plus a
 `config.<ext>` symlink pointing at the active one; `theme` swaps the symlinks
-and nudges each daemon to reload. The active theme is recorded in
-`~/.cache/current-theme`, which the runtime-read integrations (fzf, lsd) pick
-up on their own.
+and nudges each daemon to reload. The active theme is also recorded in
+`~/.cache/current-theme` for anything else you want to follow it.
+
+GTK is the exception: dark links a settings/CSS override, light removes it to
+fall back to the system light theme, and `gsettings` drives portal-aware apps
+(Firefox, Thunderbird, file dialogs) via the Materia theme + Papirus icons.
 
 ## Personalize
 
@@ -118,6 +123,7 @@ This is a working desktop, not a framework — expect to adapt:
 - **Keybinds & window rules** — the `bind`/`windowrule` blocks in
   `hyprland.conf` are personal choices.
 - **Start-menu pins** — edit the `start-item` rows in `config/eww/eww.yuck`.
+- **Terminal** — `hyprland.conf` binds `$term = kitty`; set your own.
 - **Fonts / accent** — the bar uses Adwaita Sans + JetBrainsMono Nerd Font and
   a gruvbox accent; change in `config/eww/_eww-common.scss` and the per-theme
   SCSS.
