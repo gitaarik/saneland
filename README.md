@@ -1,4 +1,7 @@
-# hypr-eww-desktop
+# saneland
+
+*Sane defaults for a modern Wayland desktop — old-school simple window
+management, new-school underneath.*
 
 A complete **Hyprland desktop** built around a custom **eww bottom bar** —
 workspace switcher, per-workspace taskbar, and a keyboard-navigable systray
@@ -76,8 +79,8 @@ binding/autostart if missing):
 ## Install
 
 ```bash
-git clone <your-fork-url> hypr-eww-desktop
-cd hypr-eww-desktop
+git clone <your-fork-url> saneland
+cd saneland
 ./install.sh          # or: ./install.sh --dry-run  to preview
 ```
 
