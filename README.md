@@ -65,7 +65,13 @@ Core (required):
 | Wallpaper          | `hyprpaper` |
 | Fonts              | `ttf-adwaita`/Adwaita Sans, `ttf-jetbrains-mono-nerd` |
 
-Optional: `hyprlock`, `hypridle`, `hyprbars` (plugin, see below).
+Optional (referenced by `hyprland.conf` — each only affects its own
+binding/autostart if missing):
+
+- `hyprlock` + `hypridle` — lock screen & idle policy
+- `hyprbars` — window title bars (compiled plugin, see below)
+- `hyprsunset` — night-light color temperature (autostarted)
+- `hyprshot` + `satty` — screenshot capture & annotation (Print-key binds)
 
 ## Install
 

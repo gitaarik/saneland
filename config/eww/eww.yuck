@@ -272,7 +272,7 @@
     (start-item :icon "" :label "Thunderbird" :cmd "thunderbird")
     (start-item :icon "" :label "Terminal"    :cmd "--new kitty")
     (start-item :icon "" :label "Files"       :cmd "thunar ~")
-    (start-item :icon "" :label "Waterfox"    :cmd "--new waterfox")))
+    (start-item :icon "" :label "Firefox"     :cmd "--new firefox")))
 
 ;; Tags 1-12 — Hyprland workspaces. Hidden if the workspace is empty and
 ;; not focused (matches Hyprland's default workspaces module).

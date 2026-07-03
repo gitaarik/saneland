@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#
+# Rofi-based power menu. Bound to XF86PowerOff in hyprland.conf so the
+# laptop power button asks before doing anything. Requires logind to
+# leave the key alone (HandlePowerKey=ignore in /etc/systemd/logind.conf).
+
+set -uo pipefail
+
+choice=$(printf 'Cancel\nLock\nSuspend\nReboot\nPower off\n' \
+    | rofi -dmenu -i -p Power -no-custom)
+
+case $choice in
+    Lock)       setsid -f hyprlock >/dev/null 2>&1 ;;
+    Suspend)    systemctl suspend ;;
+    Reboot)     systemctl reboot ;;
+    'Power off') systemctl poweroff ;;
+esac

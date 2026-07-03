@@ -33,7 +33,7 @@
 # tapper can never pass two windows) yet never fires on release-then-
 # repress, so the wrong window ends up on top. Reading the physical key
 # ties commit to the actual gesture instead of a guess. Needs read access
-# to /dev/input — i.e. membership of the `input` group (see CLAUDE.md).
+# to /dev/input — i.e. membership of the `input` group (see docs/ARCHITECTURE.md).
 # If no input device can be opened, falls back to the old short timer so
 # alt-tab still works, just with the old imperfect timing.
 #

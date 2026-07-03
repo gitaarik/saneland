@@ -65,14 +65,15 @@ main_threshold=0.6
 classify_by_title() {
     local class=$1 title=$2
     case "$class" in
-        [Ww]aterfox)
+        [Ff]irefox)
             # Internal popups: bookmarks Library, About, Picture-in-Picture.
             [[ $title == "Library" \
             || $title == About* \
             || $title == "Picture-in-Picture" ]] && return 1
-            # Main browsing windows: literal "Waterfox" (blank page)
-            # or "...{em-dash|hyphen} Waterfox" suffix.
-            local re='^Waterfox$|.* (—|-) Waterfox$'
+            # Main browsing windows: title ends in "Mozilla Firefox"
+            # (with or without a "<page> — " prefix, incl. Private Browsing).
+            # Adapt this class/title pattern to your own browser.
+            local re='Mozilla Firefox( \(Private Browsing\))?$'
             [[ $title =~ $re ]] && return 0
             ;;
         org\.mozilla\.[Tt]hunderbird|[Tt]hunderbird)
@@ -120,7 +121,7 @@ apply_saved_geometry() {
     [[ -z $w || -z $h || -z $x || -z $y ]] && return 1
 
     # hypr_apply_geom picks the border to match the restored size: a
-    # window saved at work-area size (a main window like Waterfox, which
+    # window saved at work-area size (a main window like a browser, which
     # is saved maximized) comes back borderless, instead of wearing a
     # stray active-border around an otherwise-maximized frame.
     hypr_apply_geom "$addr" "$w" "$h" "$x" "$y"
