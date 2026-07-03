@@ -92,3 +92,12 @@ fi
 if command -v rofi &>/dev/null && [[ -d ~/.config/rofi ]]; then
     (cd ~/.config/rofi/ && ln -sf "colorSchemes/$COLOR_SCHEME.rasi" colorScheme.rasi)
 fi
+
+# --- user extension hook ---------------------------------------------------
+# Theme apps beyond the shipped desktop shell (your terminal, file manager,
+# editor, …) WITHOUT editing this tracked script. Runs last, with
+# $COLOR_SCHEME ("dark"/"light") in scope and also passed as $1. Copy
+# ~/.config/saneland/theme.local.sh.example to theme.local.sh to use it.
+# See docs/CUSTOMIZING.md.
+hook="${XDG_CONFIG_HOME:-$HOME/.config}/saneland/theme.local.sh"
+[[ -f $hook ]] && . "$hook" "$COLOR_SCHEME"

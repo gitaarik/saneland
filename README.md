@@ -149,8 +149,9 @@ fall back to the system light theme, and `gsettings` drives portal-aware apps
 ## Personalize
 
 Machine-specific settings live in **git-ignored local override files**, so the
-tracked base config stays identical for everyone (and updates never clobber
-your tweaks):
+tracked base config stays identical for everyone and `git pull` never clobbers
+your tweaks. Full guide: **[docs/CUSTOMIZING.md](docs/CUSTOMIZING.md)**. The
+short version:
 
 - **`~/.config/hypr/local.conf`** (seeded from `local.conf.example`) — your
   **monitors**, `$term`/`$browser`, and extra `exec-once` autostarts. It's

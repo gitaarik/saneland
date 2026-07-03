@@ -89,10 +89,45 @@ for entry in "${LOCAL_FILES[@]}"; do
   fi
 done
 
-head "Config → ~/.config"
-for dir in "$REPO"/config/*; do
-  [[ -e $dir || -L $dir ]] || continue
-  link "$dir" "$HOME/.config/$(basename "$dir")"
+head "Config → ~/.config  (files in local/<app> override the base per-file)"
+# Each config/<app> is whole-dir symlinked into ~/.config — simple, and it
+# auto-picks-up new upstream files. BUT if you keep a local/<app> overlay
+# (git-ignored — your private tweaks), that app is instead materialised as a
+# real directory of per-file symlinks: each file comes from local/<app> if
+# present there, else from config/<app>. So you can override or add individual
+# files (e.g. local/eww/eww.yuck) without forking the whole app. See
+# docs/CUSTOMIZING.md.
+for base in "$REPO"/config/*; do
+  [[ -e $base || -L $base ]] || continue
+  app=$(basename "$base")
+  over="$REPO/local/$app"
+  dest="$HOME/.config/$app"
+
+  if [[ ! -d $over ]]; then
+    link "$base" "$dest"                     # no overlay → plain whole-dir symlink
+    continue
+  fi
+
+  say "overlay $app  (local/$app over base)"
+  # Switching to per-file mode: a prior whole-dir symlink must go, or mkdir
+  # would write through it into the repo.
+  if [[ -L $dest ]]; then
+    [[ $DRY == 1 ]] || mv "$dest" "$dest.bak-$STAMP"
+    say "bak   $dest -> $dest.bak-$STAMP"
+  fi
+  [[ $DRY == 1 ]] || mkdir -p "$dest"
+  # Union of relative paths from base + overlay; overlay wins per file.
+  while IFS= read -r rel; do
+    [[ -z $rel ]] && continue
+    if [[ -e $over/$rel || -L $over/$rel ]]; then
+      link "$over/$rel" "$dest/$rel"
+    else
+      link "$base/$rel" "$dest/$rel"
+    fi
+  done < <(
+    { [[ -d $base ]] && ( cd "$base" && find . \( -type f -o -type l \) -printf '%P\n' )
+      ( cd "$over" && find . \( -type f -o -type l \) -printf '%P\n' ); } | sort -u
+  )
 done
 
 head "Scripts → ~/.local/bin"

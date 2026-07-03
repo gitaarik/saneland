@@ -11,6 +11,12 @@
 # Per-machine overrides — seeded from *.example by install.sh, then yours to
 # edit. Keeps the tracked base config byte-identical for everyone.
 /config/hypr/local.conf
+/config/saneland/theme.local.sh
+
+# Whole-file overlay tree (your private tweaks; can be its own repo). Only the
+# README is tracked — everything you drop in is git-ignored. See CUSTOMIZING.md.
+/local/*
+!/local/README.md
 
 # User-supplied wallpaper images (drop your own in — see wallpapers/README.md)
 /wallpapers/dark/*

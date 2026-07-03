@@ -1,0 +1,32 @@
+# saneland — theme extension hook (optional).
+#
+# Sourced at the END of `theme`, with $COLOR_SCHEME set to "dark" or "light"
+# (also passed as $1). Use it to theme apps beyond the shipped desktop shell
+# WITHOUT editing the tracked `theme` script — so `git pull` stays clean.
+#
+# To enable: copy this file to  ~/.config/saneland/theme.local.sh  and edit.
+# It's just shell; do whatever your apps need. Examples below (all commented):
+
+# --- kitty: flip a color-scheme symlink + live-reload running terminals ----
+# if command -v kitty >/dev/null && [[ -d ~/.config/kitty ]]; then
+#     ln -sf "color-schemes/$COLOR_SCHEME.conf" ~/.config/kitty/color-scheme.conf
+#     for sock in /tmp/kitty.sock-*; do
+#         [[ -S $sock ]] && kitty @ --to "unix:$sock" set-colors -a \
+#             -c ~/.config/kitty/color-scheme.conf 2>/dev/null
+#     done
+# fi
+
+# --- yazi: flip a theme symlink -------------------------------------------
+# [[ -d ~/.config/yazi ]] && \
+#     ln -sf "theme-$COLOR_SCHEME.toml" ~/.config/yazi/theme.toml
+
+# --- neovim: toggle running instances via their sockets -------------------
+# for sock in "${XDG_RUNTIME_DIR:-/run/user/$UID}"/nvim.*; do
+#     [[ -S $sock ]] && nvim --server "$sock" --remote-send \
+#         ":set background=$COLOR_SCHEME<CR>" 2>/dev/null
+# done
+
+# --- apps that just read ~/.cache/current-theme (fzf, lsd, …) --------------
+# Nothing needed here — `theme` already wrote that file before this hook ran;
+# those tools pick it up on their own (e.g. when a new shell sources their
+# colors). See docs/CUSTOMIZING.md.
