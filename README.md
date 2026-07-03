@@ -11,8 +11,9 @@ one-command **light/dark theme switcher** that repaints the whole session.
 > Arch Linux + Wayland. Everything is plain config + shell scripts; no
 > compiled components except the optional hyprbars plugin.
 
+<video src="https://github.com/user-attachments/assets/2fdd4273-38a7-4636-9558-31a910b05617" controls muted width="100%"></video>
+
 ![screenshot](docs/screenshot.png)
-<!-- TODO: drop a real screenshot at docs/screenshot.png -->
 
 ---
 
