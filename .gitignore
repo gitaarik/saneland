@@ -8,6 +8,10 @@
 /config/gtk-3.0/settings.ini
 /config/gtk-3.0/gtk.css
 
+# Per-machine overrides — seeded from *.example by install.sh, then yours to
+# edit. Keeps the tracked base config byte-identical for everyone.
+/config/hypr/local.conf
+
 # User-supplied wallpaper images (drop your own in — see wallpapers/README.md)
 /wallpapers/dark/*
 /wallpapers/light/*

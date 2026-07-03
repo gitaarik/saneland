@@ -3,11 +3,21 @@
 // The active theme is selected via the eww.scss symlink, flipped by the
 // `theme` script.
 
+// Optional per-machine overrides — accent, fonts, etc. Committed as a
+// comment-only stub (_local.scss); edit it to re-skin the bar without
+// touching tracked rules. Imported here, after the variant has defined the
+// palette, so you can reassign $accent/$bg/… or override the font vars below.
+@import "local";
+
+// Base font — override $font-family / $font-size in _local.scss.
+$font-family: "Adwaita Sans", "JetBrainsMono Nerd Font", "Noto Sans", sans-serif !default;
+$font-size: 14px !default;
+
 * {
     // No `all: unset` — that reset backgrounds on every element including
     // window#bar, leaving the bar transparent. Just set our font.
-    font-family: "Adwaita Sans", "JetBrainsMono Nerd Font", "Noto Sans", sans-serif;
-    font-size: 14px;
+    font-family: $font-family;
+    font-size: $font-size;
 }
 
 window#bar {

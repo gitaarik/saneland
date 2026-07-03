@@ -1,0 +1,17 @@
+// saneland — eww local style overrides (optional).
+//
+// Imported from _eww-common.scss. This ships as a comment-only stub so the
+// base looks identical for everyone; uncomment and edit to re-skin the bar
+// without changing tracked files. (Unlike Hyprland's local.conf a missing
+// SCSS @import is a hard error, so this file is committed rather than
+// git-ignored — edit it in place.)
+//
+// The active theme's palette ($bg, $fg, $accent, $accent-tint, …) is already
+// defined at this point (by eww-dark.scss / eww-light.scss), so you can
+// reassign those, and override the font vars from _eww-common.scss.
+//
+// Examples:
+// $accent: #b16286;                        // purple accent instead of orange
+// $accent-tint: rgba(177, 98, 134, 0.25);  // match the active-cell wash
+// $font-family: "Inter", sans-serif;       // a different bar font
+// $font-size: 13px;

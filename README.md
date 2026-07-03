@@ -53,6 +53,9 @@ install.sh       # symlinks everything into place (backs up what's there)
 
 Core (required):
 
+`./deps.sh` maps this canonical list to your distro's package names and offers
+to install them (`./deps.sh --print` to just see the plan). The list itself:
+
 | Purpose            | Package(s) |
 |--------------------|------------|
 | Compositor         | `hyprland`, `uwsm`, `xdg-desktop-portal-hyprland` |
@@ -76,17 +79,37 @@ binding/autostart if missing):
 - `hyprsunset` — night-light color temperature (autostarted)
 - `hyprshot` + `satty` — screenshot capture & annotation (Print-key binds)
 
+### Distro support
+
+The configs and scripts are distro-agnostic (they're just files in `~/.config`
+and `~/.local/bin`) — only *dependency installation* differs per distro, and
+that's isolated in `deps/`:
+
+- **Arch** — first-class (repos + a few AUR packages).
+- **Fedora** — supported via the `solopasha/hyprland` COPR (a few package names
+  still want verifying — PRs welcome).
+- **Debian/Ubuntu & others** — best-effort. The Hyprland stack is bleeding-edge
+  and thinly packaged here, so expect to build `eww`/Hyprland from source;
+  `deps.sh` installs what *is* packaged and lists the rest. Mind the minimum
+  versions (`deps/manifest.sh`) — an older packaged Hyprland/eww can break the
+  configs.
+
+Adding a distro is just a new `deps/<distro>.sh` mapping the IDs in
+`deps/manifest.sh` — no changes to the core.
+
 ## Install
 
 ```bash
 git clone <your-fork-url> saneland
 cd saneland
-./install.sh          # or: ./install.sh --dry-run  to preview
+./deps.sh             # install dependencies for your distro (or --print)
+./install.sh          # symlink configs + scripts (--dry-run to preview)
 ```
 
 `install.sh` symlinks `config/*` into `~/.config/` and `bin/*` into
-`~/.local/bin/`, backing up anything already there to `*.bak-<timestamp>`.
-It also creates the default (dark) active-theme symlinks.
+`~/.local/bin/`, backing up anything already there to `*.bak-<timestamp>`. It
+also creates the default (dark) active-theme symlinks and seeds
+`~/.config/hypr/local.conf` from the example (never clobbering an existing one).
 
 Then:
 
@@ -125,18 +148,26 @@ fall back to the system light theme, and `gsettings` drives portal-aware apps
 
 ## Personalize
 
-This is a working desktop, not a framework — expect to adapt:
+Machine-specific settings live in **git-ignored local override files**, so the
+tracked base config stays identical for everyone (and updates never clobber
+your tweaks):
 
-- **Monitors** — `config/hypr/hyprland.conf` has an `eDP-1` laptop example;
-  set your own outputs. eww windows use `:monitor 0` (first output).
+- **`~/.config/hypr/local.conf`** (seeded from `local.conf.example`) — your
+  **monitors**, `$term`/`$browser`, and extra `exec-once` autostarts. It's
+  `source`d after the base defaults, so your values win. This is the main
+  place you'll edit.
+- **`config/eww/_local.scss`** — override the bar's **accent color and fonts**
+  (reassign `$accent`/`$accent-tint`, set `$font-family`/`$font-size`). Ships
+  as a comment-only stub.
+
+Everything else is opinionated-but-editable in the tracked files:
+
 - **Keybinds & window rules** — the `bind`/`windowrule` blocks in
-  `hyprland.conf` are personal choices.
-- **Start-menu pins** — edit the `start-item` rows in `config/eww/eww.yuck`.
-- **Terminal** — `hyprland.conf` binds `$term = kitty`; set your own.
-- **Fonts / accent** — the bar uses Adwaita Sans + JetBrainsMono Nerd Font and
-  a gruvbox accent; change in `config/eww/_eww-common.scss` and the per-theme
-  SCSS.
+  `hyprland.conf`.
+- **Start-menu pins** — the `start-item` rows in `config/eww/eww.yuck`.
 - **Wallpaper rotation interval** — top of `bin/hypr-wallpaper-rotate`.
+- **eww monitor** — bar windows use `:monitor 0` (first output); multi-monitor
+  users edit `config/eww/eww.yuck` (not yet a `local` tunable).
 
 ## How it works / gotchas
 

@@ -70,6 +70,25 @@ for entry in "${DEFAULT_THEME_LINKS[@]}"; do
   fi
 done
 
+head "Local overrides (created from *.example, never clobbered)"
+# Files where your machine-specific settings live. Git-ignored; seeded once
+# from the committed example, then yours to edit. Re-running install never
+# overwrites an existing one.
+LOCAL_FILES=(
+  "config/hypr/local.conf  config/hypr/local.conf.example"
+)
+for entry in "${LOCAL_FILES[@]}"; do
+  read -r dest src <<<"$entry"
+  if [[ -e $REPO/$dest ]]; then
+    say "ok    $dest"
+  elif [[ $DRY == 1 ]]; then
+    say "seed  $dest (from $(basename "$src"))"
+  else
+    cp "$REPO/$src" "$REPO/$dest"
+    say "seed  $dest (from $(basename "$src"))"
+  fi
+done
+
 head "Config → ~/.config"
 for dir in "$REPO"/config/*; do
   [[ -e $dir || -L $dir ]] || continue
@@ -86,16 +105,18 @@ cat <<'NOTE'
 
 Done. Next steps:
 
-  1. Install the runtime dependencies listed in README.md (hyprland, eww,
-     swaync, rofi, the *ctl helpers, jq, python, ncat, fonts…).
+  1. Install the runtime dependencies for your distro:
+       ./deps.sh              # or ./deps.sh --print to just see the list
   2. Add yourself to the `input` group for the Alt-Tab MRU daemon:
        sudo usermod -aG input "$USER"   # then re-login
-  3. Drop wallpapers into wallpapers/dark/ and wallpapers/light/.
-  4. Enable the hyprbars plugin (see README.md → hyprbars).
-  5. Log into the "Hyprland (uwsm-managed)" session, or reload:
+  3. Set your monitors / app choices in ~/.config/hypr/local.conf
+     (seeded above from local.conf.example — the base config stays generic).
+  4. Drop wallpapers into wallpapers/dark/ and wallpapers/light/.
+  5. Enable the hyprbars plugin (see README.md → hyprbars).
+  6. Log into the "Hyprland (uwsm-managed)" session, or reload:
        hyprctl reload && eww reload
-  6. Switch theme any time with:  theme dark   |   theme light
+  7. Switch theme any time with:  theme dark   |   theme light
 
-Review config/hypr/hyprland.conf — monitors, keybinds and window rules are
-personal defaults you will likely want to adapt.
+Keybinds and window rules in config/hypr/hyprland.conf are opinionated
+defaults — adapt to taste.
 NOTE

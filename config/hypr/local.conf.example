@@ -1,0 +1,28 @@
+# saneland — local Hyprland overrides
+#
+# Sourced from hyprland.conf (end of its Variables section), AFTER the base
+# defaults and BEFORE the keybinds — so anything set here wins and is visible
+# to the keybinds. This file is git-ignored: your machine-specific settings
+# live here while the tracked base config stays identical for everyone.
+# install.sh copies this to ~/.config/hypr/local.conf on first run; edit that
+# real file (not the .example).
+
+# --- Monitors --------------------------------------------------------------
+# `hyprctl monitors` lists connected outputs, their names and modes.
+#   monitor = NAME, RESOLUTION@REFRESH, POSITION, SCALE
+# Examples:
+# monitor = eDP-1, 2256x1504@60, 0x0, 1.5666667      # HiDPI laptop panel
+# monitor = DP-1, 2560x1440@144, 2256x0, 1           # external, to the right
+#
+# Fractional-scale tip: use Hyprland's *exact* suggested scale from
+# `hyprctl monitors`, not a rounded value — a fresh session rejects e.g. 1.5
+# with "Invalid scale passed to monitor".
+
+# --- App choices -----------------------------------------------------------
+# Override the base defaults ($term = kitty, $browser = firefox, …):
+# $term = alacritty
+# $browser = chromium
+
+# --- Extra autostarts ------------------------------------------------------
+# exec-once = syncthingtray-qt6 --wait
+# exec-once = nm-applet --indicator
