@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# Move the active window in the layout, working around Hyprland's "Can't
+# move fullscreen window" restriction. Briefly toggles fullscreen off
+# around the movewindow dispatch and restores it afterward.
+#
+# Useful when the auto-maximize + hypr-keep-maximize setup keeps every
+# focused window in maximize state — without this wrapper, Super+Shift+L/H
+# bind a no-op.
+#
+# Caveat: in stack mode (everything maximized) the swap is invisible
+# because the moved window still covers the screen. The layout/cycle
+# order does change though, so cycling reflects the new order.
+#
+# Usage: hypr-move-window l|r|u|d
+# Bound from hyprland.conf via Super+Shift+{H,L,J,K}.
+
+set -uo pipefail
+
+dir=${1:?Usage: $0 l|r|u|d}
+data=$(hyprctl -j activewindow 2>/dev/null) || exit 0
+[[ -z $data || $data = "{}" ]] && exit 0
+
+fs=$(jq -r '.fullscreen' <<<"$data")
+
+# 'dispatch fullscreen N' toggles state N; calling it when state is N
+# turns it off, calling again turns it back on.
+if [[ $fs != 0 ]]; then
+    hyprctl dispatch fullscreen "$fs" >/dev/null
+fi
+
+hyprctl dispatch movewindow "$dir" >/dev/null
+
+if [[ $fs != 0 ]]; then
+    hyprctl dispatch fullscreen "$fs" >/dev/null
+fi

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#
+# Two-click brightness toggle for the sun icon in the eww battery popup.
+#
+#   First click  — halve current brightness if >=50%, double if <50%.
+#   Second click — restore the pre-toggle value.
+#
+# State (the value we came from + the value we set) is parked in
+# $XDG_RUNTIME_DIR/brightness-toggle.state. The "restore on second click"
+# only fires if we're still sitting at the value the previous click set
+# (within ±1% to tolerate brightnessctl's integer rounding) — otherwise
+# the user has moved the slider or used a key, and the toggle treats
+# this click as fresh.
+#
+# Bounds match brightness-step:
+#   floor 1%   (prevents a click from blanking the screen)
+#   ceiling 100%
+
+set -uo pipefail
+
+state_file=${XDG_RUNTIME_DIR:-/tmp}/brightness-toggle.state
+
+cur=$(brightnessctl -m | cut -d',' -f4 | tr -d '%')
+
+if [[ -f $state_file ]]; then
+    read -r saved transformed < "$state_file"
+    if (( cur >= transformed - 1 && cur <= transformed + 1 )); then
+        brightnessctl set "${saved}%" >/dev/null
+        eww update brightness="$saved" 2>/dev/null || true
+        rm -f "$state_file"
+        exit 0
+    fi
+fi
+
+if (( cur >= 50 )); then
+    new=$(( cur / 2 ))
+else
+    new=$(( cur * 2 ))
+fi
+(( new < 1 ))   && new=1
+(( new > 100 )) && new=100
+
+brightnessctl set "${new}%" >/dev/null
+eww update brightness="$new" 2>/dev/null || true
+printf "%d %d\n" "$cur" "$new" > "$state_file"

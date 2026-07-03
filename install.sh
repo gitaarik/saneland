@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+#
+# install.sh — symlink this repo's configs and scripts into place.
+#
+#   config/<app>  ->  ~/.config/<app>      (whole-dir symlink)
+#   bin/<script>  ->  ~/.local/bin/<script> (per-file symlink)
+#
+# Existing real files/dirs are backed up to <name>.bak-<timestamp> before
+# being replaced. Re-running is safe: already-correct symlinks are left
+# alone. Nothing is installed system-wide and no package is touched — see
+# the dependency list in README.md and install those with your package
+# manager first.
+#
+# Usage: ./install.sh [--dry-run]
+
+set -euo pipefail
+
+REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+STAMP=$(date +%Y%m%d-%H%M%S)
+DRY=0
+[[ ${1:-} == --dry-run ]] && DRY=1
+
+say()  { printf '  %s\n' "$*"; }
+head() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+
+# link SRC DEST — back up an existing DEST, then symlink DEST -> SRC.
+link() {
+  local src=$1 dest=$2
+  # Already the intended symlink? Nothing to do.
+  if [[ -L $dest && $(readlink -f "$dest") == "$(readlink -f "$src")" ]]; then
+    say "ok    $dest"
+    return
+  fi
+  if [[ $DRY == 1 ]]; then
+    say "link  $dest -> $src"
+    return
+  fi
+  mkdir -p "$(dirname "$dest")"
+  # Back up anything real (or a wrong symlink) that's in the way.
+  if [[ -e $dest || -L $dest ]]; then
+    mv "$dest" "$dest.bak-$STAMP"
+    say "bak   $dest -> $dest.bak-$STAMP"
+  fi
+  ln -s "$src" "$dest"
+  say "link  $dest -> $src"
+}
+
+# Default active-theme symlinks (dark). Flip later with `theme light|dark`.
+# Format: "<relative symlink path> <target>"
+DEFAULT_THEME_LINKS=(
+  "config/eww/eww.scss            eww-dark.scss"
+  "config/kitty/color-scheme.conf color-schemes/dark.conf"
+  "config/kitty/gui-size.conf     gui-sizes/normal.conf"
+  "config/rofi/colorScheme.rasi   colorSchemes/dark.rasi"
+  "config/rofi/guiSize.rasi       guiSizes/normal.rasi"
+  "config/yazi/theme.toml         theme-dark.toml"
+  "config/swaync/style.css        style-dark.css"
+  "config/gtk-3.0/settings.ini    settings-dark.ini"
+  "config/lsd/config.yaml         config-dark.yaml"
+)
+
+head "Active-theme symlinks (default: dark)"
+for entry in "${DEFAULT_THEME_LINKS[@]}"; do
+  read -r rel target <<<"$entry"
+  full="$REPO/$rel"
+  if [[ -L $full || -e $full ]]; then
+    say "ok    $rel"
+  elif [[ $DRY == 1 ]]; then
+    say "link  $rel -> $target"
+  else
+    ln -s "$target" "$full"
+    say "link  $rel -> $target"
+  fi
+done
+
+head "Config → ~/.config"
+for dir in "$REPO"/config/*; do
+  [[ -e $dir || -L $dir ]] || continue
+  link "$dir" "$HOME/.config/$(basename "$dir")"
+done
+
+head "Scripts → ~/.local/bin"
+mkdir -p "$HOME/.local/bin"
+for f in "$REPO"/bin/*; do
+  link "$f" "$HOME/.local/bin/$(basename "$f")"
+done
+
+cat <<'NOTE'
+
+Done. Next steps:
+
+  1. Install the runtime dependencies listed in README.md (hyprland, eww,
+     swaync, rofi, the *ctl helpers, jq, python, ncat, fonts…).
+  2. Add yourself to the `input` group for the Alt-Tab MRU daemon:
+       sudo usermod -aG input "$USER"   # then re-login
+  3. Drop wallpapers into wallpapers/dark/ and wallpapers/light/.
+  4. Enable the hyprbars plugin (see README.md → hyprbars).
+  5. Log into the "Hyprland (uwsm-managed)" session, or reload:
+       hyprctl reload && eww reload
+  6. Switch theme any time with:  theme dark   |   theme light
+
+Review config/hypr/hyprland.conf — monitors, keybinds and window rules are
+personal defaults you will likely want to adapt.
+NOTE

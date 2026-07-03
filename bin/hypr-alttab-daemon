@@ -1,0 +1,515 @@
+#!/usr/bin/env python3
+#
+# Maintains a most-recently-used (MRU) window stack for Hyprland alt-tab,
+# so holding Alt and tapping Tab walks back through focus history instead
+# of just toggling the last two windows (focuscurrentorlast's behaviour).
+#
+# Subscribes to Hyprland's .socket2.sock event stream. Every focused
+# window bubbles to the top of the MRU — except focus changes driven by
+# our own focuswindow dispatches, which are suppressed via pending_focus
+# (see below). The cycle "commits" (promotes the chosen window to the top)
+# the instant Alt is physically released.
+#
+# Empty workspaces participate too: switching to a workspace with no window
+# pushes a "ws:<id>" sentinel onto the same MRU, so alt-tab toggles between
+# an empty desktop and the last window just like it toggles two windows.
+# Landing on such a sentinel dispatches `workspace <id>` instead of
+# focuswindow. Hyprland reports an empty focus (activewindowv2 with no
+# address) before naming the workspace (workspacev2), so the sentinel is
+# created in the workspacev2 handler using the pending_empty flag set by the
+# preceding empty activewindowv2.
+#
+# Our focuswindow dispatches are ASYNC: Hyprland emits their activewindowv2
+# echo whenever it gets to it, sometimes AFTER the cycle has committed. A
+# `cycling` flag alone can't suppress those late echoes (cycling is already
+# False), so they used to reorder the MRU and the next quick alt-tab picked
+# the wrong window — the "fast breaks, slow works" symptom. We instead count
+# each dispatch in pending_focus and drop its echo whenever it arrives.
+#
+# Release is detected by reading the real Alt key off the kernel input
+# layer (/dev/input/event*, parsed raw — no python-evdev dependency).
+# This replaces the earlier timer-as-release-proxy, which got the MRU
+# order "mixed up": a 0.6s timer fires while Alt is still held (a slow
+# tapper can never pass two windows) yet never fires on release-then-
+# repress, so the wrong window ends up on top. Reading the physical key
+# ties commit to the actual gesture instead of a guess. Needs read access
+# to /dev/input — i.e. membership of the `input` group (see CLAUDE.md).
+# If no input device can be opened, falls back to the old short timer so
+# alt-tab still works, just with the old imperfect timing.
+#
+# Exposes a UNIX control socket at
+#   $XDG_RUNTIME_DIR/hypr/$HIS/.alttab.sock
+# accepting the strings "next", "prev", "commit". See hypr-alttab.
+
+import glob
+import json
+import os
+import select
+import signal
+import socket
+import struct
+import subprocess
+import sys
+import threading
+import time
+
+
+def socket_paths():
+    his = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
+    if not his:
+        sys.exit("hypr-alttab-daemon: HYPRLAND_INSTANCE_SIGNATURE not set")
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    base = f"{runtime}/hypr/{his}"
+    return f"{base}/.socket2.sock", f"{base}/.alttab.sock"
+
+
+EVENT_SOCK, CTRL_SOCK = socket_paths()
+
+state_lock = threading.Lock()
+mru = []                # most-recent first. Entries are either window addresses
+                        # ("0x55a...") or empty-workspace sentinels ("ws:<id>"),
+                        # so an empty desktop alt-tabs like any other window.
+current_focus = None    # last address seen via activewindowv2
+current_ws = None       # last workspace id seen via workspacev2 (string)
+pending_empty = False   # the most recent activewindowv2 was empty (no focused
+                        # window). The workspace id it belongs to arrives next in
+                        # a workspacev2 event (Hyprland emits the window-focus
+                        # event before the workspace event on every switch), so
+                        # we defer pushing the "ws:<id>" sentinel until then.
+cycling = False
+cycle_index = 0
+visited = []            # entries landed on during the active cycle, in order
+evdev_active = False     # True once the Alt-key reader opens >=1 input device
+pending_focus = {}      # target -> count of our own dispatches whose focus echo
+                        # we haven't consumed yet (window addr -> activewindowv2
+                        # echo; "ws:<id>" -> workspacev2 echo). Our
+                        # dispatches are async: their focus events can land after
+                        # the cycle commits (cycling=False), where they'd look
+                        # like genuine user focus changes and corrupt the MRU.
+                        # We suppress exactly those echoes instead of relying on
+                        # the cycling flag, which only covers the in-cycle window.
+
+DEBUG = os.environ.get("HYPR_ALTTAB_DEBUG") == "1"
+
+# Auto-commit timer. With the evdev Alt-key reader running, this is only a
+# long sleep-on-the-keyboard safety net: it clears a stuck cycle if a key
+# release event is somehow missed (matches the 2-min guard the old AwesomeWM
+# helper used). Without evdev (no input access) it degrades to the legacy
+# short timer that commits shortly after the last tap.
+SAFETY_COMMIT_SEC = 120.0
+FALLBACK_COMMIT_SEC = 0.6
+
+# Linux input_event: struct timeval time; __u16 type; __u16 code; __s32 value.
+# Native sizes/alignment ('llHHi' = 24 bytes on x86-64).
+EV_FORMAT = "llHHi"
+EV_SIZE = struct.calcsize(EV_FORMAT)
+EV_KEY = 0x01
+ALT_KEYCODES = (56, 100)  # KEY_LEFTALT, KEY_RIGHTALT
+
+commit_timer = None  # threading.Timer; protected by state_lock
+
+
+def log(*a):
+    if DEBUG:
+        print(f"[{time.monotonic():.3f}]", *a, file=sys.stderr, flush=True)
+
+
+def kill_other_instances():
+    # Ensures only one daemon per HIS — exec-once + manual launches + Hyprland
+    # restarts can otherwise leave stale daemons binding stale sockets.
+    my_pid = os.getpid()
+    try:
+        out = subprocess.check_output(
+            ["pgrep", "-f", "hypr-alttab-daemon"], text=True
+        ).strip()
+    except subprocess.CalledProcessError:
+        return
+    for line in out.splitlines():
+        try:
+            pid = int(line.strip())
+        except ValueError:
+            continue
+        if pid == my_pid:
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+            log(f"killed stale daemon pid={pid}")
+        except ProcessLookupError:
+            pass
+
+
+def normalize(addr_hex):
+    # Event payloads omit the 0x prefix; hyprctl clients includes it.
+    # Store and dispatch with the prefix.
+    if not addr_hex:
+        return None
+    return addr_hex if addr_hex.startswith("0x") else f"0x{addr_hex}"
+
+
+def dispatch_target(target):
+    # An "ws:<id>" sentinel switches to that (empty) workspace; anything else is
+    # a window address we focus directly (which also pulls its workspace up).
+    if isinstance(target, str) and target.startswith("ws:"):
+        args = ["dispatch", "workspace", target[3:]]
+    else:
+        args = ["dispatch", "focuswindow", f"address:{target}"]
+    subprocess.run(
+        ["hyprctl", *args],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+    )
+
+
+def seed_mru():
+    # focusHistoryID: 0 = currently focused, higher = older.
+    global current_focus
+    try:
+        out = subprocess.check_output(["hyprctl", "clients", "-j"], text=True)
+        clients = json.loads(out)
+    except Exception as e:
+        print(f"hypr-alttab-daemon: seed failed: {e}", file=sys.stderr)
+        return
+    clients.sort(key=lambda c: c.get("focusHistoryID", 1 << 30))
+    log("seed clients (sorted by focusHistoryID asc):")
+    for c in clients:
+        log(f"  fhid={c.get('focusHistoryID')} {c.get('address')} {c.get('class')}")
+    with state_lock:
+        mru[:] = [c["address"] for c in clients if c.get("address")]
+        try:
+            active = subprocess.check_output(
+                ["hyprctl", "activewindow", "-j"], text=True
+            )
+            current_focus = json.loads(active).get("address") or None
+        except Exception:
+            current_focus = mru[0] if mru else None
+
+
+def handle_event(line):
+    global current_focus, current_ws, pending_empty
+    name, _, payload = line.partition(">>")
+    if name == "activewindowv2":
+        addr = normalize(payload.strip())
+        with state_lock:
+            if not addr:
+                # Focus went empty -> we're (heading) onto an empty workspace.
+                # We can't push a sentinel yet: this event precedes the
+                # workspacev2 that names the workspace, so defer to that handler.
+                current_focus = None
+                pending_empty = True
+                log("activewindowv2 <empty> -> pending_empty")
+                return
+            current_focus = addr
+            # A focused window means no empty-workspace sentinel is pending,
+            # even when this event is one of our own suppressed echoes below.
+            pending_empty = False
+            # Echo of one of our own focuswindow dispatches (possibly arriving
+            # after the cycle already committed). Consume it without touching
+            # the MRU — commit already placed this window correctly.
+            if pending_focus.get(addr, 0) > 0:
+                pending_focus[addr] -= 1
+                if pending_focus[addr] == 0:
+                    del pending_focus[addr]
+                log(f"activewindowv2 {addr} (self-dispatch echo, ignored)")
+                return
+            if cycling:
+                log(f"activewindowv2 {addr} (cycling, ignored)")
+                return
+            if addr in mru:
+                mru.remove(addr)
+            mru.insert(0, addr)
+            log(f"activewindowv2 {addr} -> mru top; mru[:5]={mru[:5]}")
+    elif name == "workspacev2":
+        # payload is "ID,NAME". Only regular numbered workspaces become
+        # sentinels — special/scratchpad workspaces (negative ids) are toggled,
+        # not "empty desktops" you tab onto.
+        wid = payload.partition(",")[0].strip()
+        try:
+            is_regular = int(wid) > 0
+        except ValueError:
+            is_regular = False
+        key = f"ws:{wid}"
+        with state_lock:
+            current_ws = wid
+            was_empty = pending_empty
+            pending_empty = False
+            if not is_regular:
+                return
+            # Echo of our own "workspace" dispatch made during a cycle. Consume
+            # it without reordering — commit will place the sentinel correctly.
+            if pending_focus.get(key, 0) > 0:
+                pending_focus[key] -= 1
+                if pending_focus[key] == 0:
+                    del pending_focus[key]
+                log(f"workspacev2 {key} (self-dispatch echo, ignored)")
+                return
+            if cycling:
+                log(f"workspacev2 {key} (cycling, ignored)")
+                return
+            if key in mru:
+                mru.remove(key)
+            if was_empty:
+                # Landed on an empty workspace -> it joins the MRU like a window.
+                mru.insert(0, key)
+                log(f"workspacev2 {key} (empty) -> mru top; mru[:5]={mru[:5]}")
+            else:
+                # Workspace has a focused window; drop any stale sentinel for it.
+                log(f"workspacev2 {key} (non-empty); mru[:5]={mru[:5]}")
+    elif name == "closewindow":
+        addr = normalize(payload.strip())
+        with state_lock:
+            if addr in mru:
+                mru.remove(addr)
+            pending_focus.pop(addr, None)  # no echo will come for a dead window
+            if current_focus == addr:
+                current_focus = None
+
+
+def event_loop():
+    # If the socket vanishes or refuses connections, Hyprland is gone or
+    # our HIS is stale. Exit so exec-once can spawn a fresh instance for
+    # the live HIS instead of looping forever on a dead path.
+    try:
+        s = socket.socket(socket.AF_UNIX)
+        s.connect(EVENT_SOCK)
+    except (ConnectionRefusedError, FileNotFoundError) as e:
+        print(f"hypr-alttab-daemon: socket2 not available ({e}); exiting",
+              file=sys.stderr)
+        os._exit(1)
+    buf = b""
+    try:
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                line, _, buf = buf.partition(b"\n")
+                if line:
+                    handle_event(line.decode("utf-8", "replace"))
+    except Exception as e:
+        print(f"hypr-alttab-daemon: event loop: {e}", file=sys.stderr)
+    print("hypr-alttab-daemon: socket2 closed; exiting", file=sys.stderr)
+    os._exit(1)
+
+
+def _arm_commit_timer_locked():
+    # Caller must hold state_lock. Schedules an auto-commit if no further
+    # next/prev arrives in time. When the evdev reader is live it owns commit
+    # (on Alt release), so this is just a long safety net; otherwise it's the
+    # legacy short fallback timer.
+    global commit_timer
+    if commit_timer is not None:
+        commit_timer.cancel()
+    interval = SAFETY_COMMIT_SEC if evdev_active else FALLBACK_COMMIT_SEC
+    commit_timer = threading.Timer(interval, _auto_commit)
+    commit_timer.daemon = True
+    commit_timer.start()
+
+
+def _auto_commit():
+    log("auto-commit timer fired")
+    do_commit()
+
+
+def do_next():
+    global cycling, cycle_index
+    target = None
+    with state_lock:
+        if len(mru) < 2:
+            log(f"do_next: mru too short ({len(mru)})")
+            return
+        if not cycling:
+            cycling = True
+            cycle_index = 1
+            visited.clear()
+        else:
+            cycle_index = (cycle_index + 1) % len(mru)
+        target = mru[cycle_index]
+        visited.append(target)
+        pending_focus[target] = pending_focus.get(target, 0) + 1
+        _arm_commit_timer_locked()
+        log(f"do_next: ci={cycle_index} target={target} visited={visited}")
+    dispatch_target(target)
+
+
+def do_prev():
+    global cycle_index
+    target = None
+    with state_lock:
+        if not cycling or len(mru) < 2:
+            return
+        cycle_index = (cycle_index - 1) % len(mru)
+        target = mru[cycle_index]
+        visited.append(target)
+        pending_focus[target] = pending_focus.get(target, 0) + 1
+        _arm_commit_timer_locked()
+        log(f"do_prev: ci={cycle_index} target={target} visited={visited}")
+    dispatch_target(target)
+
+
+def do_commit():
+    global cycling, cycle_index, commit_timer
+    with state_lock:
+        if not cycling:
+            log("do_commit: not cycling, ignored")
+            return
+        cycling = False
+        if commit_timer is not None:
+            commit_timer.cancel()
+            commit_timer = None
+        # Only the window we actually LANDED on (the current cycle position)
+        # becomes most-recent. Windows merely tabbed *past* are left untouched
+        # in their previous MRU order: alt-tabbing reads the history, it does
+        # not rewrite it while Alt is held. So after landing, the window we came
+        # from stays right behind the landed one (a quick alt-tab toggles the
+        # two like normal). (Earlier this promoted the whole visited trail in
+        # reverse to make alt-tab "undoable" — that rewrote history on every
+        # cycle, which is exactly what we no longer want.)
+        landed = mru[cycle_index] if 0 <= cycle_index < len(mru) else None
+        cycle_index = 0
+        if landed is not None:
+            if landed in mru:
+                mru.remove(landed)
+            mru.insert(0, landed)
+        visited.clear()
+        log(f"do_commit: landed={landed}; mru[:5]={mru[:5]}")
+
+
+def _keyboard_event_paths():
+    # Resolve the stable by-path / by-id keyboard symlinks to their real
+    # /dev/input/eventN nodes. Filtering to *-event-kbd keeps us off mice and
+    # touchpads, whose motion events would otherwise wake the reader on every
+    # pixel of movement.
+    paths = set()
+    for pat in ("/dev/input/by-path/*-event-kbd",
+                "/dev/input/by-id/*-event-kbd"):
+        for link in glob.glob(pat):
+            try:
+                paths.add(os.path.realpath(link))
+            except OSError:
+                continue
+    return sorted(paths)
+
+
+def _open_keyboards(open_fds):
+    # Open any keyboard event device not already open (covers hotplugged USB /
+    # bluetooth keyboards). Devices we can't read (no input-group access) are
+    # skipped. Returns True if at least one device is open.
+    for path in _keyboard_event_paths():
+        if path in open_fds:
+            continue
+        try:
+            open_fds[path] = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+            log(f"evdev: watching {path}")
+        except OSError as e:
+            log(f"evdev: cannot open {path}: {e}")
+    return bool(open_fds)
+
+
+def _drain_alt(fd, alt_down):
+    # Drain pending events on fd, tracking which Alt keys are physically down
+    # as (fd, code) pairs. Commits the cycle the instant the last Alt key goes
+    # up — checked per-event, not per-batch, so a release-then-repress captured
+    # in a single read still commits the first gesture before the new one.
+    try:
+        data = os.read(fd, EV_SIZE * 64)
+    except BlockingIOError:
+        return
+    for off in range(0, len(data) - EV_SIZE + 1, EV_SIZE):
+        _, _, etype, code, value = struct.unpack(EV_FORMAT, data[off:off + EV_SIZE])
+        if etype != EV_KEY or code not in ALT_KEYCODES:
+            continue
+        if value == 1:               # press
+            alt_down.add((fd, code))
+        elif value == 0:             # release
+            alt_down.discard((fd, code))
+            if not alt_down:
+                do_commit()          # no-op unless a cycle is in progress
+        # value == 2 (autorepeat) keeps the key down; ignore.
+
+
+def alt_watcher():
+    # Commit the active cycle the moment the last Alt key is released. This is
+    # the real replacement for the old commit timer; see the module header.
+    global evdev_active
+    open_fds = {}
+    if _open_keyboards(open_fds):
+        with state_lock:
+            evdev_active = True
+        log("evdev: Alt-key reader active")
+    else:
+        print("hypr-alttab-daemon: no readable keyboard in /dev/input; "
+              "using fallback timer (is the user in the 'input' group?)",
+              file=sys.stderr)
+
+    alt_down = set()
+    while True:
+        fds = list(open_fds.values())
+        if fds:
+            try:
+                ready, _, _ = select.select(fds, [], [], 2.0)
+            except OSError:
+                ready = []
+        else:
+            ready = []
+            time.sleep(2.0)
+        for fd in ready:
+            try:
+                _drain_alt(fd, alt_down)
+            except OSError:
+                # Device unplugged: drop it and forget any held Alt on it.
+                for p, f in list(open_fds.items()):
+                    if f == fd:
+                        del open_fds[p]
+                        try:
+                            os.close(f)
+                        except OSError:
+                            pass
+                alt_down = {k for k in alt_down if k[0] != fd}
+        # Pick up hotplugged keyboards (and a first device if we had none).
+        had = bool(open_fds)
+        if _open_keyboards(open_fds) and not had:
+            with state_lock:
+                evdev_active = True
+            log("evdev: Alt-key reader active (after hotplug)")
+
+
+def ctrl_loop():
+    if os.path.exists(CTRL_SOCK):
+        try:
+            os.unlink(CTRL_SOCK)
+        except OSError:
+            pass
+    s = socket.socket(socket.AF_UNIX)
+    s.bind(CTRL_SOCK)
+    os.chmod(CTRL_SOCK, 0o600)
+    s.listen(16)
+    while True:
+        try:
+            conn, _ = s.accept()
+        except OSError:
+            continue
+        try:
+            data = conn.recv(64).decode("utf-8", "replace").strip()
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
+        if data == "next":
+            do_next()
+        elif data == "prev":
+            do_prev()
+        elif data == "commit":
+            do_commit()
+
+
+def main():
+    kill_other_instances()
+    seed_mru()
+    threading.Thread(target=event_loop, daemon=True).start()
+    threading.Thread(target=alt_watcher, daemon=True).start()
+    ctrl_loop()
+
+
+if __name__ == "__main__":
+    main()

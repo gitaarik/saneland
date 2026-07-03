@@ -1,0 +1,8 @@
+@import "guiSize"
+@import "colorScheme"
+
+configuration {
+    matching: "fuzzy";
+    sort: true;
+    sorting-method: "fzf";
+}

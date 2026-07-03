@@ -1,0 +1,48 @@
+#!/usr/bin/bash
+#
+# Pick a random wallpaper from a theme's pool and apply it via hyprpaper IPC.
+#
+# Pools live in ~/.config/hypr/wallpapers/<scheme>/ and may hold any number of
+# images — drop files in or delete them, no config to touch. Called by
+# hypr-wallpaper-rotate (the timer loop) and by ~/.local/bin/theme (to repaint
+# immediately on a dark/light switch instead of waiting for the next tick).
+#
+# Why IPC and not hyprpaper.conf? hyprpaper 0.8.4 (hyprtoolkit) ignores the
+# config's wallpaper/preload directives and dropped the preload/unload IPC
+# subcommands; only `hyprctl hyprpaper wallpaper ,<path>` works (auto-loading
+# the image). See AGENTS.md.
+#
+# Usage: hypr-wallpaper [dark|light]   (defaults to ~/.cache/current-theme)
+
+scheme="${1:-$(cat ~/.cache/current-theme 2>/dev/null || echo dark)}"
+dir="$HOME/.config/hypr/wallpapers/$scheme"
+
+mapfile -t pool < <(find "$dir" -maxdepth 1 -type f \
+    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+    2>/dev/null | sort)
+(( ${#pool[@]} == 0 )) && exit 0
+
+# Wait for hyprpaper's IPC. At login, monitor + EGL setup takes several seconds
+# before the daemon accepts connections (hyprctl prints "failed to connect"
+# until then). On a theme switch or a rotation tick it's already up, so this
+# breaks on the first iteration.
+for _ in $(seq 1 40); do
+    [[ "$(hyprctl hyprpaper listactive 2>&1)" != *"failed to connect"* ]] && break
+    sleep 0.5
+done
+
+# Avoid repeating the last image when the pool has more than one. Tracked in a
+# state file rather than parsed from `listactive`, whose path comes back
+# symlink-resolved (~/.config/hypr -> the dotfiles repo) and so wouldn't
+# string-match the ~/-relative paths we hand it here.
+state="$HOME/.cache/wallpaper-last"
+last="$(cat "$state" 2>/dev/null)"
+pick="${pool[RANDOM % ${#pool[@]}]}"
+if (( ${#pool[@]} > 1 )); then
+    while [[ "$pick" == "$last" ]]; do
+        pick="${pool[RANDOM % ${#pool[@]}]}"
+    done
+fi
+
+# Empty monitor field = all outputs.
+hyprctl hyprpaper wallpaper ",$pick" &>/dev/null && echo "$pick" > "$state"

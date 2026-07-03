@@ -1,0 +1,116 @@
+/*
+ * swaync light theme — placeholder palette.
+ * Theme script switches style.css -> this file.
+ */
+
+* {
+    font-family: "Noto Sans", sans-serif;
+    font-size: 14px;
+}
+
+.notification-row {
+    outline: none;
+    margin: 6px;
+    padding: 0;
+}
+
+.notification {
+    background: #fbf1c7;
+    color: #3c3836;
+    border: 1px solid #d5c4a1;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.notification-content {
+    padding: 6px;
+}
+
+.summary {
+    color: #3c3836;
+    font-weight: bold;
+}
+
+.body {
+    color: #504945;
+}
+
+/* swaync's default style.css uses very-deeply-nested selectors
+   (.notification-row .notification-background .notification
+   .notification-default-action .notification-content .text-box .body)
+   with color: var(--text-color) = white. If both stylesheets end up
+   loaded, the default wins on specificity and the body text reads
+   white on cream. Mirror the hierarchy so our value reliably wins. */
+.notification-row .notification-background .notification
+  .notification-default-action .notification-content .text-box .body {
+    color: #504945;
+}
+.notification-row .notification-background .notification
+  .notification-default-action .notification-content .text-box .summary {
+    color: #3c3836;
+}
+
+/* Alternative-action buttons under the notification (e.g.
+   "Don't show this message again" or app-supplied actions). Default
+   theme leaves these at var(--text-color) = white. */
+.notification-row .notification-background .notification
+  .notification-action > button {
+    color: #3c3836;
+    background: rgba(60, 56, 54, 0.08);
+}
+.notification-row .notification-background .notification
+  .notification-action > button:hover {
+    background: rgba(60, 56, 54, 0.16);
+}
+
+.close-button {
+    background: transparent;
+    color: #7c6f64;
+    border: none;
+    margin: 2px;
+    padding: 2px 6px;
+}
+.close-button:hover {
+    color: #9d0006;
+}
+
+/* Notification center (slide-out panel) */
+.control-center {
+    background: #fbf1c7;
+    color: #3c3836;
+    border: 1px solid #d5c4a1;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.control-center-list {
+    background: transparent;
+}
+
+.widget-title > label {
+    color: #3c3836;
+    font-weight: bold;
+}
+
+.widget-title button {
+    background: #d5c4a1;
+    color: #3c3836;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+.widget-title button:hover {
+    background: #bdae93;
+}
+
+.widget-dnd {
+    color: #3c3836;
+    margin: 4px;
+}
+
+.widget-dnd switch {
+    background: #d5c4a1;
+}
+.widget-dnd switch:checked {
+    background: #b57614;
+}

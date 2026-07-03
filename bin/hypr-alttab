@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+#
+# Send a command to hypr-alttab-daemon. Invoked from hyprland.conf
+# bindings; see the daemon's header for the protocol.
+
+import os
+import socket
+import sys
+
+if len(sys.argv) != 2 or sys.argv[1] not in ("next", "prev", "commit"):
+    sys.exit("usage: hypr-alttab {next|prev|commit}")
+
+his = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
+if not his:
+    sys.exit("hypr-alttab: HYPRLAND_INSTANCE_SIGNATURE not set")
+runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+sock_path = f"{runtime}/hypr/{his}/.alttab.sock"
+
+try:
+    s = socket.socket(socket.AF_UNIX)
+    s.connect(sock_path)
+    s.sendall(sys.argv[1].encode())
+    s.close()
+except OSError as e:
+    sys.exit(f"hypr-alttab: {e}")

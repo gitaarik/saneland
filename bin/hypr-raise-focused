@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#
+# Raise the focused window to the top of the floating Z-order.
+#
+# Listens to Hyprland's activewindow IPC events. On every focus change,
+# dispatches `alterzorder top` so the newly-focused floating window comes
+# to the front. Hyprland raises floating windows on mouse click, but not
+# on cyclenext / movefocus / window-close auto-focus — this daemon plugs
+# all those gaps uniformly.
+#
+# Replaces hypr-keep-maximize (the old daemon that re-applied fullscreen
+# state). Under the stacking-first config we don't use fullscreen state
+# anymore; the window's "maximized" appearance comes from the size+move
+# windowrule, and z-order is what actually changes on focus.
+
+set -uo pipefail
+
+sock=${XDG_RUNTIME_DIR:-/run/user/$UID}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock
+
+if [[ ! -S $sock ]]; then
+    echo "hypr-raise-focused: Hyprland event socket not found: $sock" >&2
+    exit 1
+fi
+
+ncat -U "$sock" | while IFS= read -r line; do
+    case "$line" in
+        activewindow*) hyprctl dispatch alterzorder top >/dev/null ;;
+    esac
+done

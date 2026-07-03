@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+#
+# Print the signature of the currently-running Hyprland instance.
+#
+# hyprctl targets a compositor via $HYPRLAND_INSTANCE_SIGNATURE, but that
+# env var is captured when a process starts and goes STALE if Hyprland
+# restarts under something long-lived (an agent shell, a tmux server, a
+# terminal that outlives a compositor restart) — every subsequent hyprctl
+# then fails with "Couldn't connect to .../.socket.sock".
+#
+# `hyprctl instances` reads the live socket dir directly and needs no
+# signature, so derive the current one from it. If several dead instance
+# dirs linger, the newest (highest .time) is the live one.
+#
+# Usage:
+#   eval "$(hyprsig -x)"                          # export it into the shell
+#   HYPRLAND_INSTANCE_SIGNATURE=$(hyprsig) hyprctl monitors   # one-shot
+set -euo pipefail
+
+sig=$(env -u HYPRLAND_INSTANCE_SIGNATURE hyprctl instances -j \
+        | jq -r 'max_by(.time).instance')
+
+[[ -n $sig && $sig != null ]] || {
+    echo "hyprsig: no running Hyprland instance" >&2
+    exit 1
+}
+
+if [[ ${1:-} == -x ]]; then
+    printf 'export HYPRLAND_INSTANCE_SIGNATURE=%s\n' "$sig"
+else
+    printf '%s\n' "$sig"
+fi

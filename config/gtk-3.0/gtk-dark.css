@@ -1,0 +1,10 @@
+/* Intentionally empty.
+ *
+ * Previously contained `* { color: #fff; }` to whiten xfce4-power-manager
+ * and pa-applet systray icons. Both apps are no longer in use (replaced by
+ * the eww bar's audio + battery widgets), and current GTK applets use
+ * image-based tray icons, so the wildcard was doing nothing useful but
+ * overriding every GTK text color — including eww's bar styles, since
+ * user GTK CSS loads at a higher GtkStyleProvider priority than eww's
+ * application stylesheet.
+ */

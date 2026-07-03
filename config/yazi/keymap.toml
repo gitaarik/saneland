@@ -1,0 +1,81 @@
+# Yazi keymap - vim-like enhancements
+# https://yazi-rs.github.io/docs/configuration/keymap
+#
+# Default bindings already include:
+#   hjkl        - navigation
+#   gg / G      - top / bottom
+#   Ctrl-u/d    - half page up/down
+#   Ctrl-b/f    - full page up/down
+#   y / x / p   - yank / cut / paste
+#   d / D       - trash / permanent delete
+#   v / V       - visual mode
+#   / / ?       - find forward / backward
+#   n / N       - next / previous match
+#   a           - create file/directory
+#   r           - rename
+#   : / ;       - shell command (blocking / background)
+#   Space       - toggle selection
+#   Tab         - spot (preview) file
+
+[mgr]
+
+# Prepend to add vim-like enhancements with higher priority
+prepend_keymap = [
+    # Enter directory (like l) instead of open
+    { on = "<Enter>", run = "enter", desc = "Enter directory" },
+
+    # Undo last yank/cut operation
+    { on = "u", run = "unyank", desc = "Undo yank/cut" },
+
+    # More vim-like delete - dd to trash
+    { on = ["d", "d"], run = "remove", desc = "Trash file (vim dd)" },
+    { on = ["d", "D"], run = "remove --permanently", desc = "Delete permanently" },
+
+    # Edit file in $EDITOR (like vim's 'e' for edit)
+    { on = "e", run = "open", desc = "Edit/open file" },
+    { on = "E", run = "open --interactive", desc = "Open with..." },
+
+    # Vim-style tab navigation (gt/gT)
+    { on = ["g", "t"], run = "tab_switch 1 --relative", desc = "Next tab (gt)" },
+    { on = ["g", "T"], run = "tab_switch -1 --relative", desc = "Previous tab (gT)" },
+
+    # Quick access directories (vim-like marks feel)
+    { on = ["g", "r"], run = "cd /", desc = "Go to root" },
+    { on = ["g", "e"], run = "cd /etc", desc = "Go to /etc" },
+    { on = ["g", "u"], run = "cd /usr", desc = "Go to /usr" },
+    { on = ["g", "m"], run = "cd /mnt", desc = "Go to /mnt" },
+    { on = ["g", "t"], run = "cd /tmp", desc = "Go to /tmp" },
+
+    # Refresh (like vim's Ctrl-l to redraw)
+    { on = "<C-l>", run = "refresh", desc = "Refresh view" },
+
+    # Quick quit without confirmation (ZZ/ZQ vim style)
+    { on = ["Z", "Z"], run = "quit", desc = "Quit (ZZ)" },
+    { on = ["Z", "Q"], run = "quit --no-cwd-file", desc = "Quit without cwd (ZQ)" },
+
+    # Yank filename to clipboard (like vim "+y)
+    { on = ["\"", "+", "y"], run = "copy path", desc = "Copy path to clipboard" },
+
+    # Open shell at current directory
+    { on = "!", run = "shell --block --interactive", desc = "Open shell" },
+    { on = "$", run = "shell --interactive", desc = "Run shell command" },
+
+    # Open current directory in OS file manager
+    { on = ["g", "o"], run = "shell --orphan 'xdg-open .'", desc = "Open in file manager" },
+
+    # Paste and show task manager (to see progress)
+    { on = "P", run = ["paste --force", "tasks:show"], desc = "Paste (force) + show progress" },
+]
+
+[input]
+
+# Input already has full vim support (i, I, a, A, w, b, e, 0, $, ^, etc.)
+# Just add a few convenience bindings
+prepend_keymap = [
+    # jj/jk to escape insert mode (common vim mapping)
+    { on = ["j", "j"], run = "escape", desc = "Exit to normal mode" },
+    { on = ["j", "k"], run = "escape", desc = "Exit to normal mode" },
+
+    # Quick save/submit with Ctrl-s
+    { on = "<C-s>", run = "close --submit", desc = "Submit" },
+]

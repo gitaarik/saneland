@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#
+# Resize the active window to PCT% × PCT% of the work area and center it,
+# restoring its border. Useful for taking a maximized window down to a
+# floating dialog-like size to compare two side-by-side or just see
+# something behind it.
+#
+# Usage: hypr-center-window [PCT]   (default 60)
+#
+# Bound to mod+c (60%) and mod+shift+c (80%) — same center, bigger frame.
+# (Was: native centerwindow dispatcher; this adds the resize step so a
+# previously-maximized window becomes actually-floating-looking.)
+
+set -uo pipefail
+source "${HOME}/.local/bin/hypr-window-lib.sh"
+
+pct=${1:-60}
+
+hypr_work_area
+
+new_w=$(( WORK_W * pct / 100 ))
+new_h=$(( WORK_H * pct / 100 ))
+
+target=$(hyprctl -j activewindow | jq -r '.address')
+[[ -z $target || $target = "null" ]] && exit 0
+
+hyprctl --batch \
+    "dispatch resizewindowpixel exact ${new_w} ${new_h},address:${target}; \
+     $(hypr_chrome "$target" normal); \
+     dispatch centerwindow" >/dev/null

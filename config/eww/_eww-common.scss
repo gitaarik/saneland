@@ -1,0 +1,774 @@
+// Shared eww rules. Palette ($bg, $fg, $accent, etc.) is defined by the
+// variant file (eww-dark.scss / eww-light.scss) that @imports this partial.
+// The active theme is selected via the eww.scss symlink, flipped by the
+// `theme` script.
+
+* {
+    // No `all: unset` — that reset backgrounds on every element including
+    // window#bar, leaving the bar transparent. Just set our font.
+    font-family: "Adwaita Sans", "JetBrainsMono Nerd Font", "Noto Sans", sans-serif;
+    font-size: 14px;
+}
+
+window#bar {
+    background-color: $bg;
+    color: $fg;
+    // No hard border-top: it's a 1px $border line across the very top that
+    // doesn't fade (near-invisible in dark, but a clear tan line in light), at
+    // odds with the bar's soft-fade seams and highlights. The distinct bar bg
+    // already separates it from the content above.
+}
+window#bar > * {
+    padding: 0 4px;
+}
+
+// ---- Faded hairline seam ----------------------------------------------------
+// The 1px vertical-gradient divider between adjacent bar cells, shared by the
+// workspace/taskbar group (left) and the status group (right). A $divider
+// hairline brightest through the middle that ramps to transparent before the
+// bar's top/bottom edges, so the soft ends read as a deliberate seam rather
+// than a hard edge-to-edge line ($border is lighter than $bg and looked like a
+// scratch). Drawn as a border-image on whichever single side the caller gives a
+// 1px transparent border — border-image-width follows border-width, so only
+// that side paints. The 1px slice samples the full vertical column and GTK
+// stretches it down the cell, mapping the % stops to the cell height; the stops
+// are GRADUAL (solid only across the 35–65% core) so the fade shows — hard
+// stops here would just produce a shorter solid line.
+@mixin seam {
+    // Fade to rgba($divider, 0), not the `transparent` keyword: `transparent` is
+    // transparent BLACK, so the ends ramp the RGB toward black as alpha drops —
+    // invisible against the dark bar but a dark fringe on the light one. Zero-
+    // alpha $divider keeps the seam's colour and only ramps the alpha.
+    border-image: linear-gradient(to bottom,
+                                   rgba($divider, 0) 0%,
+                                   $divider 35%, $divider 65%,
+                                   rgba($divider, 0) 100%) 1;
+}
+
+// ---- Active-cell highlight --------------------------------------------------
+// A solid orange core with a fixed 5px fade band on EACH side (a uniform inset
+// frame, not a fade radiating from the centre). True-transparent edges on all
+// four sides would need a mask (unsupported in GTK), but fading to the bar's $bg
+// is identical on the bar AND is stackable: four linear gradients, one per edge,
+// each painting opaque $bg at its edge and easing to transparent 5px in, layered
+// over the orange fill ($bg covers the orange only within the 5px band; past it
+// the orange shows). Corners are where two bands overlap. (A radial fades from
+// the centre; an inset box-shadow blurs rather than giving a clean linear band —
+// this is an exact 5px ramp.) The fill colour is the parameter, so the same glow
+// serves both the active state ($accent-fill) and hover ($accent-fill-hover, a
+// fainter touch). Knobs: those two per-theme fills and the 5px band width.
+//
+// background-clip: padding-box — without it the fill defaults to border-box and
+// bleeds under the 1px seam border on the active side; since the seam's border-
+// image is transparent at its top/bottom ends, that bleed shows through as a
+// 1px orange line. Clipping to the padding box stops the fill before the border.
+@mixin cell-fill($fill) {
+    background-color: $fill;
+    // Fade to rgba($bg, 0), NOT the `transparent` keyword: `transparent` is
+    // transparent BLACK (rgba(0,0,0,0)), so `$bg, transparent` interpolates the
+    // RGB toward black as the alpha drops — a darker fringe just inside each
+    // edge before it reaches the orange (very visible, and muddy on the light
+    // theme). rgba($bg, 0) keeps the bar's colour and only ramps the alpha.
+    background-image:
+        linear-gradient(to bottom, $bg, rgba($bg, 0) 5px),
+        linear-gradient(to top,    $bg, rgba($bg, 0) 5px),
+        linear-gradient(to right,  $bg, rgba($bg, 0) 5px),
+        linear-gradient(to left,   $bg, rgba($bg, 0) 5px);
+    background-clip: padding-box;
+}
+@mixin cell-active { @include cell-fill($accent-fill); }
+@mixin cell-hover  { @include cell-fill($accent-fill-hover); }
+
+// The left-side cells are Gtk `button`s (the systray cells on the right are
+// plain `box`es), so they inherit the GTK theme's default raised button chrome
+// — an alternate background with rounded corners + a bevel shadow. Strip it so
+// they sit flat on the bar $bg, identical to the systray boxes. The seam border
+// and the active tint/accent-bar are re-applied by their own rules below (both
+// later in the cascade, so they win).
+.launcher, .tag, .task {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.launcher {
+    color: $fg;
+    font-weight: bold;
+    padding: 0 6px;
+}
+// Highlighted while the start menu is open — mirrors .tag.active.
+.launcher.active {
+    color: $fg;
+    @include cell-active;
+}
+
+// Group paddings zeroed and the yuck boxes set to :spacing 0 so every cell on
+// the left touches its neighbour — the seam (added below) then sits as a single
+// hairline between each pair, matching the status group on the right.
+.tags {
+    padding: 0;
+}
+.tag {
+    padding: 0 4px;
+    color: $fg;
+    border-radius: 0;
+}
+.tag.active {
+    color: $fg;
+    @include cell-active;
+}
+
+.taskbar {
+    padding: 0;
+}
+// Flush, seamed cells (no rounded pill / margin) so the taskbar reads as part
+// of the same hairline-separated row as the tags and the status group.
+.task {
+    padding: 0 4px;
+    color: $fg;
+}
+.task.active {
+    color: $fg;
+    @include cell-active;
+}
+
+// Hover: the same soft glow as .active but with a fainter fill, on every
+// interactive bar cell. :not(.active) so hovering an already-active cell keeps
+// the stronger active glow instead of dimming it.
+//
+// Left side (launcher/tags/tasks) are buttons, which take :hover directly. The
+// systray cells are boxes inside eventboxes, and GTK puts prelight on the
+// eventbox, not the inner box — so `.audio:hover` never fires. Instead match the
+// child via the hovered parent (`*:hover > .audio`): each systray widget has its
+// own eventbox with a single styled child, so this stays scoped to that one
+// cell (unlike the shared tags/taskbar eventbox, where a parent-hover form would
+// light every child at once — hence the direct :hover for those).
+.launcher:hover:not(.active),
+.tag:hover:not(.active):not(.no-hover),
+.task:hover:not(.active):not(.no-hover),
+*:hover > .audio:not(.active),
+*:hover > .network:not(.active),
+*:hover > .bluetooth:not(.active),
+*:hover > .battery:not(.active),
+*:hover > .clock:not(.active) {
+    @include cell-hover;
+}
+
+// Inner breathing room: pad each cell's CONTENT (the tag number, the task's
+// icon+title box, the launcher glyph) so a highlighted item's content doesn't
+// touch the edge of the accent-tint wash, which is clipped to the content box.
+// This is a second, inner zone — distinct from the cell's own horizontal
+// padding, which stays as bar-$bg between the highlight and the seam.
+.launcher > label,
+.task > box {
+    padding: 0 5px;
+}
+// Workspace tags get a touch more interior room than the rest.
+.tag > label {
+    padding: 0 5px;
+}
+
+.tray {
+    padding: 0;
+}
+
+.audio, .network, .bluetooth, .battery, .clock {
+    padding: 0 6px;
+}
+// The optional bar date rides behind the time; dim it so the time still
+// reads as the primary figure (toggled by the clock popup's Options).
+.clock-date {
+    color: $fg-dim;
+}
+// FA wifi glyph (U+F1EB) is right-anchored in its character cell — the
+// visible arc paints to the cell's right edge. Give the glyph its own
+// right padding so it breathes regardless of what follows: when an SSID
+// is shown this is the gap before the text; when it isn't, it's the
+// clearance before the collapsed-border divider.
+.network-icon { padding-right: 8px; }
+// Same idea for the audio glyph: own its right clearance (rather than
+// relying on the box's inter-child spacing, which vanishes when the
+// percentage label is hidden) so the icon keeps a gap before the divider
+// when the "Show volume percentage" preference is off. The widget's box
+// spacing is dropped to 6px so the shown icon→text gap stays ~14px.
+.audio-icon { padding-right: 8px; }
+
+// Right-side widgets rendered as a single bordered button-group row,
+// reading as buttons (matching the GtkButton chrome of the tags/taskbar
+// on the left) without doubling 1px borders between adjacent items.
+// The right-side box uses :spacing 0 so adjacent borders touch, then
+// every item after the first drops its left border — the last tray
+// cell's right border collapses with .bluetooth's left border too, so
+// the tray group and status-widget group join without a visible seam.
+//
+// Each tray item is an outer wrapper containing an inner GtkButton
+// with the icon. Plain `padding` gets absorbed by the button chrome
+// and doesn't widen the cell — `min-width` does, but only when set on
+// BOTH levels (otherwise the wrapper widens but the inner stays sized
+// to the icon, leaving the icon flush against the wrapper's left edge).
+.tray > *, .tray > * > * {
+    min-width: 28px;
+}
+// Right side: each cell carries the seam on its RIGHT edge; cells touch
+// (:spacing 0) so a single hairline sits between each pair. .clock is the last
+// item in the row and is omitted, so no seam closes off the right edge.
+.tray > *,
+.bluetooth, .audio, .network, .battery {
+    border-right: 1px solid transparent;
+    @include seam;
+}
+// Left side: the mirror — the seam rides each cell's LEFT edge, so the launcher
+// (the first item) is the one omitted. Putting it on the left also means the
+// dynamic, right-growing taskbar never leaves a seam dangling after its last
+// window. Every tag/task touches its neighbour (:spacing 0 in the yuck boxes).
+.tag, .task {
+    border-left: 1px solid transparent;
+    @include seam;
+}
+// Section boundaries (launcher | tags | taskbar) read thicker than the 1px
+// between-item seams, to separate the bar's sections. Carried on the group
+// boxes' left edge because those are always present — unlike the first VISIBLE
+// tag/task, which can't be targeted in CSS when leading workspaces/windows are
+// hidden. It sits flush against that first item's own 1px seam, so the two read
+// as a single ~3px boundary seam.
+.tags, .taskbar {
+    border-left: 2px solid transparent;
+    @include seam;
+}
+// Mirror that section boundary on the RIGHT group: the status widgets carry
+// their seams on each cell's right edge, so the group's own left edge (where
+// the right-growing taskbar now butts up against it) had none. A 2px seam here
+// closes that gap and reads as the taskbar | status boundary — kept permanent
+// (not toggled on window count) so it stays consistent with the left-side
+// section seams even when no windows are open.
+.status-group {
+    border-left: 2px solid transparent;
+    @include seam;
+}
+// While a systray item's popup is open, tint its bar cell and draw the accent
+// bottom bar — the same active treatment as .launcher/.tag/.task. The popups
+// all anchor to the bottom-RIGHT corner regardless of which icon opened them,
+// so this highlight is what ties the far-right popup back to its source icon.
+// Only the background/accent bar are set here — each widget keeps its own
+// state color (bluetooth green, battery tier, etc.).
+.audio.active, .network.active, .bluetooth.active, .battery.active, .clock.active {
+    @include cell-active;
+}
+
+// Settled "connected" state uses the same $high green as the >80%-
+// charged battery — green = "all good", saves the accent orange for
+// in-progress / transitional UI. Transitioning stays orange.
+.bluetooth.off           { color: $fg-dim; }
+.bluetooth.connected     { color: $high; }
+.bluetooth.transitioning { color: $accent; }
+
+// SSID text rides alongside the glyph; nudge it down a touch from the
+// icon size and inherit the .network state color so it greens with the
+// connection. The right-anchored glyph swallows .network-icon's
+// padding-right, so the text owns its own left gap from the icon.
+.network-ssid { font-size: 0.85em; padding-left: 6px; }
+// Connected-device name beside the bluetooth glyph; same nudge as the
+// network SSID and inherits .bluetooth's state color so it greens with
+// the connection. Unlike the audio/network glyphs, the bluetooth glyph
+// renders wide enough that the box's :spacing 6 alone gives a balanced
+// icon→text gap (~half the other tray widgets), so the text carries no
+// left padding.
+.bluetooth-device { font-size: 0.85em; }
+// The box's :spacing 6 collapses when the device label is hidden, leaving
+// the glyph only the box's 6px right padding before the divider — a hair
+// tight. Give the icon 1px of its own right clearance so the no-device
+// case breathes; negligible on the icon→text gap when a name is shown.
+.bluetooth-icon { padding-right: 1px; }
+
+.network.off      { color: $fg-dim; }
+.network.idle     { color: $fg; }
+.network.wifi     { color: $high; }
+.network.ethernet { color: $high; }
+
+// Cap on the scrollable wifi list lives on the eww widget itself
+// (`:height 240`). Tried both `max-height` and `min/max-content-height`
+// in CSS — grass (eww 0.5's SCSS compiler) rejects them and refuses
+// to load the entire stylesheet, leaving every widget unstyled.
+.battery.high      { color: $high; }
+.battery.low       { color: $low; }
+.battery.warning   { color: $warning; }
+.battery.critical  { color: $critical; }
+.audio.muted       { color: $fg-dim; }
+
+// Rotated FA battery glyph sits visually too high in the line box, and
+// rotation also widens its bounding box → extra apparent gap before the
+// percentage. Nudge down for baseline, pull right to match the bolt's
+// trailing gap. Bolt (shown when AC is online) needs neither.
+.battery-icon.rotated {
+    margin-top: 5px;
+    margin-right: -3px;
+}
+.battery-icon.bolt { margin-right: 1px; }
+
+// Warning triangle shown left of the battery icon when on battery and
+// at/below the critical threshold. Same color as `.battery.critical`
+// so the row reads as one urgency cue.
+.battery-alert {
+    color: $critical;
+    margin-right: 2px;
+}
+
+// Audio device picker popup (left-click the audio widget). Small layer-shell
+// window anchored above the bar — the entire surface is the card, no overlay.
+.audio-popup {
+    background-color: $bg;
+    color: $fg;
+    border: 2px solid $popup-border;
+    border-radius: 6px;
+    padding: 12px;
+    min-width: 320px;
+}
+.audio-popup-title {
+    color: $fg-dim;
+    font-weight: bold;
+    padding: 2px 4px;
+}
+.audio-row {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: $fg-dim;
+}
+.audio-row:hover {
+    background: $bg-secondary;
+    color: $fg;
+}
+.audio-row.active {
+    color: $accent;
+}
+// Bluetooth device-row in-flight states (also reuses .audio-row). The
+// row label is prefixed with a sync glyph for connecting / disconnecting
+// and a warning triangle for error; the color cues are here.
+.audio-row.connecting {
+    color: $accent;
+}
+.audio-row.error {
+    color: $critical;
+}
+
+// Volume row at the top of the popup: mute toggle + GTK scale + value label.
+.audio-volume {
+    padding: 4px 4px;
+}
+.audio-mute {
+    background: transparent;
+    border: none;
+    color: $fg-dim;
+    padding: 4px 10px;
+    border-radius: 4px;
+    min-width: 28px;
+}
+.audio-mute:hover {
+    background: $bg-secondary;
+    color: $fg;
+}
+.audio-mute.muted {
+    color: $accent;
+}
+.audio-volume-value {
+    color: $fg-dim;
+    min-width: 38px;
+}
+// Shared slider styling for the audio-volume and brightness rows —
+// both use a GtkScale (drag to set; scroll steps by 1% due to eww 0.5
+// hard-coding the scale's step_increment).
+.audio-volume scale trough,
+.brightness-row scale trough {
+    background-color: $bg-secondary;
+    border-radius: 4px;
+    min-height: 6px;
+}
+.audio-volume scale trough highlight,
+.brightness-row scale trough highlight {
+    background-color: $accent;
+    border-radius: 4px;
+    min-height: 6px;
+}
+.audio-volume scale slider,
+.brightness-row scale slider {
+    background-color: $fg;
+    border: none;
+    border-radius: 50%;
+    min-width: 14px;
+    min-height: 14px;
+    margin: -4px;
+}
+
+// Brightness row inside the battery popup: icon + scale + trailing
+// percentage. Drag to set, or use XF86MonBrightness keys.
+.brightness-row { padding: 4px 4px; }
+.brightness-icon {
+    color: $fg-dim;
+    font-size: 16px;
+    min-width: 28px;
+    padding: 4px 10px;
+}
+.brightness-value {
+    color: $fg-dim;
+    min-width: 38px;
+}
+
+// Battery popup — same card chrome as the audio popup, plus a 3-button
+// power-profile selector and a small footer with health/cycles/rate.
+.battery-popup {
+    background-color: $bg;
+    color: $fg;
+    border: 2px solid $popup-border;
+    border-radius: 6px;
+    padding: 12px;
+    min-width: 260px;
+}
+.battery-popup-percent {
+    font-size: 22px;
+    font-weight: bold;
+}
+.battery-popup-percent.high     { color: $high; }
+.battery-popup-percent.low      { color: $low; }
+.battery-popup-percent.warning  { color: $warning; }
+.battery-popup-percent.critical { color: $critical; }
+
+// Warning triangle next to the big percentage when on battery and
+// at/below the critical threshold. Sized to feel paired with the 22px
+// percent label without dwarfing it.
+.battery-popup-alert {
+    color: $critical;
+    font-size: 18px;
+}
+
+// Battery icon left of the big percentage in the popup. Either the
+// charging bolt (when AC is online) or the rotated FA battery glyph
+// stepped by level (when on battery) — same scheme as the systray
+// widget, just bigger to pair with the 22px percent label. Tier
+// classes mirror the percent label's so icon + number read as one
+// unit (default $fg, then yellow/orange/red as the battery drains
+// even while charging). The rotation nudge mirrors `.battery-icon.rotated`
+// in the systray widget: GtkLabel's rotated bounding box sits visually
+// high and wide, so we pull it back into line with the percent.
+.battery-popup-icon {
+    color: $fg;
+    font-size: 20px;
+    min-width: 28px;
+}
+.battery-popup-icon.high     { color: $high; }
+.battery-popup-icon.low      { color: $low; }
+.battery-popup-icon.warning  { color: $warning; }
+.battery-popup-icon.critical { color: $critical; }
+
+// Horizontal charge bar between the percent label and the power-profile
+// row. Track color tracks the tier (low / warning / critical) so the
+// bar visually echoes the colored percentage above it.
+.battery-popup-charge { padding: 2px 0; }
+.battery-popup-charge progressbar trough {
+    background-color: $bg-secondary;
+    border-radius: 4px;
+    min-height: 6px;
+}
+.battery-popup-charge progressbar trough progress {
+    background-color: $accent;
+    border-radius: 4px;
+    min-height: 6px;
+}
+.battery-popup-charge.high     progressbar trough progress { background-color: $high; }
+.battery-popup-charge.low      progressbar trough progress { background-color: $low; }
+.battery-popup-charge.warning  progressbar trough progress { background-color: $warning; }
+.battery-popup-charge.critical progressbar trough progress { background-color: $critical; }
+
+.battery-popup-time {
+    color: $fg-dim;
+}
+.power-profile-row { padding: 2px 0; }
+.power-profile-button {
+    background: $bg-secondary;
+    border: 1px solid $border;
+    border-radius: 4px;
+    padding: 6px 8px;
+    color: $fg-dim;
+}
+.power-profile-button:hover {
+    color: $fg;
+    border-color: $fg-dim;
+}
+.power-profile-button.active {
+    color: $accent;
+    border-color: $accent;
+}
+
+// Theme toggle: single full-width button showing the active scheme.
+// Click to flip via `theme toggle`. No active-state highlight — the
+// icon + label *is* the state indicator.
+.theme-toggle {
+    background: $bg-secondary;
+    border: 1px solid $border;
+    border-radius: 4px;
+    padding: 6px 8px;
+    color: $fg;
+}
+.theme-toggle:hover {
+    border-color: $fg-dim;
+}
+.theme-toggle-icon {
+    color: $accent;
+}
+// .off modifier for tinted icons inside a theme-toggle-style button
+// (e.g. the bluetooth power toggle when the adapter is off).
+.theme-toggle-icon.off {
+    color: $fg-dim;
+}
+// Placeholder row in the wifi list while the first scan after opening is
+// still in flight ("Searching…") or when it completed with no networks
+// in range ("No networks found"). Dim, mirrors the list rows' padding.
+.network-popup-hint {
+    color: $fg-dim;
+    padding: 6px 8px;
+}
+// Trailing padlock on each wifi row: a closed lock for secured networks,
+// an open lock for unsecured ones. Kept dim so it reads as a quiet hint
+// next to the SSID; the open lock leans on $warning to flag that traffic
+// is unencrypted.
+.network-lock {
+    color: $fg-dim;
+    font-size: 0.8em;
+    padding-left: 8px;
+}
+.network-lock.open {
+    color: $warning;
+}
+// Collapsible "Options" disclosure shared by every systray popup
+// (audio/network/battery/bluetooth) via the `options-section` widget.
+// The header row and its revealed body live inside one filled, rounded
+// container so they read as a single unit — the header sits at the top,
+// the body drops in below it within the same box.
+.options-section {
+    background: $bg-secondary;
+    border: 1px solid $border;
+    border-radius: 6px;
+}
+// Header: full-width clickable row, transparent so the container fill
+// shows through. Only the heading/chevron text brightens on hover (a row
+// fill would be invisible against the matching container background).
+.options-row {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+// When expanded the header butts up against the revealed body; drop the
+// GTK button's bottom shadow so no line shows between them.
+.options-row.open {
+    box-shadow: none;
+}
+.options-heading {
+    color: $fg-dim;
+    font-weight: bold;
+}
+.options-row:hover .options-heading,
+.options-row:hover .options-chevron {
+    color: $fg;
+}
+.options-chevron {
+    color: $fg-dim;
+    font-size: 0.8em;
+}
+// Body sits inside the container under the header, sharing its fill.
+// Even top/bottom padding sets the toggle row off from the header.
+.options-body {
+    padding: 8px;
+}
+
+// Preference checkbox row inside an Options disclosure ("Show network
+// name on bar" / "Show volume percentage on bar"), rendered by the
+// shared `pref-toggle` widget. The indicator is a GTK `check` node
+// inside the checkbutton; we strip the box (no background, no border)
+// and let only the checkmark glyph show — dimmed when off, accent-
+// coloured when on. The label is vertically centered and dimmed like
+// the other rows.
+.pref-row {
+    color: $fg-dim;
+}
+.pref-check check {
+    min-width: 16px;
+    min-height: 16px;
+    border: none;
+    background: none;
+    box-shadow: none;
+    color: $fg-dim;
+}
+.pref-check check:checked {
+    color: $accent;
+}
+
+.battery-popup-footer {
+    color: $fg-dim;
+    font-size: 11px;
+    padding-top: 4px;
+    border-top: 1px solid $border;
+}
+
+// Start menu popup (left-click the launcher / start button). Same card
+// chrome as the other popups, but anchored bottom-LEFT. A list of pinned
+// apps, an "All apps" row that falls back to rofi, and a bottom row of
+// power/session icon buttons (mirrors hypr-power-menu).
+.start-popup {
+    background-color: $bg;
+    color: $fg;
+    border: 2px solid $popup-border;
+    border-radius: 6px;
+    padding: 12px;
+    min-width: 240px;
+}
+.start-popup-title {
+    color: $fg-dim;
+    font-weight: bold;
+    padding: 2px 4px 4px 4px;
+}
+// Pinned-app row + "All apps" row: glyph + label, hover-highlighted.
+// Reuses the .audio-row interaction feel for consistency across popups.
+.start-item {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 8px;
+    color: $fg-dim;
+}
+.start-item:hover {
+    background: $bg-secondary;
+    color: $fg;
+}
+.start-item-icon {
+    font-size: 15px;
+    min-width: 22px;
+}
+// Thin rule between the pinned list, the "All apps" row, and the power
+// row — same look as .clock-popup-divider.
+.start-popup-divider {
+    border-top: 1px solid $border;
+    margin: 6px 2px;
+}
+// Bottom power/session row: icon-only buttons with tooltips.
+.start-power-row { padding-top: 2px; }
+.start-power-button {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 10px;
+    color: $fg-dim;
+    font-size: 15px;
+}
+.start-power-button:hover {
+    background: $bg-secondary;
+    color: $fg;
+}
+
+// Inline confirm shown in place of the power row when a destructive
+// action (poweroff/reboot/suspend/logout) is armed.
+.start-confirm { padding-top: 2px; }
+.start-confirm-label {
+    color: $fg;
+    font-weight: bold;
+    padding: 2px 4px;
+}
+.start-confirm-yes,
+.start-confirm-no {
+    border: 1px solid $border;
+    border-radius: 4px;
+    padding: 6px 10px;
+    color: $fg-dim;
+}
+.start-confirm-yes {
+    // The destructive choice — accent it so it reads as the deliberate
+    // action, not the default. (No focus model here, so this is the only
+    // affordance distinguishing it from Cancel.)
+    color: $critical;
+    border-color: $critical;
+}
+.start-confirm-yes:hover {
+    background: $critical;
+    color: $bg;
+}
+.start-confirm-no:hover {
+    background: $bg-secondary;
+    color: $fg;
+    border-color: $fg-dim;
+}
+
+// Clock popup — title + GtkCalendar. Prev/next-month arrows come from
+// GtkCalendar's header (enabled via :show-heading in the widget).
+.clock-popup {
+    background-color: $bg;
+    color: $fg;
+    border: 2px solid $popup-border;
+    border-radius: 6px;
+    padding: 12px;
+    min-width: 260px;
+}
+.clock-popup-title {
+    color: $fg-dim;
+    font-weight: bold;
+}
+.clock-popup calendar {
+    background-color: transparent;
+    color: $fg;
+    padding: 4px;
+    // GtkCalendar paints today and selected-day via theme colors. Force
+    // both into a visible accent chip with high contrast so the highlight
+    // can't be hidden by the active GTK theme.
+    -GtkCalendar-inner-border: 2;
+    -GtkCalendar-horizontal-separation: 4;
+    -GtkCalendar-vertical-separation: 2;
+}
+.clock-popup calendar:selected {
+    // Faded accent — full $accent washed out the white day text since
+    // GtkCalendar doesn't reliably honor a CSS `color` override on day
+    // cells. Keeping the foreground default and using a translucent
+    // background gives a visible chip without losing readability.
+    background-color: $accent-tint;
+    border-radius: 4px;
+}
+.clock-popup calendar.button { color: $fg-dim; }
+.clock-popup calendar.button:hover { color: $fg; }
+.clock-popup calendar:indeterminate { color: $fg-dim; }
+.clock-popup calendar.header { color: $fg-dim; }
+
+// "Today" jump-back button below the calendar. Matches power-profile
+// chrome so popup buttons feel consistent.
+.clock-popup-today {
+    background: $bg-secondary;
+    border: 1px solid $border;
+    border-radius: 4px;
+    padding: 4px 10px;
+    color: $fg-dim;
+}
+.clock-popup-today:hover {
+    color: $fg;
+    border-color: $fg-dim;
+}
+
+// "Tools" section below the calendar — divider + dim section label +
+// a row of utility buttons (currently just screenshot modes). Buttons
+// reuse the .clock-popup-today chrome so the section feels native.
+.clock-popup-divider {
+    border-top: 1px solid $border;
+    margin-top: 4px;
+}
+.clock-popup-tools-label {
+    color: $fg-dim;
+    font-size: 0.85em;
+}
+.clock-popup-tool {
+    background: $bg-secondary;
+    border: 1px solid $border;
+    border-radius: 4px;
+    padding: 4px 10px;
+    color: $fg-dim;
+}
+.clock-popup-tool:hover {
+    color: $fg;
+    border-color: $fg-dim;
+}

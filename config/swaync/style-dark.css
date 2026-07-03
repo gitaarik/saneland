@@ -1,0 +1,111 @@
+/*
+ * swaync dark theme — placeholder palette.
+ * Theme script switches style.css -> this file.
+ */
+
+* {
+    font-family: "Noto Sans", sans-serif;
+    font-size: 14px;
+}
+
+.notification-row {
+    outline: none;
+    margin: 6px;
+    padding: 0;
+}
+
+.notification {
+    background: #282828;
+    color: #ebdbb2;
+    border: 1px solid #3c3836;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.notification-content {
+    padding: 6px;
+}
+
+.summary {
+    color: #ebdbb2;
+    font-weight: bold;
+}
+
+.body {
+    color: #d5c4a1;
+}
+
+/* Match swaync's deeply-nested default-style selector so our value
+   beats the upstream `color: var(--text-color)` on specificity. See
+   the matching block in style-light.css for the full story. */
+.notification-row .notification-background .notification
+  .notification-default-action .notification-content .text-box .body {
+    color: #d5c4a1;
+}
+.notification-row .notification-background .notification
+  .notification-default-action .notification-content .text-box .summary {
+    color: #ebdbb2;
+}
+
+/* Alternative-action buttons (e.g. "Don't show this message again"). */
+.notification-row .notification-background .notification
+  .notification-action > button {
+    color: #ebdbb2;
+    background: rgba(235, 219, 178, 0.08);
+}
+.notification-row .notification-background .notification
+  .notification-action > button:hover {
+    background: rgba(235, 219, 178, 0.16);
+}
+
+.close-button {
+    background: transparent;
+    color: #a89984;
+    border: none;
+    margin: 2px;
+    padding: 2px 6px;
+}
+.close-button:hover {
+    color: #cc241d;
+}
+
+/* Notification center (slide-out panel) */
+.control-center {
+    background: #282828;
+    color: #ebdbb2;
+    border: 1px solid #3c3836;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.control-center-list {
+    background: transparent;
+}
+
+.widget-title > label {
+    color: #ebdbb2;
+    font-weight: bold;
+}
+
+.widget-title button {
+    background: #3c3836;
+    color: #ebdbb2;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+.widget-title button:hover {
+    background: #504945;
+}
+
+.widget-dnd {
+    color: #ebdbb2;
+    margin: 4px;
+}
+
+.widget-dnd switch {
+    background: #3c3836;
+}
+.widget-dnd switch:checked {
+    background: #d79921;
+}

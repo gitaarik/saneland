@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#
+# Reorder the focused window left or right in its workspace's taskbar order.
+# Modifies ~/.cache/hypr-window-order — the hypr-state.sh emitter picks it
+# up on the next event tick (we touch the file to force an emit).
+#
+# Usage: hypr-reorder-window left|right
+
+set -uo pipefail
+
+dir=${1:?Usage: $0 left|right}
+
+state=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-order
+[[ ! -r $state ]] && exit 0
+
+addr=$(hyprctl -j activewindow | jq -r '.address // ""')
+ws=$(hyprctl -j activeworkspace | jq -r '.id // 0')
+
+[[ -z $addr ]] && exit 0
+
+# Read all lines for the current workspace into an array.
+mapfile -t lines < <(awk -F'\t' -v ws="$ws" '$1 == ws { print }' "$state")
+
+# Find the focused window's index in this workspace list.
+idx=-1
+for i in "${!lines[@]}"; do
+    a=$(awk -F'\t' '{ print $2 }' <<<"${lines[$i]}")
+    [[ $a = "$addr" ]] && { idx=$i; break; }
+done
+(( idx < 0 )) && exit 0
+
+count=${#lines[@]}
+(( count < 2 )) && exit 0
+
+case "$dir" in
+    left)
+        (( idx == 0 )) && exit 0
+        # Swap idx-1 and idx
+        tmp=${lines[$((idx-1))]}
+        lines[$((idx-1))]=${lines[$idx]}
+        lines[$idx]=$tmp
+        ;;
+    right)
+        (( idx == count - 1 )) && exit 0
+        tmp=${lines[$((idx+1))]}
+        lines[$((idx+1))]=${lines[$idx]}
+        lines[$idx]=$tmp
+        ;;
+    *) echo "Usage: $0 left|right" >&2; exit 1 ;;
+esac
+
+# Rewrite the file: lines for OTHER workspaces preserved, lines for this
+# workspace replaced with reordered array.
+tmpfile=$(mktemp)
+{
+    awk -F'\t' -v ws="$ws" '$1 != ws' "$state"
+    printf '%s\n' "${lines[@]}"
+} > "$tmpfile"
+mv "$tmpfile" "$state"
+
+# Touch the file so any tail-following process sees activity; the
+# hypr-state.sh emitter is event-driven, so also nudge it by sending a
+# benign hyprctl command that produces an activewindow event.
+hyprctl dispatch focuswindow "address:$addr" >/dev/null

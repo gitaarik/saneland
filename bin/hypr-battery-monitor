@@ -1,0 +1,134 @@
+#!/usr/bin/bash
+#
+# Battery low-charge notifier.
+#
+# Started once from hyprland.conf's exec-once. Fires a swaync notification
+# (notify-send) when the charge crosses a threshold *downward while
+# discharging*, and clears it again once you plug in or recover. The eww bar
+# already shows the percentage and recolors at these same tiers (low 30 /
+# warning 20 / critical 10) — this adds the audible/visible heads-up so a
+# drain doesn't go unnoticed while you're not looking at the bar.
+#
+# Timing is a hybrid (see the main loop): a slow periodic poll catches the
+# capacity thresholds (there's no event for "crossed 20%"), while a udev
+# subscription on the power_supply subsystem wakes us *instantly* on
+# plug/unplug so dismissal and re-arming feel immediate rather than lagging a
+# poll cycle. udev is generic Linux (ships with systemd/eudev), so this stays
+# portable — nothing here is tied to Hyprland/eww/swaync.
+#
+# Thresholds mirror the bar's warning/critical color tiers so a notification
+# fires exactly as the widget changes color (see eww.yuck):
+WARN_PCT=20        # normal-urgency "battery low"
+CRIT_PCT=10        # critical-urgency "battery critically low"
+INTERVAL=60        # seconds between capacity polls (plug/unplug wakes early)
+
+# Edge-triggering: we only notify on a *fresh* crossing. Each threshold is
+# "armed" once the charge rises back above it (or while on AC), and fires
+# once when it drops to/below it. Without this we'd re-notify every poll for
+# the whole time the battery sits in the low band.
+warn_armed=1
+crit_armed=1
+
+# Server-assigned id of the low-battery notification currently on screen (empty
+# when none). The critical notification has `critical` urgency, which swaync
+# keeps on screen until it's *explicitly* dismissed — so once the situation is
+# resolved (plugged in, or charge back above the band) we must close it
+# ourselves via the freedesktop CloseNotification D-Bus method. We also reuse
+# the id as the replace-id, so warn -> crit updates the same bubble instead of
+# stacking a second one.
+active_nid=""
+
+read_first() { cat "$@" 2>/dev/null | head -1; }
+
+# Close the on-screen low-battery notification, if any.
+dismiss() {
+    [[ -n $active_nid ]] || return
+    gdbus call --session --dest org.freedesktop.Notifications \
+        --object-path /org/freedesktop/Notifications \
+        --method org.freedesktop.Notifications.CloseNotification "$active_nid" \
+        >/dev/null 2>&1
+    active_nid=""
+}
+
+# notify <urgency> <title> <body> — (re)raise the low-battery notification and
+# remember its id. --print-id echoes the server-assigned id on stdout.
+notify() {
+    active_nid=$(notify-send --print-id -a "Battery" -u "$1" \
+        ${active_nid:+-r "$active_nid"} -h "int:value:$cap" \
+        "$2" "$3" 2>/dev/null)
+}
+
+# Read the current state and act on it. Idempotent: safe to call on every
+# poll tick and on every power event.
+evaluate() {
+    cap=$(read_first /sys/class/power_supply/BAT*/capacity)
+    local status online
+    status=$(read_first /sys/class/power_supply/BAT*/status)
+    online=$(read_first /sys/class/power_supply/A*/online)
+    [[ -n $cap ]] || return
+
+    # Treat "plugged in" as either the AC adapter reporting online or the
+    # battery status saying Charging/Full — belt and braces because some
+    # firmwares lag one of the two.
+    local charging=0
+    [[ $online == "1" || $status == "Charging" || $status == "Full" ]] && charging=1
+
+    if (( charging )); then
+        # On AC: clear any lingering low-battery notification and re-arm both
+        # so the next unplug-and-drain triggers fresh ones.
+        dismiss
+        warn_armed=1
+        crit_armed=1
+    elif (( cap <= CRIT_PCT )); then
+        if (( crit_armed )); then
+            notify critical "Battery critically low" \
+                "${cap}% remaining — plug in now."
+            crit_armed=0
+            warn_armed=0   # skip a redundant warn on the way down
+        fi
+    elif (( cap <= WARN_PCT )); then
+        if (( warn_armed )); then
+            notify normal "Battery low" \
+                "${cap}% remaining — consider plugging in."
+            warn_armed=0
+        fi
+        # Re-arm critical once we're back above its band.
+        (( cap > CRIT_PCT )) && crit_armed=1
+    else
+        # Comfortably above both bands: resolved — clear any notification and
+        # re-arm everything.
+        dismiss
+        warn_armed=1
+        crit_armed=1
+    fi
+}
+
+# Singleton: bail if a monitor is already running (leftover from a previous
+# Hyprland instance, or a manual re-run). The lock auto-releases on death, so
+# a crashed monitor won't block the next login.
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/hypr-battery-monitor.lock" || exit 0
+flock -n 9 || exit 0
+
+# Subscribe to power_supply udev events on a dedicated fd. `read -t` on this fd
+# is our pacing primitive: it returns early (0) the instant an event arrives,
+# or on timeout (>128) after INTERVAL for the periodic capacity check.
+start_udev() {
+    exec {UDEV}< <(stdbuf -oL udevadm monitor --udev --subsystem-match=power_supply 2>/dev/null)
+}
+start_udev
+
+while true; do
+    evaluate
+    if read -t "$INTERVAL" -u "$UDEV" _; then
+        # A power event (plug/unplug) arrived. udev emits several lines per
+        # event — drain the burst so we re-evaluate once, not N times.
+        while read -t 0.2 -u "$UDEV" _; do :; done
+    elif (( $? <= 128 )); then
+        # Not a timeout -> the monitor died (EOF). Restart it without
+        # busy-spinning, then fall through to re-evaluate.
+        exec {UDEV}<&-
+        sleep 2
+        start_udev
+    fi
+    # (timeout, $? > 128) falls straight through to the periodic re-evaluate.
+done

@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+#
+# Track Hyprland window creation order in a per-workspace file. New windows
+# are inserted AFTER the currently-focused window (matching the user's
+# mental model: the new window appears right next to what was active).
+# Falls back to append if no focus context is available.
+#
+# Maintains ~/.cache/hypr-window-order with one line per window:
+#     WORKSPACE_ID<TAB>ADDRESS
+# Removed on closewindow; workspace updated on movewindow.
+
+set -uo pipefail
+
+state_file=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-order
+sock=${XDG_RUNTIME_DIR:-/run/user/$UID}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock
+
+mkdir -p "$(dirname "$state_file")"
+
+if [[ ! -S $sock ]]; then
+    echo "hypr-window-order: Hyprland event socket not found: $sock" >&2
+    exit 1
+fi
+
+# Seed the file with existing windows in hyprctl-native order.
+hyprctl -j clients | jq -r '.[] | "\(.workspace.id)\t\(.address)"' > "$state_file"
+
+# Track the last two focused windows so an openwindow event can insert
+# the new window after whichever was focused right BEFORE the new one
+# (sometimes the new window auto-focuses by the time openwindow fires).
+last_focused=""
+current_focused=$(hyprctl -j activewindow 2>/dev/null | jq -r '.address // ""')
+
+ncat -U "$sock" | while IFS= read -r line; do
+    case "$line" in
+        activewindow*)
+            new_focus=$(hyprctl -j activewindow 2>/dev/null | jq -r '.address // ""')
+            if [[ -n $new_focus && $new_focus != "$current_focused" ]]; then
+                last_focused=$current_focused
+                current_focused=$new_focus
+            fi
+            ;;
+        openwindow*)
+            # openwindow>>ADDRESS,WORKSPACE_ID,CLASS,TITLE
+            data=${line#openwindow>>}
+            addr=${data%%,*}
+            rest=${data#*,}
+            ws=${rest%%,*}
+            new_addr="0x${addr}"
+
+            # Pick insertion point: current_focused unless that IS the new
+            # window (auto-focused), in which case use the prior focus.
+            insert_after=$current_focused
+            [[ $insert_after = "$new_addr" ]] && insert_after=$last_focused
+
+            if [[ -z $insert_after ]]; then
+                printf '%s\t%s\n' "$ws" "$new_addr" >> "$state_file"
+            else
+                # Insert after the workspace+address match; if not found,
+                # append at end.
+                awk -v ws="$ws" -v ia="$insert_after" -v na="$new_addr" '
+                    BEGIN { FS = OFS = "\t" }
+                    { print }
+                    $1 == ws && $2 == ia { print ws, na; inserted = 1 }
+                    END { if (!inserted) print ws, na }
+                ' "$state_file" > "${state_file}.tmp" \
+                    && mv "${state_file}.tmp" "$state_file"
+            fi
+            ;;
+        closewindow*)
+            addr=${line#closewindow>>}
+            sed -i "/\t0x${addr}$/d" "$state_file" 2>/dev/null || true
+            ;;
+        movewindow*)
+            data=${line#movewindow>>}
+            addr=${data%%,*}
+            rest=${data#*,}
+            ws=${rest%%,*}
+            sed -i "s|^[^\t]*\t0x${addr}$|${ws}\t0x${addr}|" "$state_file" 2>/dev/null || true
+            ;;
+    esac
+done

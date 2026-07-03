@@ -1,0 +1,279 @@
+#!/usr/bin/env bash
+#
+# Listen for Hyprland window events and:
+#
+#   - On open: restore the window's last saved geometry for its class
+#     (KWin-style "remember window size/position"). If there's no
+#     saved geometry, fall back to the existing daemon policy:
+#       1. policy_skip_class_re  — never touch (e.g. Tor Browser)
+#       2. no_size_hint_class_re — sized via windowrule, skip here
+#       3. classify_by_title     — per-app "is this a main window?"
+#       4. first-of-class        — only window of its class -> maximize
+#       5. size heuristic        — both axes >= 60% work area -> main
+#
+#   - On close: save the window's geometry to a per-class file at
+#     ~/.cache/hypr-window-state/<class>.json, using classify_by_title
+#     to decide:
+#       0 (main)    -> save unconditionally
+#       1 (popup)   -> don't save
+#       2 (default) -> save only if it was the last window of its class
+#     This means snapped windows (50% on an axis) get saved, while a
+#     Thunderbird event-details popup never overwrites the main mail
+#     window's saved size.
+#
+# Hyprland's closewindow event arrives after the window is dropped
+# from `hyprctl clients`, so a background loop snapshots clients to
+# a cache file every 2s and the close handler looks the window up
+# there.
+#
+# To reset persisted geometry for an app: rm ~/.cache/hypr-window-state/<class>.json
+
+set -uo pipefail
+source "${HOME}/.local/bin/hypr-window-lib.sh"
+
+sock=${XDG_RUNTIME_DIR:-/run/user/$UID}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock
+
+if [[ ! -S $sock ]]; then
+    echo "hypr-max-on-open: Hyprland event socket not found: $sock" >&2
+    exit 1
+fi
+
+state_dir=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-state
+cache_file=$state_dir/clients-cache.json
+mkdir -p "$state_dir"
+
+# Policy skip: never maximize, never persist. Tor Browser specifically
+# because window dimensions feed fingerprinting.
+policy_skip_class_re='^(Tor Browser)$'
+
+# Apps that ship no size signal on open — initial commit is wrong, so
+# the size heuristic can't be trusted. They get explicit sizes via
+# `windowrule = size W H` in hyprland.conf and we skip here so we
+# don't override that.
+no_size_hint_class_re='^([Bb]lueman-manager|pavucontrol)$'
+
+# Fraction of the work area each axis must reach for a window to count
+# as "main" in the open-time size heuristic. NOT used at close time —
+# saving is gated by classify_by_title + last-of-class instead, so
+# snapped windows (50% on one axis) are still saved.
+main_threshold=0.6
+
+# Per-class title classifier. Returns:
+#   0 -> main    (open: apply saved or maximize; close: save)
+#   1 -> popup   (open: leave alone; close: don't save)
+#   2 -> default (open: first-of-class + heuristic; close: save iff last)
+classify_by_title() {
+    local class=$1 title=$2
+    case "$class" in
+        [Ww]aterfox)
+            # Internal popups: bookmarks Library, About, Picture-in-Picture.
+            [[ $title == "Library" \
+            || $title == About* \
+            || $title == "Picture-in-Picture" ]] && return 1
+            # Main browsing windows: literal "Waterfox" (blank page)
+            # or "...{em-dash|hyphen} Waterfox" suffix.
+            local re='^Waterfox$|.* (—|-) Waterfox$'
+            [[ $title =~ $re ]] && return 0
+            ;;
+        org\.mozilla\.[Tt]hunderbird|[Tt]hunderbird)
+            # Main mail/calendar/chat windows: title ends in "Mozilla
+            # Thunderbird" (with or without a leading "<thing> - ").
+            # At openwindow time the title is often just "Mozilla
+            # Thunderbird" or empty before Inbox loads, so we accept
+            # both the bare form and the full form here.
+            [[ $title == "Thunderbird" \
+            || $title == "Mozilla Thunderbird" \
+            || $title == *" - Mozilla Thunderbird" ]] && return 0
+            # Unrecognised title -> fall through to default. The
+            # existing first-of-class + fullscreenClient/size heuristic
+            # then handles popups (event details, address book editor)
+            # correctly: first Thunderbird window is main and gets
+            # maximized; subsequent ones with set_maximized() get
+            # unmax'd and fall to the size check.
+            ;;
+    esac
+    return 2
+}
+
+# Sanitise a class name for use as a filename. Almost never needed in
+# practice; defensive against classes with slashes.
+class_to_filename() {
+    printf '%s' "$1" | tr '/' '_'
+}
+
+# Try to apply previously saved geometry for the given class. Returns
+# 0 on success, 1 if there's no saved file (or class is denied).
+apply_saved_geometry() {
+    local class=$1 addr=$2
+    [[ $class =~ $policy_skip_class_re ]] && return 1
+    [[ $class =~ $no_size_hint_class_re ]] && return 1
+
+    local saved=$state_dir/"$(class_to_filename "$class")".json
+    [[ -f $saved ]] || return 1
+
+    local w h x y
+    w=$(jq -r '.width  // empty' "$saved" 2>/dev/null)
+    h=$(jq -r '.height // empty' "$saved" 2>/dev/null)
+    x=$(jq -r '.x      // empty' "$saved" 2>/dev/null)
+    y=$(jq -r '.y      // empty' "$saved" 2>/dev/null)
+
+    [[ -z $w || -z $h || -z $x || -z $y ]] && return 1
+
+    # hypr_apply_geom picks the border to match the restored size: a
+    # window saved at work-area size (a main window like Waterfox, which
+    # is saved maximized) comes back borderless, instead of wearing a
+    # stray active-border around an otherwise-maximized frame.
+    hypr_apply_geom "$addr" "$w" "$h" "$x" "$y"
+}
+
+save_geometry() {
+    local class=$1 w=$2 h=$3 x=$4 y=$5
+    local saved=$state_dir/"$(class_to_filename "$class")".json
+    jq -n --argjson w "$w" --argjson h "$h" --argjson x "$x" --argjson y "$y" \
+        '{width: $w, height: $h, x: $x, y: $y}' \
+        > "$saved.tmp" && mv "$saved.tmp" "$saved"
+}
+
+# Restore saved geometry or maximize as fallback.
+apply_or_maximize() {
+    local class=$1 addr=$2
+    apply_saved_geometry "$class" "$addr" || hypr_set_max "$addr"
+}
+
+# Background poller: refresh the clients cache every 2s so closewindow
+# has something to look up after the window is gone from Hyprland.
+(
+    while sleep 2; do
+        if hyprctl -j clients > "$cache_file.tmp" 2>/dev/null; then
+            mv "$cache_file.tmp" "$cache_file"
+        fi
+    done
+) &
+poller_pid=$!
+trap 'kill $poller_pid 2>/dev/null' EXIT INT TERM
+
+ncat -U "$sock" | while IFS= read -r line; do
+    case "$line" in
+        openwindow*)
+            # Format: openwindow>>ADDRESS,WORKSPACE,CLASS,TITLE
+            data=${line#openwindow>>}
+            addr=${data%%,*}
+            rest=${data#*,}
+            ws=${rest%%,*}
+            rest2=${rest#*,}
+            class=${rest2%%,*}
+            title=${rest2#*,}
+            addr_full="0x${addr}"
+
+            [[ $class =~ $policy_skip_class_re  ]] && continue
+            [[ $class =~ $no_size_hint_class_re ]] && continue
+
+            classify_by_title "$class" "$title"
+            case $? in
+                0)  # main: restore saved geom, else maximize
+                    (sleep 0.05
+                     apply_or_maximize "$class" "$addr_full") &
+                    continue ;;
+                1)  continue ;;
+            esac
+
+            (
+                sleep 0.05
+
+                # First-of-class: count windows currently sharing this
+                # class. The new window is already in the list, so
+                # count <= 1 means we're the only one.
+                count=$(hyprctl -j clients | jq --arg c "$class" \
+                    '[.[] | select(.class == $c)] | length')
+
+                if (( count <= 1 )); then
+                    apply_or_maximize "$class" "$addr_full"
+                    exit 0
+                fi
+
+                # Subsequent window of the same class: a popup sibling
+                # of a main window. If the client requested its own
+                # maximize state (Thunderbird's event-details popup does
+                # this on Wayland), undo it so we see the real preferred
+                # size; otherwise the heuristic sees ~work-area
+                # dimensions and wrongly classifies as main.
+                client=$(hyprctl -j clients | jq -c --arg a "$addr_full" \
+                    '.[] | select(.address == $a)')
+                [[ -z $client || $client == "null" ]] && exit 0
+
+                fc=$(echo "$client" | jq -r '.fullscreenClient')
+                if [[ $fc =~ ^[12]$ ]]; then
+                    hyprctl dispatch fullscreenstate "0 0,address:$addr_full" >/dev/null
+                    sleep 0.08
+                    client=$(hyprctl -j clients | jq -c --arg a "$addr_full" \
+                        '.[] | select(.address == $a)')
+                    [[ -z $client || $client == "null" ]] && exit 0
+                fi
+
+                ww=$(echo "$client" | jq -r '.size[0]')
+                wh=$(echo "$client" | jq -r '.size[1]')
+                mon_id=$(echo "$client" | jq -r '.monitor')
+
+                # Use the new window's own monitor, not the focused one —
+                # it may have opened on a different output.
+                hypr_work_area "$mon_id" || exit 0
+
+                is_main=$(awk -v ww="$ww" -v wh="$wh" \
+                              -v aw="$WORK_W" -v ah="$WORK_H" \
+                              -v t="$main_threshold" \
+                    'BEGIN { print (ww >= aw * t && wh >= ah * t) ? 1 : 0 }')
+
+                [[ $is_main == 0 ]] && exit 0
+
+                apply_or_maximize "$class" "$addr_full"
+            ) &
+            ;;
+
+        closewindow*)
+            # Format: closewindow>>ADDRESS
+            addr=${line#closewindow>>}
+            addr_full="0x${addr}"
+
+            # Try a live query first — closewindow often fires before
+            # Hyprland drops the window from its client list, giving us
+            # the up-to-the-moment size (catches manual resizes done
+            # seconds before close). The cache is only the fallback for
+            # the rare race where the window's already gone.
+            client=$(hyprctl -j clients 2>/dev/null | jq -c --arg a "$addr_full" \
+                '.[]? | select(.address == $a)' 2>/dev/null)
+
+            if [[ -z $client || $client == "null" ]]; then
+                [[ -f $cache_file ]] || continue
+                client=$(jq -c --arg a "$addr_full" \
+                    '.[]? | select(.address == $a)' "$cache_file" 2>/dev/null)
+                [[ -z $client || $client == "null" ]] && continue
+            fi
+
+            class=$(echo "$client" | jq -r '.class')
+            title=$(echo "$client" | jq -r '.title')
+
+            [[ $class =~ $policy_skip_class_re  ]] && continue
+            [[ $class =~ $no_size_hint_class_re ]] && continue
+
+            classify_by_title "$class" "$title"
+            verdict=$?
+
+            case $verdict in
+                1)  continue ;;  # popup -> don't save
+                2)  # default -> save only if last-of-class
+                    remaining=$(hyprctl -j clients | jq --arg c "$class" \
+                        '[.[] | select(.class == $c)] | length')
+                    (( remaining > 0 )) && continue
+                    ;;
+                # 0 (main) -> save unconditionally
+            esac
+
+            w=$(echo "$client" | jq -r '.size[0]')
+            h=$(echo "$client" | jq -r '.size[1]')
+            x=$(echo "$client" | jq -r '.at[0]')
+            y=$(echo "$client" | jq -r '.at[1]')
+
+            save_geometry "$class" "$w" "$h" "$x" "$y"
+            ;;
+    esac
+done

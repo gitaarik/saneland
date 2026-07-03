@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+#
+# Snap the active window to one half of the work area: left, right, top,
+# or bottom. Bound to mod+Ctrl+h/l/k/j.
+#
+# Same work-area logic as hypr-fill-work-area, via hypr_work_area in the
+# shared lib (wlr-randr for precise scale, reserved zones subtracted for the
+# eww bar). Also resets border so the snapped window looks like a proper
+# floating half.
+
+set -uo pipefail
+source "${HOME}/.local/bin/hypr-window-lib.sh"
+
+side=${1:?Usage: $0 left|right|top|bottom}
+
+hypr_work_area || exit 1
+work_w=$WORK_W work_h=$WORK_H res_top=$RES_TOP
+
+# Border size: visible borders take pixels on each side, so inset position +
+# shrink size accordingly. Otherwise borders on edges that touch the screen
+# boundary render outside the visible area.
+bw=2
+
+target=$(hyprctl -j activewindow | jq -r '.address')
+[[ -z $target || $target = "null" ]] && exit 0
+
+# Quarter snap: if the previous snap on this same window was a perpendicular
+# half (within 1.5s), combine into the matching corner. Otherwise apply a
+# normal half snap. State file stored under /tmp, cleared after a quarter so
+# subsequent snaps start fresh.
+state_file=/tmp/hypr-snap-state.${UID}
+now=$(date +%s%N)
+
+horiz=""; vert=""
+case "$side" in
+    left|right)  horiz=$side ;;
+    top|bottom)  vert=$side ;;
+esac
+
+if [[ -r $state_file ]]; then
+    IFS=$'\t' read -r last_time last_side last_addr < "$state_file" 2>/dev/null || true
+    elapsed_ms=$(( (now - ${last_time:-0}) / 1000000 ))
+    if (( elapsed_ms < 1500 )) && [[ ${last_addr:-} = "$target" ]]; then
+        case "$last_side" in
+            left|right) [[ -z $horiz ]] && horiz=$last_side ;;
+            top|bottom) [[ -z $vert ]]  && vert=$last_side ;;
+        esac
+    fi
+fi
+
+half_w=$(( work_w / 2 ))
+half_h=$(( work_h / 2 ))
+
+if [[ -n $horiz && -n $vert ]]; then
+    # Quarter
+    w=$(( half_w - bw - bw ))
+    h=$(( half_h - bw - bw ))
+    [[ $horiz = left  ]] && x=$bw || x=$(( half_w + bw ))
+    [[ $vert  = top   ]] && y=$(( res_top + bw )) || y=$(( res_top + half_h + bw ))
+    # Clear state so the next snap starts a new combo.
+    : > "$state_file"
+else
+    case "$side" in
+        left)
+            x=$bw  y=$(( res_top + bw ))
+            w=$(( half_w - bw - bw ))  h=$(( work_h - bw - bw )) ;;
+        right)
+            x=$(( half_w + bw ))  y=$(( res_top + bw ))
+            w=$(( half_w - bw - bw ))  h=$(( work_h - bw - bw )) ;;
+        top)
+            x=$bw  y=$(( res_top + bw ))
+            w=$(( work_w - bw - bw ))  h=$(( half_h - bw - bw )) ;;
+        bottom)
+            x=$bw  y=$(( res_top + half_h + bw ))
+            w=$(( work_w - bw - bw ))  h=$(( half_h - bw - bw )) ;;
+        *) echo "Usage: $0 left|right|top|bottom" >&2; exit 1 ;;
+    esac
+    # Save state for a possible follow-up perpendicular snap.
+    printf '%s\t%s\t%s\n' "$now" "$side" "$target" > "$state_file"
+fi
+
+hyprctl --batch \
+    "dispatch resizewindowpixel exact ${w} ${h},address:${target}; \
+     dispatch movewindowpixel exact ${x} ${y},address:${target}; \
+     $(hypr_chrome "$target" normal)" >/dev/null

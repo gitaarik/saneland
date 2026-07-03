@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#
+# Step screen brightness with a perceptually-tuned curve.
+#
+# Brightness perception is roughly logarithmic, so a 5% jump at 5% is
+# huge while a 5% jump at 80% is barely perceptible. Two bands:
+#   < 10%  → 1% steps   (precise control near a too-dark screen)
+#   >= 10% → 5% steps   (quick travel through the usable range)
+# A 1% floor prevents the kernel from being told to drop the backlight
+# to 0 (visible-only-when-plugged-in territory) by an unlucky scroll.
+#
+# Usage: brightness-step up|down
+# Bound from hyprland.conf via the XF86MonBrightness* keys, and from
+# the eww battery widget's :onscroll while the battery popup is open
+# (eww's :onscroll `{}` substitution emits `up`/`down`, which is what
+# this script natively takes — no translation needed).
+
+set -euo pipefail
+
+dir=${1:?Usage: brightness-step up|down}
+
+# brightnessctl -m emits a comma-separated machine-readable line; field 4 is
+# the current percentage (e.g. "47%").
+cur=$(brightnessctl -m | cut -d',' -f4 | tr -d '%')
+
+if (( cur < 10 )); then step=1; else step=5; fi
+
+case "$dir" in
+    up)   new=$(( cur + step )); (( new > 100 )) && new=100 ;;
+    down) new=$(( cur - step )); (( new < 1   )) && new=1   ;;
+    *)    echo "Usage: $0 up|down" >&2; exit 1 ;;
+esac
+brightnessctl set "${new}%" >/dev/null
+
+# Push the new value to eww so the popup widgets update immediately
+# instead of waiting on the brightness defpoll's 2s tick. `|| true`
+# keeps the keybind silent if eww isn't running.
+eww update brightness="$new" 2>/dev/null || true

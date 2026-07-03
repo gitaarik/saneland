@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#
+# Cycle focus across windows on the current workspace in hyprctl's stable
+# order (which is also the taskbar order). cyclenext follows z-order, which
+# the raise-focused daemon keeps shuffling — so cyclenext becomes
+# unpredictable with 3+ windows. This script walks the workspace's window
+# list manually for predictable next/prev behavior.
+
+set -uo pipefail
+
+dir=${1:-next}
+
+ws=$(hyprctl -j activeworkspace 2>/dev/null | jq -r '.id') || exit 0
+active=$(hyprctl -j activewindow 2>/dev/null | jq -r '.address') || exit 0
+
+# Read workspace's windows in CREATION ORDER from the order tracker daemon's
+# state file. Matches waybar's taskbar order (append-on-open, no reorder on
+# focus). Fall back to hyprctl pid+address sort if the file is missing.
+order_file=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-order
+if [[ -r $order_file ]]; then
+    mapfile -t addrs < <(awk -v ws="$ws" -F'\t' '$1 == ws { print $2 }' "$order_file")
+else
+    mapfile -t addrs < <(hyprctl -j clients 2>/dev/null | jq -r --argjson ws "$ws" '[.[] | select(.workspace.id == $ws)] | sort_by([.pid, .address]) | .[].address')
+fi
+count=${#addrs[@]}
+(( count == 0 )) && exit 0
+
+# Find current focused index (or -1)
+cur=-1
+for i in "${!addrs[@]}"; do
+    [[ ${addrs[$i]} = "$active" ]] && { cur=$i; break; }
+done
+
+if [[ $dir == "prev" ]]; then
+    next=$(( (cur - 1 + count) % count ))
+else
+    next=$(( (cur + 1) % count ))
+fi
+
+hyprctl dispatch focuswindow "address:${addrs[$next]}" >/dev/null

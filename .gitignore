@@ -1,0 +1,22 @@
+# Generated active-theme / gui-size symlinks — created by install.sh (and
+# flipped by the `theme` script). The tracked sources are the -dark/-light
+# variants; the active symlink is machine state, not source.
+/config/eww/eww.scss
+/config/kitty/color-scheme.conf
+/config/kitty/gui-size.conf
+/config/rofi/colorScheme.rasi
+/config/rofi/guiSize.rasi
+/config/yazi/theme.toml
+/config/swaync/style.css
+/config/gtk-3.0/settings.ini
+/config/lsd/config.yaml
+
+# User-supplied wallpaper images (drop your own in — see wallpapers/README.md)
+/wallpapers/dark/*
+/wallpapers/light/*
+!/wallpapers/*/.gitkeep
+
+# OS / editor cruft
+*.swp
+*~
+.DS_Store

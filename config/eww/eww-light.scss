@@ -1,0 +1,30 @@
+// Gruvbox light palette. The shared rules live in `_eww-common.scss`.
+// Selected via the `eww.scss` symlink, flipped by the `theme` script.
+
+$bg:           #fbf1c7;
+$bg-secondary: #ebdbb2;
+$fg:           #3c3836;
+$fg-dim:       #7c6f64;
+$accent:       #b57614;
+$accent-tint:  rgba(181, 118, 20, 0.25);
+// Orange core of the active-cell highlight (cell-active fades it to $bg at the
+// edges). Higher alpha than the dark theme: over the pale cream $bg a low-alpha
+// accent desaturates into a muddy tan, so it stays a bit stronger than dark's
+// to read as a clean gold — but still light enough to be a subtle glow.
+$accent-fill:  rgba($accent, 0.4);
+// Even fainter fill for the hover state — same glow, lighter touch.
+$accent-fill-hover: rgba($accent, 0.13);
+$high:         #16a34a;
+$low:          #b57614;
+$warning:      #af3a03;
+$critical:     #9d0006;
+$border:       #d5c4a1;
+// Right-side widget separators — a touch darker than $border so the inset
+// gradient hairline between tray cells reads as a clear seam against the
+// pale $bg.
+$divider:      #c8b894;
+// Systray/start popup card outlines — a muted accent orange (half-strength)
+// so they read as a deliberate frame without the full accent shouting.
+$popup-border: rgba($accent, 0.5);
+
+@import "eww-common";

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#
+# Toggle the active window between "maximized" (work-area-sized) and its
+# previous size+position. Saves the pre-maximize geometry to a state file
+# keyed by address so each window remembers its own restore size.
+#
+# Bound to mod+m.
+
+set -uo pipefail
+source "${HOME}/.local/bin/hypr-window-lib.sh"
+
+state_file=/tmp/hypr-window-prev-size.${UID}
+touch "$state_file"
+
+target=$(hyprctl -j activewindow | jq -r '.address // ""')
+[[ -z $target || $target = "null" ]] && exit 0
+
+active=$(hyprctl -j activewindow)
+cur_w=$(jq -r '.size[0]' <<<"$active")
+cur_h=$(jq -r '.size[1]' <<<"$active")
+cur_x=$(jq -r '.at[0]'   <<<"$active")
+cur_y=$(jq -r '.at[1]'   <<<"$active")
+
+hypr_work_area
+
+# Tolerance for "is currently maximized" check (Hyprland may report sizes
+# off by a couple px due to scale rounding / borders).
+is_max() {
+    local dw=$(( cur_w - WORK_W ))
+    local dh=$(( cur_h - WORK_H ))
+    (( ${dw#-} <= 3 && ${dh#-} <= 3 ))
+}
+
+if is_max; then
+    # Restore from saved state (if any). hypr_apply_geom restores the
+    # border too (always 2 here — the saved size is sub-work-area).
+    saved=$(awk -v t="$target" -F'\t' '$1 == t { print; exit }' "$state_file")
+    if [[ -n $saved ]]; then
+        IFS=$'\t' read -r _ sx sy sw sh <<<"$saved"
+        hypr_apply_geom "$target" "$sw" "$sh" "$sx" "$sy"
+        # Remove the saved entry — next mod+m re-saves current size.
+        sed -i "/^${target}\t/d" "$state_file"
+    fi
+else
+    # Save current size+position, then maximize.
+    sed -i "/^${target}\t/d" "$state_file"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$target" "$cur_x" "$cur_y" "$cur_w" "$cur_h" >> "$state_file"
+    hypr_set_max "$target"
+fi

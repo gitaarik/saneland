@@ -1,0 +1,22 @@
+#!/usr/bin/bash
+#
+# Rotate the wallpaper within the current theme's pool on a timer.
+#
+# Started once from hyprland.conf's exec-once. Every $INTERVAL it asks
+# hypr-wallpaper to pick a fresh image from whatever theme is active at that
+# moment (~/.cache/current-theme), so it follows dark/light switches with no
+# extra wiring. The first iteration also paints the initial wallpaper at login.
+#
+# Change the cadence here (sleep(1) suffixes: 45m, 1h, 90s, ...):
+INTERVAL=30m
+
+# Singleton: if a rotator is already running (e.g. a leftover from a previous
+# Hyprland instance, or a manual re-run) bail out. The lock auto-releases when
+# the holding process dies, so a crashed rotator won't block the next login.
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/hypr-wallpaper-rotate.lock" || exit 0
+flock -n 9 || exit 0
+
+while true; do
+    ~/.local/bin/hypr-wallpaper
+    sleep "$INTERVAL"
+done

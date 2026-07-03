@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#
+# Resize + move a window to fill the current monitor's work area (i.e.
+# respecting waybar's exclusive zone) and drop its border.
+#
+# Usage:
+#   hypr-fill-work-area              # active window
+#   hypr-fill-work-area 0xADDR       # specific window
+#
+# Bound to mod+m for on-demand maximize. Also called by hypr-max-on-open
+# (with an address arg) for new windows that don't honor the size
+# windowrule.
+
+set -uo pipefail
+source "${HOME}/.local/bin/hypr-window-lib.sh"
+
+target=${1:-}
+if [[ -z $target ]]; then
+    target=$(hyprctl -j activewindow | jq -r '.address')
+    [[ -z $target || $target = "null" ]] && exit 0
+fi
+
+hypr_set_max "$target"
