@@ -65,16 +65,18 @@ main_threshold=0.6
 classify_by_title() {
     local class=$1 title=$2
     case "$class" in
-        [Ff]irefox)
-            # Internal popups: bookmarks Library, About, Picture-in-Picture.
+        [Ff]irefox*|[Ll]ibrewolf*|[Ww]aterfox*|[Zz]en*|[Cc]hromium*|[Gg]oogle-chrome*|[Bb]rave*|[Vv]ivaldi*|[Mm]icrosoft-edge*)
+            # Common browsers (Firefox & Chromium families). Small internal
+            # popups shared across them — Picture-in-Picture, Firefox's
+            # bookmarks Library, About dialogs — are left alone; every other
+            # window of a browser class is a real browsing window and gets
+            # maximized. Add your browser's window-class above if missing
+            # (find it with `hyprctl clients | grep class`).
             [[ $title == "Library" \
             || $title == About* \
-            || $title == "Picture-in-Picture" ]] && return 1
-            # Main browsing windows: title ends in "Mozilla Firefox"
-            # (with or without a "<page> — " prefix, incl. Private Browsing).
-            # Adapt this class/title pattern to your own browser.
-            local re='Mozilla Firefox( \(Private Browsing\))?$'
-            [[ $title =~ $re ]] && return 0
+            || $title == "Picture-in-Picture" \
+            || $title == "Picture in picture" ]] && return 1
+            return 0
             ;;
         org\.mozilla\.[Tt]hunderbird|[Tt]hunderbird)
             # Main mail/calendar/chat windows: title ends in "Mozilla
