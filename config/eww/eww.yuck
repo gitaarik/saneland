@@ -494,12 +494,18 @@
                 :                                   "audio-row"}
           :onclick "~/.config/eww/scripts/network-connect.sh '${net.ssid}'"
     (box :orientation "horizontal" :space-evenly false
-      (label :hexpand true :xalign 0
-           :text {net.state == "error"            ? " ${net.ssid}"
-                : net.state == "connecting"
-                  || net.state == "disconnecting" ? " ${net.ssid}"
-                : net.active                      ? "● ${net.ssid}"
-                :                                   "○ ${net.ssid}"})
+      ;; State glyph in its own fixed-width label — .row-state-icon is a
+      ;; min-width "column" (shared with the bluetooth device list) so the
+      ;; SSID starts at the same x on every row whichever glyph shows.
+      ;; This is the GTK-CSS stand-in for a grid column (GTK has no
+      ;; display:grid). :xalign 0 left-aligns the glyph in that column.
+      (label :class "row-state-icon" :xalign 0
+             :text {net.state == "error"            ? ""
+                  : net.state == "connecting"
+                    || net.state == "disconnecting" ? ""
+                  : net.active                      ? "●"
+                  :                                   "○"})
+      (label :hexpand true :xalign 0 :text {net.ssid})
       ;; Trailing padlock: closed for secured (WPA/WEP/802.1X) networks,
       ;; open for unsecured ones. `net.secured` comes straight from the
       ;; SECURITY column in network-state.sh.
@@ -634,12 +640,17 @@
                 : device.connected                                 ? "audio-row active"
                 :                                                    "audio-row"}
           :onclick "~/.config/eww/scripts/bluetooth-device.sh ${device.mac}"
-    (label :xalign 0
-           :text {device.state == "error"                          ? " ${device.name}"
-                : device.state == "connecting"
-                  || device.state == "disconnecting"               ? " ${device.name}"
-                : device.connected                                 ? "● ${device.name}"
-                :                                                    "○ ${device.name}"})))
+    (box :orientation "horizontal" :space-evenly false
+      ;; Leading state glyph in a fixed-width column (shared
+      ;; .row-state-icon) so the device name lines up across rows, same
+      ;; as the network list.
+      (label :class "row-state-icon" :xalign 0
+             :text {device.state == "error"                          ? ""
+                  : device.state == "connecting"
+                    || device.state == "disconnecting"               ? ""
+                  : device.connected                                 ? "●"
+                  :                                                    "○"})
+      (label :hexpand true :xalign 0 :text {device.name}))))
 
 (defwidget bluetooth-popup-devices []
   (box :orientation "v" :space-evenly false :spacing 1

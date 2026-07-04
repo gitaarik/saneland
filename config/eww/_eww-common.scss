@@ -555,6 +555,17 @@ window#bar > * {
 .network-toggle-icon {
     margin-right: 4px;
 }
+// Leading state glyph on the network + bluetooth device rows, given a
+// fixed-width "column" so the label (SSID / device name) starts at the
+// same x on every row regardless of which glyph shows (connecting
+// spinner / error triangle / ●/○). GTK CSS has no display:grid, so a
+// min-width label + :xalign 0 is the equivalent. 22px clears the widest
+// glyph (the ● bullet's 12.8px advance) plus ~9px of gap. The remaining
+// ~1px variance across glyphs is their differing ink widths and is
+// imperceptible.
+.row-state-icon {
+    min-width: 22px;
+}
 // Placeholder row in the wifi list while the first scan after opening is
 // still in flight ("Searching…") or when it completed with no networks
 // in range ("No networks found"). Dim, mirrors the list rows' padding.
