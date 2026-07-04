@@ -78,6 +78,15 @@
   :initial "false"
   "~/.config/eww/scripts/eww-pref-state.sh clock-show-date false")
 
+;; UI preference: start the clock-popup calendar's week on Monday instead
+;; of Sunday (shares the generic pref seeder). Defaults on because the
+;; daemon is launched with LC_TIME=en_GB.UTF-8 (see hyprland.conf) purely
+;; to get a Monday-first GtkCalendar — this preserves that out of the box.
+;; cal.sh reads the same state file to lay out its columns.
+(deflisten clock-monday-first
+  :initial "true"
+  "~/.config/eww/scripts/eww-pref-state.sh clock-monday-first true")
+
 ;; Bluetooth: adapter power state + paired device list with connection
 ;; status. Driven by `gdbus monitor` on the org.bluez D-Bus service for
 ;; snappy power/connect/disconnect updates, plus a 5s safety-net poll
@@ -112,10 +121,14 @@
 ;; "clock-show-date" preference is on (see the clock widget/popup).
 (defpoll date-short :interval "60s" "date +'%a %-d %b'")
 
-;; Today's date components feed the calendar in the clock popup.
-(defpoll today-day   :interval "60s" :initial "1"    "date +%-d")
-(defpoll today-month :interval "60s" :initial "1"    "date +%-m")
-(defpoll today-year  :interval "60s" :initial "2026" "date +%Y")
+;; Calendar grid for the clock popup, rendered by cal.sh (which honors the
+;; clock-monday-first preference and a persisted month offset for prev/next
+;; navigation). Polled so the "today" highlight stays correct across
+;; midnight; the nav arrows, Today button and week-start toggle also push
+;; an immediate re-render via `eww update`.
+(defpoll cal-data :interval "300s"
+  :initial '{"heading":"","weekdays":["","","","","","",""],"weeks":[]}'
+  "~/.config/eww/scripts/cal.sh render")
 
 ;; Active color scheme — "dark" or "light". Source of truth is
 ;; ~/.cache/current-theme, written by ~/.local/bin/theme. Polled rather
@@ -170,6 +183,21 @@
     (eventbox :cursor "pointer"
               :onclick "~/.config/eww/scripts/eww-pref-toggle.sh ${name} ${value == 'true' ? 'false' : 'true'}"
       (label :xalign 0 :text label))))
+
+;; Like pref-toggle, but for the clock-popup's week-start preference: after
+;; flipping "clock-monday-first" it also re-renders the calendar (cal.sh
+;; refresh) so the grid's columns update in the same click rather than on
+;; the next poll. Kept separate from the generic pref-toggle so that widget
+;; stays a pure state flip with no side effects.
+(defwidget week-start-toggle [value]
+  (box :class "pref-row" :orientation "h" :space-evenly false :spacing 8
+    (checkbox :class "pref-check"
+              :checked {value == "true"}
+              :onchecked   "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first true; ~/.config/eww/scripts/cal.sh refresh"
+              :onunchecked "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first false; ~/.config/eww/scripts/cal.sh refresh")
+    (eventbox :cursor "pointer"
+              :onclick "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first ${value == 'true' ? 'false' : 'true'}; ~/.config/eww/scripts/cal.sh refresh"
+      (label :xalign 0 :text "Start week on Monday"))))
 
 ;; Collapsible "Options" disclosure: a flat clickable header (heading +
 ;; flipping chevron) over a revealer holding the passed children. The
@@ -807,7 +835,10 @@
     (battery-popup-brightness)))
 
 (defwidget clock []
-  (eventbox :onclick "~/.config/eww/scripts/popup-toggle.sh clock-popup"
+  ;; Reset the calendar to the current month on every open/close so the
+  ;; popup always comes up on today rather than wherever the user last
+  ;; navigated (cal.sh today clears the persisted month offset).
+  (eventbox :onclick "~/.config/eww/scripts/popup-toggle.sh clock-popup; ~/.config/eww/scripts/cal.sh today"
     (box :class {"clock" + (open-popup == "clock-popup" ? " active" : "")}
          :orientation "h" :space-evenly false :spacing 6
          :tooltip date-tooltip
@@ -818,16 +849,37 @@
       (label :class "clock-date" :text date-short
              :visible {clock-show-date == "true"}))))
 
-;; Clock popup — left-click the clock to toggle a GtkCalendar with
-;; today highlighted; prev/next-month arrows are built into eww's
-;; calendar widget (via :show-heading). GtkCalendar has no API for
-;; marking today separately from the selected day, so once the user
-;; clicks another date today's indicator is lost — the "Today" button
-;; below re-asserts the bound :day to jump back.
+;; Clock popup — left-click the clock to toggle a calendar with today
+;; highlighted. The grid is rendered by cal.sh (see cal-data) rather than
+;; eww's built-in GtkCalendar widget, because GtkCalendar's first day of
+;; the week is fixed by the locale with no runtime override — and the
+;; popup's Options offer a Sunday/Monday week-start toggle. The prev/next
+;; arrows and Today button drive cal.sh's persisted month offset.
 ;;
 ;; Expansion flag for the clock popup's Options disclosure (rendered by
 ;; the shared options-section widget). Ephemeral — resets on reload.
 (defvar clock-options-expanded false)
+
+;; The self-rendered month grid: a heading with prev/next arrows, a
+;; weekday header row, then one row per week. Column count is a fixed 7
+;; and both header and week rows use :space-evenly so the columns line up;
+;; blank pad cells (empty :text) fill the leading/trailing days. cal-data
+;; supplies the layout already ordered for the current week-start pref.
+(defwidget clock-calendar []
+  (box :class "clock-cal" :orientation "v" :space-evenly false :spacing 4
+    (box :class "clock-cal-head" :orientation "h" :space-evenly false :spacing 4
+      (button :class "clock-cal-nav" :onclick "~/.config/eww/scripts/cal.sh prev" "")
+      (label :class "clock-cal-title" :hexpand true :text {cal-data.heading})
+      (button :class "clock-cal-nav" :onclick "~/.config/eww/scripts/cal.sh next" ""))
+    (box :class "clock-cal-weekdays" :orientation "h" :space-evenly true
+      (for wd in {cal-data.weekdays}
+        (label :class "clock-cal-weekday" :text wd)))
+    (box :orientation "v" :space-evenly false :spacing 2
+      (for week in {cal-data.weeks}
+        (box :orientation "h" :space-evenly true
+          (for cell in {week}
+            (label :class {cell.today ? "clock-cal-day today" : "clock-cal-day"}
+                   :text {cell.d})))))))
 
 (defwidget clock-popup-content []
   (box :class "clock-popup" :orientation "v" :space-evenly false :spacing 8
@@ -853,14 +905,13 @@
         "Full"))
     (options-section :expanded clock-options-expanded :var "clock-options-expanded"
       (pref-toggle :name "clock-show-date" :value clock-show-date
-                   :label "Show date on bar"))
+                   :label "Show date on bar")
+      (week-start-toggle :value clock-monday-first))
     (box :class "clock-popup-divider")
     (label :class "clock-popup-title" :xalign 0 :text date-tooltip)
-    (calendar :day today-day :month today-month :year today-year
-              :show-heading true
-              :show-day-names true)
+    (clock-calendar)
     (button :class "clock-popup-today"
-            :onclick "eww update today-day=$(date +%-d) today-month=$(date +%-m) today-year=$(date +%Y)"
+            :onclick "~/.config/eww/scripts/cal.sh today"
       "Today")))
 
 ;; :hexpand so the left group claims all the room the (fixed-width) right group

@@ -708,8 +708,9 @@ window#bar > * {
     border-color: $fg-dim;
 }
 
-// Clock popup — title + GtkCalendar. Prev/next-month arrows come from
-// GtkCalendar's header (enabled via :show-heading in the widget).
+// Clock popup — title + self-rendered month grid (clock-calendar). The
+// grid is drawn from JSON rather than GtkCalendar so the Options
+// Sunday/Monday week-start toggle can reorder its columns at runtime.
 .clock-popup {
     background-color: $bg;
     color: $fg;
@@ -722,29 +723,45 @@ window#bar > * {
     color: $fg-dim;
     font-weight: bold;
 }
-.clock-popup calendar {
-    background-color: transparent;
-    color: $fg;
-    padding: 4px;
-    // GtkCalendar paints today and selected-day via theme colors. Force
-    // both into a visible accent chip with high contrast so the highlight
-    // can't be hidden by the active GTK theme.
-    -GtkCalendar-inner-border: 2;
-    -GtkCalendar-horizontal-separation: 4;
-    -GtkCalendar-vertical-separation: 2;
+// Self-rendered month grid (clock-calendar widget).
+.clock-cal {
+    padding: 4px 2px 2px 2px;
 }
-.clock-popup calendar:selected {
-    // Faded accent — full $accent washed out the white day text since
-    // GtkCalendar doesn't reliably honor a CSS `color` override on day
-    // cells. Keeping the foreground default and using a translucent
-    // background gives a visible chip without losing readability.
-    background-color: $accent-tint;
+// Heading row: dim month/year title flanked by prev/next arrows.
+.clock-cal-title {
+    color: $fg;
+    font-weight: bold;
+}
+.clock-cal-nav {
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0 8px;
+    color: $fg-dim;
+}
+.clock-cal-nav:hover {
+    color: $fg;
+}
+// Weekday header row — dim, small, sits above the day rows.
+.clock-cal-weekday {
+    color: $fg-dim;
+    font-size: 0.8em;
+    padding: 2px 0;
+}
+// Day cells. Each cell reserves a square so the columns stay aligned as
+// months change length; blank pad cells render empty.
+.clock-cal-day {
+    color: $fg;
+    min-width: 26px;
+    min-height: 22px;
     border-radius: 4px;
 }
-.clock-popup calendar.button { color: $fg-dim; }
-.clock-popup calendar.button:hover { color: $fg; }
-.clock-popup calendar:indeterminate { color: $fg-dim; }
-.clock-popup calendar.header { color: $fg-dim; }
+// Today's chip. A translucent accent fill (matching the popup card
+// buttons) keeps the day text readable rather than washing it out.
+.clock-cal-day.today {
+    background-color: $accent-tint;
+    font-weight: bold;
+}
 
 // "Today" jump-back button below the calendar. Matches power-profile
 // chrome so popup buttons feel consistent.
