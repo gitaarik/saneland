@@ -9,11 +9,12 @@
 # is tracked as an integer offset from the current month in a state file so
 # prev/next navigation survives re-render and reload; `today` resets it.
 #
-# Usage: cal.sh [render|refresh|prev|next|today]
+# Usage: cal.sh [render|refresh|prev|next|today|scroll <up|down>]
 #   render          print the grid JSON on stdout (used by the defpoll)
 #   refresh         re-render the current month and push it with `eww update`
 #   prev|next       step the month offset, then push
 #   today           reset the offset to the current month, then push
+#   scroll up|down  step the month via the calendar's :onscroll (up=prev)
 set -uo pipefail
 
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/eww"
@@ -34,7 +35,14 @@ case $cmd in
     prev)  printf '%s\n' "$(( $(read_offset) - 1 ))" > "$offset_file" ;;
     next)  printf '%s\n' "$(( $(read_offset) + 1 ))" > "$offset_file" ;;
     today) printf '0\n' > "$offset_file" ;;
-    *) echo "usage: cal.sh [render|refresh|prev|next|today]" >&2; exit 1 ;;
+    scroll)
+        # eww substitutes `{}` with `up`/`down`; scroll up steps back a month.
+        case ${2:-} in
+            up)   printf '%s\n' "$(( $(read_offset) - 1 ))" > "$offset_file" ;;
+            down) printf '%s\n' "$(( $(read_offset) + 1 ))" > "$offset_file" ;;
+            *) echo "cal.sh scroll: unknown direction '${2:-}'" >&2; exit 1 ;;
+        esac ;;
+    *) echo "usage: cal.sh [render|refresh|prev|next|today|scroll <up|down>]" >&2; exit 1 ;;
 esac
 
 offset=$(read_offset)

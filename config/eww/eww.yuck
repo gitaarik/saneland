@@ -865,21 +865,26 @@
 ;; and both header and week rows use :space-evenly so the columns line up;
 ;; blank pad cells (empty :text) fill the leading/trailing days. cal-data
 ;; supplies the layout already ordered for the current week-start pref.
+;; Wrapped in an eventbox so scrolling anywhere over the grid steps the
+;; month (scroll up = previous); {} is eww's scroll-direction marker,
+;; handed straight to cal.sh alongside the prev/next arrow buttons.
 (defwidget clock-calendar []
-  (box :class "clock-cal" :orientation "v" :space-evenly false :spacing 4
-    (box :class "clock-cal-head" :orientation "h" :space-evenly false :spacing 4
-      (button :class "clock-cal-nav" :onclick "~/.config/eww/scripts/cal.sh prev" "")
-      (label :class "clock-cal-title" :hexpand true :text {cal-data.heading})
-      (button :class "clock-cal-nav" :onclick "~/.config/eww/scripts/cal.sh next" ""))
-    (box :class "clock-cal-weekdays" :orientation "h" :space-evenly true
-      (for wd in {cal-data.weekdays}
-        (label :class "clock-cal-weekday" :text wd)))
-    (box :orientation "v" :space-evenly false :spacing 2
-      (for week in {cal-data.weeks}
-        (box :orientation "h" :space-evenly true
-          (for cell in {week}
-            (label :class {cell.today ? "clock-cal-day today" : "clock-cal-day"}
-                   :text {cell.d})))))))
+  (eventbox :onscroll "~/.config/eww/scripts/cal.sh scroll {}"
+    (box :class "clock-cal" :orientation "v" :space-evenly false :spacing 4
+      (box :class "clock-cal-head" :orientation "h" :space-evenly false :spacing 4
+        (button :class "clock-cal-nav" :onclick "~/.config/eww/scripts/cal.sh prev" "")
+        (label :class "clock-cal-title" :hexpand true :text {cal-data.heading})
+        (button :class "clock-cal-nav" :onclick "~/.config/eww/scripts/cal.sh next" ""))
+      (box :class "clock-cal-weekdays" :orientation "h" :space-evenly true
+        (for wd in {cal-data.weekdays}
+          (label :class "clock-cal-weekday" :text wd)))
+      (box :orientation "v" :space-evenly false :spacing 2
+        (for week in {cal-data.weeks}
+          (box :orientation "h" :space-evenly true
+            (for cell in {week}
+              (label :class {cell.today ? "clock-cal-day today" : "clock-cal-day"}
+                     :text {cell.d}))))))
+))
 
 (defwidget clock-popup-content []
   (box :class "clock-popup" :orientation "v" :space-evenly false :spacing 8
