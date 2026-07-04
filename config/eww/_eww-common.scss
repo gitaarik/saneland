@@ -220,6 +220,22 @@ window#bar > * {
 .tray > *, .tray > * > * {
     min-width: 28px;
 }
+// App systray icons (Signal, Telegram, WhatsDesk, Syncthing, …): give each tray
+// cell the same hover wash as the self-built status cells. eww builds every item
+// as a gtk::EventBox (.tray > *) wrapping the icon Image; on hover GTK flags that
+// eventbox :hover and its background paints the cell — the same soft fill the
+// .audio/.clock cells use.
+//
+// DORMANT on eww ≤ 0.6.0: those releases create the tray eventbox without
+// enter/leave crossing handlers, so it never enters the :hover state and this
+// rule simply never fires (verified against eww 0.5.0). The fix — tray items
+// setting StateFlags::PRELIGHT on pointer enter/leave — landed after 0.6.0
+// (elkowar/eww changelog: "Add support for :hover css selectors for tray items"),
+// so this lights up once you're on an eww built from git master (e.g. the eww-git
+// AUR package). Harmless no-op until then.
+.tray > *:hover {
+    @include cell-hover;
+}
 // Right side: each cell carries the seam on its RIGHT edge; cells touch
 // (:spacing 0) so a single hairline sits between each pair. .clock is the last
 // item in the row and is omitted, so no seam closes off the right edge.
