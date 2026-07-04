@@ -20,14 +20,32 @@
 # fires exactly as the widget changes color (see eww.yuck):
 WARN_PCT=20        # normal-urgency "battery low"
 CRIT_PCT=10        # critical-urgency "battery critically low"
-INTERVAL=60        # seconds between capacity polls (plug/unplug wakes early)
+# Capacity poll cadence. Adaptive: capacity changes don't emit udev events (only
+# plug/unplug do), so the percentage in a persistent popup is only as fresh as
+# our poll. We poll slowly when healthy and fast once discharging in a low band,
+# so the critical popup's percentage keeps pace with the eww systray (~30s)
+# instead of lagging a full slow cycle behind.
+INTERVAL=60        # seconds between polls when healthy / on AC
+FAST_INTERVAL=20   # seconds between polls while discharging at/below WARN_PCT
 
-# Edge-triggering: we only notify on a *fresh* crossing. Each threshold is
-# "armed" once the charge rises back above it (or while on AC), and fires
-# once when it drops to/below it. Without this we'd re-notify every poll for
-# the whole time the battery sits in the low band.
+# How long the warn popup stays on screen, in ms. swaync's global default for
+# normal-urgency notifications is short (5s here), which is easy to miss, so we
+# override it just for this one via notify-send -t. The critical popup gets no
+# -t: it uses swaync's timeout-critical (0 = never) and persists until the
+# battery is plugged in / recovers.
+WARN_TIMEOUT_MS=15000
+
+# Edge-triggering for the warn popup: fires once when the charge first drops
+# to/below WARN_PCT, re-armed once it rises back above (or on AC). Without this
+# we'd re-notify every poll for the whole time it sits in the low band.
 warn_armed=1
-crit_armed=1
+
+# The critical popup persists (critical urgency never expires), so instead of
+# firing once we keep it *current*: crit_shown_cap holds the percentage last
+# rendered into it. On each poll below CRIT_PCT we re-issue only when the
+# number changed, so it tracks 10 -> 9 -> 8 in place (reused id) rather than
+# freezing at the crossing value. Empty means "not currently shown".
+crit_shown_cap=""
 
 # Server-assigned id of the low-battery notification currently on screen (empty
 # when none). The critical notification has `critical` urgency, which swaync
@@ -50,11 +68,13 @@ dismiss() {
     active_nid=""
 }
 
-# notify <urgency> <title> <body> — (re)raise the low-battery notification and
-# remember its id. --print-id echoes the server-assigned id on stdout.
+# notify <urgency> <title> <body> [timeout_ms] — (re)raise the low-battery
+# notification and remember its id. --print-id echoes the server-assigned id on
+# stdout. A non-empty timeout_ms overrides swaync's default expiry for this one
+# notification; omit it to use swaync's per-urgency default.
 notify() {
     active_nid=$(notify-send --print-id -a "Battery" -u "$1" \
-        ${active_nid:+-r "$active_nid"} -h "int:value:$cap" \
+        ${active_nid:+-r "$active_nid"} ${4:+-t "$4"} -h "int:value:$cap" \
         "$2" "$3" 2>/dev/null)
 }
 
@@ -78,28 +98,39 @@ evaluate() {
         # so the next unplug-and-drain triggers fresh ones.
         dismiss
         warn_armed=1
-        crit_armed=1
+        crit_shown_cap=""
     elif (( cap <= CRIT_PCT )); then
-        if (( crit_armed )); then
+        # Raise on first crossing and refresh in place as the charge keeps
+        # dropping; skip when the number is unchanged so we don't re-alert
+        # while it sits at the same percent.
+        if [[ $crit_shown_cap != "$cap" ]]; then
             notify critical "Battery critically low" \
                 "${cap}% remaining — plug in now."
-            crit_armed=0
+            crit_shown_cap=$cap
             warn_armed=0   # skip a redundant warn on the way down
         fi
     elif (( cap <= WARN_PCT )); then
         if (( warn_armed )); then
             notify normal "Battery low" \
-                "${cap}% remaining — consider plugging in."
+                "${cap}% remaining — consider plugging in." "$WARN_TIMEOUT_MS"
             warn_armed=0
         fi
-        # Re-arm critical once we're back above its band.
-        (( cap > CRIT_PCT )) && crit_armed=1
+        # Above the critical band again: re-arm it so a fresh descent re-alerts.
+        crit_shown_cap=""
     else
         # Comfortably above both bands: resolved — clear any notification and
         # re-arm everything.
         dismiss
         warn_armed=1
-        crit_armed=1
+        crit_shown_cap=""
+    fi
+
+    # Poll fast while discharging in a low band so a persistent popup's
+    # percentage keeps pace with the draining battery; slow otherwise.
+    if (( charging == 0 && cap <= WARN_PCT )); then
+        wait_secs=$FAST_INTERVAL
+    else
+        wait_secs=$INTERVAL
     fi
 }
 
@@ -111,22 +142,44 @@ flock -n 9 || exit 0
 
 # Subscribe to power_supply udev events on a dedicated fd. `read -t` on this fd
 # is our pacing primitive: it returns early (0) the instant an event arrives,
-# or on timeout (>128) after INTERVAL for the periodic capacity check.
+# or on timeout (>128) after $wait_secs for the periodic capacity check.
+#
+# We run udevadm via a FIFO (rather than `exec {UDEV}< <(...)`) so we hold its
+# PID and can kill it — a process-substitution child would be orphaned when
+# this script is terminated, leaking a udevadm per restart. A trap tears it
+# down on any exit.
+UDEV_PID=""
+UDEV=""
 start_udev() {
-    exec {UDEV}< <(stdbuf -oL udevadm monitor --udev --subsystem-match=power_supply 2>/dev/null)
+    [[ -n $UDEV_PID ]] && kill "$UDEV_PID" 2>/dev/null
+    [[ -n $UDEV ]] && exec {UDEV}<&-
+    local fifo
+    fifo=$(mktemp -u) || return
+    mkfifo "$fifo" || return
+    stdbuf -oL udevadm monitor --udev --subsystem-match=power_supply >"$fifo" 2>/dev/null &
+    UDEV_PID=$!
+    exec {UDEV}< "$fifo"   # blocks until the writer above opens its end
+    rm -f "$fifo"          # unlink the name; both open fds stay valid
 }
+cleanup() { [[ -n $UDEV_PID ]] && kill "$UDEV_PID" 2>/dev/null; }
+# cleanup on EXIT covers every path; INT/TERM must *exit* (a trapped signal no
+# longer terminates on its own) so the process actually stops on logout/pkill
+# and the EXIT trap reaps the child.
+trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 start_udev
 
+wait_secs=$INTERVAL   # evaluate() adapts this; default until the first read
 while true; do
     evaluate
-    if read -t "$INTERVAL" -u "$UDEV" _; then
+    if read -t "$wait_secs" -u "$UDEV" _; then
         # A power event (plug/unplug) arrived. udev emits several lines per
         # event — drain the burst so we re-evaluate once, not N times.
         while read -t 0.2 -u "$UDEV" _; do :; done
     elif (( $? <= 128 )); then
-        # Not a timeout -> the monitor died (EOF). Restart it without
-        # busy-spinning, then fall through to re-evaluate.
-        exec {UDEV}<&-
+        # Not a timeout -> the monitor died (EOF). Restart it (start_udev
+        # tears down the old fd/pid) without busy-spinning, then fall through.
         sleep 2
         start_udev
     fi
