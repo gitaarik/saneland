@@ -388,7 +388,7 @@ window#bar > * {
 // corners to sit flush inside the container. Scoped to .device-list so
 // the audio popup's rows keep their original look.
 .device-list {
-    border: 1px solid $border;
+    border: 2px solid $border;
     border-radius: 6px;
 }
 .device-list button {
