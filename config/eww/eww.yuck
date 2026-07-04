@@ -5,6 +5,17 @@
 ;; Replaces the waybar/hyprland-workspaces taskbar so we can control order.
 
 ;; -----------------------------------------------------------------------------
+;; Local overrides
+;; -----------------------------------------------------------------------------
+;; Per-machine preferences (currently the launcher's browser) live in a
+;; git-ignored local.yuck, seeded by install.sh from local.yuck.example so the
+;; tracked base stays byte-identical for everyone. It defines browser-label /
+;; browser-cmd / browser-icon — edit ~/.config/eww/local.yuck to point the
+;; Start-menu browser row at whatever you use. A missing file is fatal to eww
+;; (unlike Hyprland's optional `source`), so install.sh always seeds it.
+(include "local.yuck")
+
+;; -----------------------------------------------------------------------------
 ;; Data sources
 ;; -----------------------------------------------------------------------------
 
@@ -300,7 +311,8 @@
     (start-item :icon "" :label "Thunderbird" :cmd "thunderbird")
     (start-item :icon "" :label "Terminal"    :cmd "--new kitty")
     (start-item :icon "" :label "Files"       :cmd "thunar ~")
-    (start-item :icon "" :label "Firefox"     :cmd "--new firefox")))
+    ;; Browser is a per-machine choice — icon/label/cmd come from local.yuck.
+    (start-item :icon browser-icon :label browser-label :cmd browser-cmd)))
 
 ;; Tags 1-12 — Hyprland workspaces. Hidden if the workspace is empty and
 ;; not focused (matches Hyprland's default workspaces module).

@@ -11,6 +11,7 @@
 # Per-machine overrides — seeded from *.example by install.sh, then yours to
 # edit. Keeps the tracked base config byte-identical for everyone.
 /config/hypr/local.conf
+/config/eww/local.yuck
 /config/saneland/theme.local.sh
 
 # Whole-file overlay tree (your private tweaks; can be its own repo). Only the

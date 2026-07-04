@@ -76,6 +76,7 @@ head "Local overrides (created from *.example, never clobbered)"
 # overwrites an existing one.
 LOCAL_FILES=(
   "config/hypr/local.conf  config/hypr/local.conf.example"
+  "config/eww/local.yuck   config/eww/local.yuck.example"
 )
 for entry in "${LOCAL_FILES[@]}"; do
   read -r dest src <<<"$entry"

@@ -1,0 +1,13 @@
+;; saneland — eww per-machine preferences (optional overrides).
+;;
+;; Seeded to  ~/.config/eww/local.yuck  by install.sh, then yours to edit.
+;; Git-ignored, so the tracked base config stays byte-identical for everyone
+;; (same idea as ~/.config/hypr/local.conf). Included near the top of eww.yuck.
+;;
+;; Right now it holds one thing: which browser the Start menu launches. The
+;; :cmd is handed to start-launch.sh — "--new <app>" forces a fresh window
+;; (see the launcher comment in eww.yuck); drop "--new" to focus-or-launch.
+
+(defvar browser-label "Firefox")
+(defvar browser-cmd "--new firefox")
+(defvar browser-icon "")
