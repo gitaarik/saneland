@@ -540,8 +540,8 @@
             :onclick "~/.config/eww/scripts/network-toggle-wifi.sh"
       (box :orientation "h" :space-evenly false :spacing 8 :halign "center"
         (label :class {(network.wifi_transitioning || network.wifi_enabled)
-                       ? "theme-toggle-icon"
-                       : "theme-toggle-icon off"}
+                       ? "theme-toggle-icon network-toggle-icon"
+                       : "theme-toggle-icon off network-toggle-icon"}
                :text {network.wifi_transitioning ? "" : ""})
         (label :text {network.wifi_transitioning
                        ? (network.wifi_target == "on" ? "Turning on..." : "Turning off...")
