@@ -427,10 +427,19 @@
 ;; the shared options-section widget). Ephemeral — resets on reload.
 (defvar audio-options-expanded false)
 
+;; Escape hatch up top — pavucontrol handles everything we don't surface
+;; here (per-app routing, profiles, port selection). Mirrors the network
+;; popup's nm-connection-editor link and the bluetooth popup's blueman one.
+(defwidget audio-popup-settings []
+  (button :class "theme-toggle"
+          :onclick "pavucontrol &"
+    (label :text "Open Audio Settings")))
+
 (defwidget audio-popup-content []
   ;; Input on top, output below: output is the common control so it anchors
   ;; the bottom nearest the systray icon, input rides above it.
   (box :class "audio-popup" :orientation "v" :space-evenly false :spacing 10
+    (audio-popup-settings)
     (options-section :expanded audio-options-expanded :var "audio-options-expanded"
       (pref-toggle :name "audio-show-volume" :value audio-show-volume
                    :label "Show volume percentage on bar"))
