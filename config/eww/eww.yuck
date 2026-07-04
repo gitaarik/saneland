@@ -541,10 +541,10 @@
     ;; toggle off the bottom of the popup. CSS max-height equivalents
     ;; (max-height, min/max-content-height) are rejected by eww 0.5's
     ;; SCSS compiler — the height attr is the workaround.
-    (scroll :class "network-popup-scroll"
+    (scroll :class "network-popup-scroll device-list"
             :visible {network.networks_loaded && arraylength(network.networks) > 0}
             :vscroll true :hscroll false :height 240
-      (box :orientation "v" :space-evenly false :spacing 1
+      (box :orientation "v" :space-evenly false
         (for n in {network.networks}
           (network-popup-network :net n))))))
 
@@ -650,8 +650,9 @@
   (box :orientation "v" :space-evenly false :spacing 1
        :visible {bluetooth.powered}
     (label :class "audio-popup-title" :xalign 0 :text "Paired")
-    (for d in {bluetooth.devices}
-      (bluetooth-popup-device :device d))))
+    (box :class "device-list" :orientation "v" :space-evenly false
+      (for d in {bluetooth.devices}
+        (bluetooth-popup-device :device d)))))
 
 (defwidget bluetooth-popup-blueman []
   (button :class "theme-toggle"

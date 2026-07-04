@@ -379,6 +379,33 @@ window#bar > * {
     color: $critical;
 }
 
+// Grouped-list chrome for the network + bluetooth device lists (the
+// .device-row rows). Instead of each row reading as its own rounded,
+// drop-shadowed card, draw one rounded border around the whole list and
+// separate the rows with hairlines. Rows are .audio-row buttons, so here
+// we drop their per-item radius + GTK button shadow, add a collapsing
+// bottom-border separator, and round only the first/last row's outer
+// corners to sit flush inside the container. Scoped to .device-list so
+// the audio popup's rows keep their original look.
+.device-list {
+    border: 1px solid $border;
+    border-radius: 6px;
+}
+.device-list button {
+    border-radius: 0;
+    box-shadow: none;
+    border-bottom: 1px solid $border;
+}
+.device-list button:first-child {
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+}
+.device-list button:last-child {
+    border-bottom: none;
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
+
 // Volume row at the top of the popup: mute toggle + GTK scale + value label.
 .audio-volume {
     padding: 4px 4px;
