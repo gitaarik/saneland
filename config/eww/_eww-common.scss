@@ -220,21 +220,6 @@ window#bar > * {
 .tray > *, .tray > * > * {
     min-width: 28px;
 }
-// App systray icons (Signal, Telegram, WhatsDesk, Syncthing, …) get the same
-// hover wash as the self-built status cells. Strip the inner GtkButton's own
-// chrome first so the GTK theme's prelight can't double up with our fill, then
-// fill the per-item wrapper on hover: GTK propagates :hover up from the button
-// to the wrapper, so filling it there covers the whole cell — seam included —
-// exactly like the .audio/.clock cells. No :not(.active) guard: unlike the
-// status widgets, tray items open their own SNI menu, not an eww popup.
-.tray > * > * {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-}
-.tray > *:hover {
-    @include cell-hover;
-}
 // Right side: each cell carries the seam on its RIGHT edge; cells touch
 // (:spacing 0) so a single hairline sits between each pair. .clock is the last
 // item in the row and is omitted, so no seam closes off the right edge.
