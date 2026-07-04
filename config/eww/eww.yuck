@@ -486,32 +486,38 @@
           :onclick "nm-connection-editor &"
     (label :text "Open Network Settings")))
 
-(defwidget network-popup-network [net]
-  (button :class {net.state == "error"            ? "audio-row error"
-                : net.state == "connecting"
-                  || net.state == "disconnecting" ? "audio-row connecting"
-                : net.active                      ? "audio-row active"
-                :                                   "audio-row"}
-          :onclick "~/.config/eww/scripts/network-connect.sh '${net.ssid}'"
+;; Shared clickable row for the network + bluetooth device lists. The
+;; leading state glyph sits in a fixed-width column (.row-state-icon) so
+;; the labels line up; `state` selects the colour class + glyph (error /
+;; connecting / disconnecting / else) and `active` picks ● vs ○ for the
+;; connected/selected row. Any children render after the label as a
+;; trailing slot — the network list drops a lock glyph there, bluetooth
+;; passes none. eww has no real slot mechanism, but (children) covers it.
+(defwidget device-row [state active name onclick]
+  (button :class {state == "error"            ? "audio-row error"
+                : state == "connecting"
+                  || state == "disconnecting" ? "audio-row connecting"
+                : active                      ? "audio-row active"
+                :                               "audio-row"}
+          :onclick {onclick}
     (box :orientation "horizontal" :space-evenly false
-      ;; State glyph in its own fixed-width label — .row-state-icon is a
-      ;; min-width "column" (shared with the bluetooth device list) so the
-      ;; SSID starts at the same x on every row whichever glyph shows.
-      ;; This is the GTK-CSS stand-in for a grid column (GTK has no
-      ;; display:grid). :xalign 0 left-aligns the glyph in that column.
       (label :class "row-state-icon" :xalign 0
-             :text {net.state == "error"            ? ""
-                  : net.state == "connecting"
-                    || net.state == "disconnecting" ? ""
-                  : net.active                      ? "●"
-                  :                                   "○"})
-      (label :hexpand true :xalign 0 :text {net.ssid})
-      ;; Trailing padlock: closed for secured (WPA/WEP/802.1X) networks,
-      ;; open for unsecured ones. `net.secured` comes straight from the
-      ;; SECURITY column in network-state.sh.
-      (label :class {net.secured ? "network-lock" : "network-lock open"}
-             :tooltip {net.secured ? "Password protected" : "Open network"}
-             :text {net.secured ? "" : ""}))))
+             :text {state == "error"            ? ""
+                  : state == "connecting"
+                    || state == "disconnecting" ? ""
+                  : active                      ? "●"
+                  :                               "○"})
+      (label :hexpand true :xalign 0 :text {name})
+      (children))))
+
+;; Wraps device-row with the wifi-specific bits: SSID as the label, the
+;; connect action, and a trailing padlock (closed = secured, open = not).
+(defwidget network-popup-network [net]
+  (device-row :state {net.state} :active {net.active} :name {net.ssid}
+              :onclick "~/.config/eww/scripts/network-connect.sh '${net.ssid}'"
+    (label :class {net.secured ? "network-lock" : "network-lock open"}
+           :tooltip {net.secured ? "Password protected" : "Open network"}
+           :text {net.secured ? "" : ""})))
 
 (defwidget network-popup-list []
   (box :orientation "v" :space-evenly false :spacing 1
@@ -630,27 +636,11 @@
 ;;   ○ idle (.audio-row, default)
 ;;    connecting / disconnecting (.audio-row.connecting, accent + sync glyph)
 ;;    error (.audio-row.error, critical color + warning glyph)
-;; State source is the per-device file under bluetooth-device-state/;
-;; .error gets cleared by the next click on another device, or on
-;; popup re-open via popup-toggle.sh.
+;; Wraps device-row with the bluetooth-specific bits: device name as the
+;; label and the connect/disconnect action. No trailing slot content.
 (defwidget bluetooth-popup-device [device]
-  (button :class {device.state == "error"                          ? "audio-row error"
-                : device.state == "connecting"
-                  || device.state == "disconnecting"               ? "audio-row connecting"
-                : device.connected                                 ? "audio-row active"
-                :                                                    "audio-row"}
-          :onclick "~/.config/eww/scripts/bluetooth-device.sh ${device.mac}"
-    (box :orientation "horizontal" :space-evenly false
-      ;; Leading state glyph in a fixed-width column (shared
-      ;; .row-state-icon) so the device name lines up across rows, same
-      ;; as the network list.
-      (label :class "row-state-icon" :xalign 0
-             :text {device.state == "error"                          ? ""
-                  : device.state == "connecting"
-                    || device.state == "disconnecting"               ? ""
-                  : device.connected                                 ? "●"
-                  :                                                    "○"})
-      (label :hexpand true :xalign 0 :text {device.name}))))
+  (device-row :state {device.state} :active {device.connected} :name {device.name}
+              :onclick "~/.config/eww/scripts/bluetooth-device.sh ${device.mac}"))
 
 (defwidget bluetooth-popup-devices []
   (box :orientation "v" :space-evenly false :spacing 1
