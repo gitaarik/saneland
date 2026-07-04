@@ -404,12 +404,13 @@
            :round-digits 0)
     (label :class "audio-volume-value" :text "${volume}%")))
 
+;; One device row in an audio category's picker — reuses the shared
+;; device-row (● default / ○ available). Audio has no error/connecting
+;; states, so `state` is empty and no trailing icon is passed.
 (defwidget audio-popup-row [kind device]
-  (button :class {device.default ? "audio-row active" : "audio-row"}
-          :onclick "~/.config/eww/scripts/audio-set-default.sh ${kind} '${device.name}'"
-    (label :xalign 0
-           :text {device.default ? "● ${device.description}"
-                                 : "○ ${device.description}"})))
+  (device-row :state "" :active {device.default} :name {device.description}
+              :onclick "~/.config/eww/scripts/audio-set-default.sh ${kind} '${device.name}'"
+              :trailing-icon "" :trailing-class "" :trailing-tooltip ""))
 
 ;; One audio category: title, its volume slider, then its device picker.
 (defwidget audio-popup-category [title kind devices node muted volume glyph_active glyph_muted]
@@ -417,7 +418,8 @@
     (label :class "audio-popup-title" :xalign 0 :text title)
     (audio-slider :node node :muted muted :volume volume
                   :glyph_active glyph_active :glyph_muted glyph_muted)
-    (box :orientation "v" :space-evenly false :spacing 1
+    (box :class "device-list" :orientation "v" :space-evenly false
+         :visible {arraylength(devices) > 0}
       (for d in {devices}
         (audio-popup-row :kind kind :device d)))))
 
