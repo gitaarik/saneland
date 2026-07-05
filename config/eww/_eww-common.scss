@@ -382,16 +382,18 @@ $cell-bg: $bg !default;
     min-width: 320px;
 }
 .audio-popup-title {
-    color: $fg-dim;
+    color: $fg;
     font-weight: bold;
-    padding: 2px 4px;
+    // No left padding: section headers sit flush with the content-left edge
+    // where the device lists, buttons and icon boxes below them all align.
+    padding: 2px 0;
 }
 .audio-row {
     background: transparent;
     border: none;
     border-radius: 4px;
     padding: 4px 8px;
-    color: $fg-dim;
+    color: $fg;
 }
 .audio-row:hover {
     background: $accent-fill-hover;
@@ -448,14 +450,17 @@ $cell-bg: $bg !default;
 }
 
 // Volume row at the top of the popup: mute toggle + GTK scale + value label.
+// No horizontal padding: it would indent the mute button (and the whole row)
+// past the card's content edge, where the full-width buttons and device lists
+// sit. Keep the vertical padding.
 .audio-volume {
-    padding: 4px 4px;
+    padding: 4px 0;
 }
 .audio-mute {
     background: $bg-secondary;
     border: 2px solid $divider;
     box-shadow: none;
-    color: $fg-dim;
+    color: $fg;
     // No horizontal padding: the glyph label hexpands and centres itself
     // inside a fixed-width box, so both the mic and speaker buttons are the
     // same width regardless of the glyph's advance.
@@ -484,7 +489,7 @@ $cell-bg: $bg !default;
     color: $accent;
 }
 .audio-volume-value {
-    color: $fg-dim;
+    color: $fg;
     min-width: 38px;
 }
 // Shared slider styling for the audio-volume and brightness rows —
@@ -514,7 +519,7 @@ $cell-bg: $bg !default;
 
 // Brightness row inside the battery popup: icon + scale + trailing
 // percentage. Drag to set, or use XF86MonBrightness keys.
-.brightness-row { padding: 4px 4px; }
+.brightness-row { padding: 4px 0; }
 // Same icon-button chrome as the audio popup's mute buttons: a bordered,
 // filled, fixed-width box with the glyph hexpand-centred inside it.
 .brightness-icon-box {
@@ -532,14 +537,14 @@ $cell-bg: $bg !default;
     color: $fg;
 }
 .brightness-icon {
-    color: $fg-dim;
+    color: $fg;
     // fa-sun (U+F185) is slightly right-heavy — trim the content box on the
     // right so the centred glyph lands optically centred (measured to center
     // with 4px; 8px over-shot it left).
     padding-right: 4px;
 }
 .brightness-value {
-    color: $fg-dim;
+    color: $fg;
     min-width: 38px;
 }
 
@@ -675,7 +680,7 @@ $cell-bg: $bg !default;
 // (e.g. "Searching for networks…", "Loading devices…"). Shared by the network
 // and audio popups so both read the same inside the bordered list frame.
 .popup-hint {
-    color: $fg-dim;
+    color: $fg;
     padding: 6px 8px;
 }
 // Trailing padlock on each wifi row: a closed lock for secured networks,
@@ -749,7 +754,7 @@ $cell-bg: $bg !default;
 // to $fg when on. The label is vertically centered and dimmed like
 // the other rows.
 .pref-row {
-    color: $fg-dim;
+    color: $fg;
 }
 .pref-check check {
     min-width: 16px;
@@ -764,7 +769,7 @@ $cell-bg: $bg !default;
 }
 
 .battery-popup-footer {
-    color: $fg-dim;
+    color: $fg;
     font-size: 11px;
     padding-top: 4px;
     border-top: 1px solid $border;
@@ -783,9 +788,9 @@ $cell-bg: $bg !default;
     min-width: 240px;
 }
 .start-popup-title {
-    color: $fg-dim;
+    color: $fg;
     font-weight: bold;
-    padding: 2px 4px 4px 4px;
+    padding: 2px 0 4px 0;
 }
 // Pinned-app row + "All apps" row: glyph + label, hover-highlighted.
 // Reuses the .audio-row interaction feel for consistency across popups.
@@ -923,7 +928,7 @@ $cell-bg: $bg !default;
     min-width: 260px;
 }
 .clock-popup-title {
-    color: $fg-dim;
+    color: $fg;
     font-weight: bold;
 }
 // Self-rendered month grid (clock-calendar widget).
@@ -985,7 +990,7 @@ $cell-bg: $bg !default;
 // (currently just screenshot modes). Buttons reuse the .clock-popup-today
 // chrome so the section feels native.
 .clock-popup-tools-label {
-    color: $fg-dim;
+    color: $fg;
     font-weight: bold;
 }
 // Screenshot tools drawn as one segmented control — same collapsed-border
