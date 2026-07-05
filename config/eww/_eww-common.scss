@@ -452,15 +452,32 @@ $cell-bg: $bg !default;
     padding: 4px 4px;
 }
 .audio-mute {
-    background: transparent;
-    border: none;
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    box-shadow: none;
     color: $fg-dim;
-    padding: 4px 10px;
+    // No horizontal padding: the glyph label hexpands and centres itself
+    // inside a fixed-width box, so both the mic and speaker buttons are the
+    // same width regardless of the glyph's advance.
+    padding: 4px 0;
     border-radius: 4px;
-    min-width: 28px;
+    min-width: 40px;
 }
+// The nerd-font speaker/mic glyphs carry uneven side-bearings, so a plain
+// text-centre leaves them visibly left-shifted. Give the glyph label the
+// full button width and centre it there.
+// Each of the four mute glyphs carries its own side-bearings, so centring the
+// advance box leaves some of them visibly off. Trim the content box on the
+// right (with xalign 0.5 this shifts the ink left by ~half the padding) per
+// glyph, keyed on kind + mute state. Zero-correction glyphs are already
+// symmetric and get no rule. (No min-width on the label: the button owns the
+// fixed 40px width; a min-width here would clamp the content box and swallow
+// this padding.)
+.audio-mute-glyph-sink-on     { padding-right: 8px; }  // speaker + sound waves (right-heavy)
+.audio-mute-glyph-source-muted { padding-right: 9px; }  // muted mic (right-heavy)
 .audio-mute:hover {
     background: $accent-fill-hover;
+    box-shadow: none;
     color: $fg;
 }
 .audio-mute.muted {

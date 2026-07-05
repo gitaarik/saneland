@@ -406,12 +406,13 @@
 ;;
 ;; `node` is the wpctl target (@DEFAULT_AUDIO_SINK@ / @DEFAULT_AUDIO_SOURCE@);
 ;; glyph_active/glyph_muted swap the mute-button icon (speaker vs. mic).
-(defwidget audio-slider [node muted volume glyph_active glyph_muted]
+(defwidget audio-slider [node muted volume glyph_active glyph_muted kind]
   (box :class "audio-volume" :orientation "h" :space-evenly false :spacing 8
     (button :class {muted ? "audio-mute muted" : "audio-mute"}
             :onclick "wpctl set-mute ${node} toggle"
             :tooltip {muted ? "Unmute" : "Mute"}
-      (label :text {muted ? glyph_muted : glyph_active}))
+      (label :class "audio-mute-glyph audio-mute-glyph-${kind}-${muted ? "muted" : "on"}" :halign "center" :hexpand true
+             :text {muted ? glyph_muted : glyph_active}))
     (scale :hexpand true
            :value {volume}
            :onchange "wpctl set-volume ${node} {}%"
@@ -434,7 +435,7 @@
 (defwidget audio-popup-category [title kind devices loaded node muted volume glyph_active glyph_muted]
   (box :orientation "v" :space-evenly false :spacing 6
     (label :class "audio-popup-title" :xalign 0 :text title)
-    (audio-slider :node node :muted muted :volume volume
+    (audio-slider :node node :muted muted :volume volume :kind kind
                   :glyph_active glyph_active :glyph_muted glyph_muted)
     (box :class "device-list" :orientation "v" :space-evenly false
       (label :class "popup-hint" :xalign 0
