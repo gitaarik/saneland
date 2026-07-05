@@ -848,6 +848,89 @@ $cell-bg: $bg !default;
     font-size: 15px;
     min-width: 22px;
 }
+// "All apps" flyout ---------------------------------------------------------
+// The toggle row is a .start-item; its trailing chevron flips ▸/▾ with the
+// revealer. The revealed panel is two columns: a category list (left) and
+// the hovered category's apps in a scroller (right).
+.start-all-chevron {
+    color: $fg-dim;
+    font-size: 11px;
+    min-width: 16px;
+}
+.start-all-toggle.active {
+    background: $accent-fill-hover;
+    color: $fg;
+}
+.start-flyout {
+    margin-top: 6px;
+    // Fixed overall width; the category column takes its share and the
+    // apps scroll :hexpands into the rest (see the widget comment).
+    min-width: 380px;
+}
+// Left column: category rows grouped in one rounded outline, hairline
+// separators between them — same treatment as .start-item-list.
+.start-flyout-cats {
+    min-width: 132px;
+    border: 2px solid $divider;
+    border-radius: 6px;
+}
+.start-cat {
+    background: $bg-secondary;
+    border: none;
+    border-bottom: 1px solid $divider;
+    padding: 6px 8px;
+    color: $fg-dim;
+}
+.start-cat:first-child {
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+}
+.start-cat:last-child {
+    border-bottom: none;
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
+.start-cat:hover {
+    background: $accent-fill-hover;
+    color: $fg;
+}
+// Active category (its apps are showing): accent wash + a visible chevron.
+.start-cat.active {
+    background: $accent-fill;
+    color: $fg;
+}
+.start-cat-chevron {
+    color: $fg-dim;
+    font-size: 10px;
+    min-width: 12px;
+}
+.start-cat.active .start-cat-chevron {
+    color: $fg;
+}
+// Right pane: scrollable app list. Height is capped by the widget's
+// :height attr (GTK CSS has no max-height — it's rejected outright and
+// takes the whole stylesheet down with it).
+.start-flyout-apps {
+    border: 2px solid $divider;
+    border-radius: 6px;
+    background: $bg-secondary;
+}
+.start-app {
+    background: transparent;
+    border: none;
+    padding: 5px 8px;
+    color: $fg-dim;
+}
+.start-app:hover {
+    background: $accent-fill-hover;
+    color: $fg;
+}
+.start-app-icon {
+    min-width: 20px;
+}
+.start-app-label {
+    color: inherit;
+}
 // Invisible spacer between the pinned list, the "All apps" row, and the
 // power row — categories are separated by gap alone now, no rule line.
 // Margin preserves the spacing the old 1px border sat in.

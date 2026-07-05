@@ -64,6 +64,18 @@ eww update open-popup="$window" 2>/dev/null || true
 # by clicking outside.
 if [[ $window == start-popup ]]; then
     eww update start-confirm="" 2>/dev/null || true
+    # Refresh the categorized "All apps" data (cheap: served from cache
+    # unless an application dir changed) and reset the flyout so the menu
+    # always opens collapsed, with the first category preselected for the
+    # right pane once it's expanded.
+    apps_json=$("$HOME/.config/eww/scripts/start-apps.sh" 2>/dev/null)
+    if [[ -n $apps_json ]]; then
+        first_cat=$(printf '%s' "$apps_json" | python3 -c \
+            'import json,sys; c=json.load(sys.stdin)["categories"]; print(c[0] if c else "")')
+        eww update start-apps="$apps_json" 2>/dev/null || true
+        eww update start-apps-cat="$first_cat" 2>/dev/null || true
+    fi
+    eww update start-apps-open=false 2>/dev/null || true
 fi
 
 # Bluetooth: clear stale error markers from prior connect attempts so the
