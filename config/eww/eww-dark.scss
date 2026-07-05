@@ -5,16 +5,24 @@ $bg:           #282828;
 $bg-secondary: #1d2021;
 $fg:           #ebdbb2;
 $fg-dim:       #a89984;
+// Semantic accent — now reserved for in-progress status cues only (bluetooth
+// transitioning, audio device connecting). Selection/hover/decoration is
+// neutral (see $neutral below), so hue means "state", not "selected".
 $accent:       #d79921;
-$accent-tint:  rgba(215, 153, 33, 0.25);
-// Orange core of the active-cell highlight (cell-active fades it to $bg at the
-// edges). Per-theme: a translucent accent LIGHTENS over the near-black dark bar
-// (reads as a glow) but DARKENS/muddies over the cream light bar, so each theme
-// needs its own value. Kept low so the glow stays close to the bar — subtle,
-// not a high-contrast block.
-$accent-fill:  rgba($accent, 0.28);
-// Even fainter fill for the hover state — same glow, lighter touch.
-$accent-fill-hover: rgba($accent, 0.12);
+
+// ---- Neutral UI accent ------------------------------------------------------
+// Monochrome tint for the decorative selection/hover/border chrome across the
+// bar cells and popups, so only the semantic colors ($high/$warning/$critical
+// and the battery tiers) carry hue. $neutral is a light gray over the near-
+// black dark bar (it flips to a dark gray on the light theme, mirroring how
+// $fg flips against $bg). A translucent gray reads more subtly than the old
+// orange glow, so the wash alphas are lower — retune them here.
+$neutral:            #cfcac2;
+$accent-fill:        rgba($neutral, 0.16);  // selected bar-cell wash
+$accent-fill-hover:  rgba($neutral, 0.09);  // hover bar-cell wash
+$accent-tint:        rgba($neutral, 0.20);  // "today" calendar chip
+$ui-select:          $fg;                    // selected row / checked box / active icon
+$ui-fill:            $fg-dim;                // volume / brightness / charge fill
 $high:         #22c55e;
 $low:          #d79921;
 $warning:      #d65d0e;
@@ -25,8 +33,8 @@ $border:       #3c3836;
 // gradient's top/bottom fade keeps it soft rather than a hard line.
 // gruvbox bg2.
 $divider:      #504945;
-// Systray/start popup card outlines — a muted accent orange (half-strength)
-// so they read as a deliberate frame without the full accent shouting.
-$popup-border: rgba($accent, 0.5);
+// Systray/start popup card outlines — a faint neutral frame (see $neutral),
+// so the cards read as a deliberate outline without any accent hue.
+$popup-border: rgba($neutral, 0.4);
 
 @import "eww-common";

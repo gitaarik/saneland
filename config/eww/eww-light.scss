@@ -1,30 +1,39 @@
-// Gruvbox light palette. The shared rules live in `_eww-common.scss`.
-// Selected via the `eww.scss` symlink, flipped by the `theme` script.
+// Neutral light palette — a desaturated take on gruvbox light: the structural
+// tones (bg / fg / border / seam) are grays so nothing reads yellow, while the
+// semantic status colours below keep their hue. Shared rules live in
+// `_eww-common.scss`. Selected via the `eww.scss` symlink, flipped by `theme`.
 
-$bg:           #fbf1c7;
-$bg-secondary: #ebdbb2;
-$fg:           #3c3836;
-$fg-dim:       #7c6f64;
+$bg:           #f4f3f1;   // off-white, neutral (was cream #fbf1c7)
+$bg-secondary: #e7e6e3;   // light neutral gray — troughs / popup cards / row hover
+$fg:           #383736;   // near-black neutral
+$fg-dim:       #6f6d6b;   // neutral mid gray
+// Semantic accent — reserved for in-progress status cues only (bluetooth
+// transitioning, audio device connecting). Selection/hover/decoration is
+// neutral (see $neutral below), so hue means "state", not "selected".
 $accent:       #b57614;
-$accent-tint:  rgba(181, 118, 20, 0.25);
-// Orange core of the active-cell highlight (cell-active fades it to $bg at the
-// edges). Higher alpha than the dark theme: over the pale cream $bg a low-alpha
-// accent desaturates into a muddy tan, so it stays a bit stronger than dark's
-// to read as a clean gold — but still light enough to be a subtle glow.
-$accent-fill:  rgba($accent, 0.28);
-// Even fainter fill for the hover state — same glow, lighter touch.
-$accent-fill-hover: rgba($accent, 0.09);
+
+// ---- Neutral UI accent ------------------------------------------------------
+// Monochrome tint for the decorative selection/hover/border chrome across the
+// bar cells and popups. Now that $bg itself is neutral, a gray wash reads as a
+// clean gray (no cream bleeding through) and its edges fade into the bar with
+// no yellow. $neutral is a mid gray; it flips to a light gray on the dark theme,
+// mirroring how $fg flips against $bg.
+$neutral:            #5b5b5c;
+$accent-fill:        rgba($neutral, 0.18);  // selected bar-cell wash
+$accent-fill-hover:  rgba($neutral, 0.09);  // hover bar-cell wash
+$accent-tint:        rgba($neutral, 0.16);  // "today" calendar chip
+$ui-select:          $fg;                    // selected row / checked box / active icon
+$ui-fill:            $fg-dim;                // volume / brightness / charge fill
 $high:         #16a34a;
 $low:          #b57614;
 $warning:      #af3a03;
 $critical:     #9d0006;
-$border:       #d5c4a1;
+$border:       #d5d3d0;   // light neutral gray
 // Right-side widget separators — a touch darker than $border so the inset
-// gradient hairline between tray cells reads as a clear seam against the
-// pale $bg.
-$divider:      #c8b894;
-// Systray/start popup card outlines — a muted accent orange (half-strength)
-// so they read as a deliberate frame without the full accent shouting.
-$popup-border: rgba($accent, 0.5);
+// gradient hairline between tray cells reads as a clear seam against $bg.
+$divider:      #cccac6;   // neutral gray (was tan #c8b894)
+// Systray/start popup card outlines — a faint neutral frame (see $neutral),
+// so the cards read as a deliberate outline without any accent hue.
+$popup-border: rgba($neutral, 0.4);
 
 @import "eww-common";

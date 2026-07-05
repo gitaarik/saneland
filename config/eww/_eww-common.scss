@@ -77,8 +77,9 @@ window#bar > * {
     // Fade to rgba($bg, 0), NOT the `transparent` keyword: `transparent` is
     // transparent BLACK (rgba(0,0,0,0)), so `$bg, transparent` interpolates the
     // RGB toward black as the alpha drops — a darker fringe just inside each
-    // edge before it reaches the orange (very visible, and muddy on the light
-    // theme). rgba($bg, 0) keeps the bar's colour and only ramps the alpha.
+    // edge before it reaches the fill (very visible, and muddy on the light
+    // theme). rgba($bg, 0) keeps the bar's colour and only ramps the alpha, so
+    // the highlight melts into the bar $bg on every side like an unselected cell.
     background-image:
         linear-gradient(to bottom, $bg, rgba($bg, 0) 5px),
         linear-gradient(to top,    $bg, rgba($bg, 0) 5px),
@@ -367,7 +368,7 @@ window#bar > * {
     color: $fg;
 }
 .audio-row.active {
-    color: $accent;
+    color: $ui-select;
 }
 // Bluetooth device-row in-flight states (also reuses .audio-row). The
 // row label is prefixed with a sync glyph for connecting / disconnecting
@@ -440,7 +441,7 @@ window#bar > * {
 }
 .audio-volume scale trough highlight,
 .brightness-row scale trough highlight {
-    background-color: $accent;
+    background-color: $ui-fill;
     border-radius: 4px;
     min-height: 6px;
 }
@@ -524,7 +525,7 @@ window#bar > * {
     min-height: 6px;
 }
 .battery-popup-charge progressbar trough progress {
-    background-color: $accent;
+    background-color: $ui-fill;
     border-radius: 4px;
     min-height: 6px;
 }
@@ -549,8 +550,8 @@ window#bar > * {
     border-color: $fg-dim;
 }
 .power-profile-button.active {
-    color: $accent;
-    border-color: $accent;
+    color: $ui-select;
+    border-color: $ui-select;
 }
 
 // Theme toggle: single full-width button showing the active scheme.
@@ -567,7 +568,7 @@ window#bar > * {
     border-color: $fg-dim;
 }
 .theme-toggle-icon {
-    color: $accent;
+    color: $ui-select;
 }
 // .off modifier for tinted icons inside a theme-toggle-style button
 // (e.g. the bluetooth power toggle when the adapter is off).
@@ -661,8 +662,8 @@ window#bar > * {
 // name on bar" / "Show volume percentage on bar"), rendered by the
 // shared `pref-toggle` widget. The indicator is a GTK `check` node
 // inside the checkbutton; we strip the box (no background, no border)
-// and let only the checkmark glyph show — dimmed when off, accent-
-// coloured when on. The label is vertically centered and dimmed like
+// and let only the checkmark glyph show — dimmed when off, brightened
+// to $fg when on. The label is vertically centered and dimmed like
 // the other rows.
 .pref-row {
     color: $fg-dim;
@@ -676,7 +677,7 @@ window#bar > * {
     color: $fg-dim;
 }
 .pref-check check:checked {
-    color: $accent;
+    color: $ui-select;
 }
 
 .battery-popup-footer {
@@ -821,8 +822,8 @@ window#bar > * {
     min-height: 22px;
     border-radius: 4px;
 }
-// Today's chip. A translucent accent fill (matching the popup card
-// buttons) keeps the day text readable rather than washing it out.
+// Today's chip. A translucent neutral fill (matching the selection
+// wash) keeps the day text readable rather than washing it out.
 .clock-cal-day.today {
     background-color: $accent-tint;
     font-weight: bold;
