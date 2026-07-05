@@ -33,6 +33,9 @@ $border:       #3c3836;
 // gradient's top/bottom fade keeps it soft rather than a hard line.
 // gruvbox bg2.
 $divider:      #504945;
+// Bar top-border colour — a bit darker than the seams ($divider) so the top
+// hairline reads as a soft edge, not a hard line.
+$topline:      #383431;
 // Systray/start popup card outlines — a faint neutral frame (see $neutral),
 // so the cards read as a deliberate outline without any accent hue.
 $popup-border: rgba($neutral, 0.4);
