@@ -29,8 +29,10 @@
   :initial '{"volume":0,"muted":false,"in_volume":0,"in_muted":false}'
   "~/.config/eww/scripts/audio-state.sh")
 
+;; `loaded` starts false so the popup shows a loading hint until the first
+;; poll lands, rather than a blank box (the initial sinks/sources are empty).
 (defpoll audio-devices :interval "2s"
-  :initial '{"sinks":[],"sources":[]}'
+  :initial '{"sinks":[],"sources":[],"loaded":false}'
   "~/.config/eww/scripts/audio-devices.sh")
 
 ;; Initial values matter because the widget compares battery-capacity
@@ -424,14 +426,22 @@
               :onclick "~/.config/eww/scripts/audio-set-default.sh ${kind} '${device.name}'"
               :trailing-icon "" :trailing-class "" :trailing-tooltip ""))
 
-;; One audio category: title, its volume slider, then its device picker.
-(defwidget audio-popup-category [title kind devices node muted volume glyph_active glyph_muted]
+;; One audio category: title, its volume slider, then its device picker. The
+;; bordered device-list stays visible across all three states so its rounded
+;; frame doesn't pop in — mirrors network-popup-list: a loading hint until the
+;; first poll lands (`loaded` false), then the rows, or a no-devices hint.
+(defwidget audio-popup-category [title kind devices loaded node muted volume glyph_active glyph_muted]
   (box :orientation "v" :space-evenly false :spacing 6
     (label :class "audio-popup-title" :xalign 0 :text title)
     (audio-slider :node node :muted muted :volume volume
                   :glyph_active glyph_active :glyph_muted glyph_muted)
     (box :class "device-list" :orientation "v" :space-evenly false
-         :visible {arraylength(devices) > 0}
+      (label :class "popup-hint" :xalign 0
+             :visible {!loaded}
+             :text "Loading devices…")
+      (label :class "popup-hint" :xalign 0
+             :visible {loaded && arraylength(devices) == 0}
+             :text "No devices found")
       (for d in {devices}
         (audio-popup-row :kind kind :device d)))))
 
@@ -457,11 +467,13 @@
                    :label "Show volume percentage on bar"))
     (audio-popup-category :title "Input" :kind "source"
                           :devices {audio-devices.sources}
+                          :loaded {audio-devices.loaded}
                           :node "@DEFAULT_AUDIO_SOURCE@"
                           :muted {audio.in_muted} :volume {audio.in_volume}
                           :glyph_active "" :glyph_muted "")
     (audio-popup-category :title "Output" :kind "sink"
                           :devices {audio-devices.sinks}
+                          :loaded {audio-devices.loaded}
                           :node "@DEFAULT_AUDIO_SINK@"
                           :muted {audio.muted} :volume {audio.volume}
                           :glyph_active "" :glyph_muted "")))
@@ -554,10 +566,10 @@
     ;; list once the popup-open flag is seen, so eww still holds the
     ;; closed/empty value until that emit completes) show a loading row;
     ;; once loaded show the list, or a "none found" hint if it's empty.
-    (label :class "network-popup-hint" :xalign 0
+    (label :class "popup-hint" :xalign 0
            :visible {!network.networks_loaded}
            :text "Searching for networks…")
-    (label :class "network-popup-hint" :xalign 0
+    (label :class "popup-hint" :xalign 0
            :visible {network.networks_loaded && arraylength(network.networks) == 0}
            :text "No networks found")
     ;; :height caps the scrolled window so a busy area doesn't push the

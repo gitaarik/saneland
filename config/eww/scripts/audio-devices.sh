@@ -27,5 +27,9 @@ sources=$(pactl -f json list sources 2>/dev/null | jq --arg d "$default_source" 
   ]
 ')
 
+# `loaded: true` lets the popup tell a real (possibly empty) result apart from
+# the defpoll's initial placeholder, so it can show a loading hint before the
+# first poll lands instead of a blank box. This script only ever emits real
+# output, so the flag is always true here.
 jq -n --argjson sinks "$sinks" --argjson sources "$sources" \
-  '{sinks: $sinks, sources: $sources}'
+  '{sinks: $sinks, sources: $sources, loaded: true}'
