@@ -90,19 +90,25 @@ $topline: $border !default;
 // bleeds under the 1px seam border on the active side; since the seam's border-
 // image is transparent at its top/bottom ends, that bleed shows through as a
 // 1px orange line. Clipping to the padding box stops the fill before the border.
+// Colour an inactive cell shows, and the colour an active/hover fill fades OUT
+// to at its edges (so the highlight melts into its neighbours). Defaults to $bg
+// — the dark theme leaves inactive cells transparent-over-$bg and the glow fades
+// to the dark bar. The light theme sets it to a gray, so inactive cells read as
+// gray chips and the (now lighter/white) active glow fades into that gray.
+$cell-bg: $bg !default;
+
 @mixin cell-fill($fill) {
     background-color: $fill;
-    // Fade to rgba($bg, 0), NOT the `transparent` keyword: `transparent` is
-    // transparent BLACK (rgba(0,0,0,0)), so `$bg, transparent` interpolates the
-    // RGB toward black as the alpha drops — a darker fringe just inside each
-    // edge before it reaches the fill (very visible, and muddy on the light
-    // theme). rgba($bg, 0) keeps the bar's colour and only ramps the alpha, so
-    // the highlight melts into the bar $bg on every side like an unselected cell.
+    // Fade to rgba($cell-bg, 0), NOT the `transparent` keyword: `transparent` is
+    // transparent BLACK (rgba(0,0,0,0)), so `$cell-bg, transparent` interpolates
+    // the RGB toward black as the alpha drops — a darker fringe just inside each
+    // edge before it reaches the fill. rgba($cell-bg, 0) keeps the surround's
+    // colour and only ramps the alpha, so the fill melts into the cell surround.
     background-image:
-        linear-gradient(to bottom, $bg, rgba($bg, 0) 5px),
-        linear-gradient(to top,    $bg, rgba($bg, 0) 5px),
-        linear-gradient(to right,  $bg, rgba($bg, 0) 5px),
-        linear-gradient(to left,   $bg, rgba($bg, 0) 5px);
+        linear-gradient(to bottom, $cell-bg, rgba($cell-bg, 0) 5px),
+        linear-gradient(to top,    $cell-bg, rgba($cell-bg, 0) 5px),
+        linear-gradient(to right,  $cell-bg, rgba($cell-bg, 0) 5px),
+        linear-gradient(to left,   $cell-bg, rgba($cell-bg, 0) 5px);
     background-clip: padding-box;
 }
 @mixin cell-active { @include cell-fill($accent-fill); }
@@ -115,10 +121,17 @@ $topline: $border !default;
 // and the active tint/accent-bar are re-applied by their own rules below (both
 // later in the cascade, so they win).
 .launcher, .tag, .task {
-    background: transparent;
+    background: $cell-bg;
     border: none;
     border-radius: 0;
     box-shadow: none;
+}
+// Give the same $cell-bg to the group boxes (so the taskbar's empty hexpand
+// stretch is filled, not the bare window bg) and the systray/status cells, so
+// the whole bar reads as one gray surface rather than gray chips on lighter gaps.
+.tags, .taskbar, .status-group,
+.tray > *, .bluetooth, .audio, .network, .battery, .clock {
+    background-color: $cell-bg;
 }
 
 .launcher {
@@ -377,7 +390,7 @@ $topline: $border !default;
 // Audio device picker popup (left-click the audio widget). Small layer-shell
 // window anchored above the bar — the entire surface is the card, no overlay.
 .audio-popup {
-    background-color: $bg;
+    background-color: $cell-bg;
     color: $fg;
     border: 2px solid $popup-border;
     border-radius: 6px;
@@ -422,13 +435,23 @@ $topline: $border !default;
 // corners to sit flush inside the container. Scoped to .device-list so
 // the audio popup's rows keep their original look.
 .device-list {
-    border: 2px solid $border;
+    // Filled with the menu-button surface ($bg-secondary) so the list reads as a
+    // distinct panel on the popup card, with a darker $divider outline + row
+    // separators for definition.
+    background-color: $bg-secondary;
+    border: 2px solid $divider;
     border-radius: 6px;
 }
 .device-list button {
     border-radius: 0;
     box-shadow: none;
-    border-bottom: 1px solid $border;
+    border-bottom: 1px solid $divider;
+}
+// The shared .audio-row:hover fills with $bg-secondary — invisible now the list
+// itself is $bg-secondary. Lift the hovered row to the lighter $bg instead, so
+// hover still reads (matching the "highlight = lighter" feel of this theme).
+.device-list button:hover {
+    background: $bg;
 }
 .device-list button:first-child {
     border-top-left-radius: 5px;
@@ -505,7 +528,7 @@ $topline: $border !default;
 // Battery popup — same card chrome as the audio popup, plus a 3-button
 // power-profile selector and a small footer with health/cycles/rate.
 .battery-popup {
-    background-color: $bg;
+    background-color: $cell-bg;
     color: $fg;
     border: 2px solid $popup-border;
     border-radius: 6px;
@@ -573,7 +596,7 @@ $topline: $border !default;
 .power-profile-row { padding: 2px 0; }
 .power-profile-button {
     background: $bg-secondary;
-    border: 1px solid $border;
+    border: 2px solid $divider;
     border-radius: 4px;
     padding: 6px 8px;
     color: $fg-dim;
@@ -592,7 +615,7 @@ $topline: $border !default;
 // icon + label *is* the state indicator.
 .theme-toggle {
     background: $bg-secondary;
-    border: 1px solid $border;
+    border: 2px solid $divider;
     border-radius: 4px;
     padding: 6px 8px;
     color: $fg;
@@ -656,7 +679,7 @@ $topline: $border !default;
 // the body drops in below it within the same box.
 .options-section {
     background: $bg-secondary;
-    border: 1px solid $border;
+    border: 2px solid $divider;
     border-radius: 6px;
 }
 // Header: full-width clickable row, transparent so the container fill
@@ -667,6 +690,7 @@ $topline: $border !default;
     border: none;
     border-radius: 6px;
     padding: 6px 8px;
+    box-shadow: none;
 }
 // When expanded the header butts up against the revealed body; drop the
 // GTK button's bottom shadow so no line shows between them.
@@ -725,7 +749,7 @@ $topline: $border !default;
 // apps, an "All apps" row that falls back to rofi, and a bottom row of
 // power/session icon buttons (mirrors hypr-power-menu).
 .start-popup {
-    background-color: $bg;
+    background-color: $cell-bg;
     color: $fg;
     border: 2px solid $popup-border;
     border-radius: 6px;
@@ -740,15 +764,15 @@ $topline: $border !default;
 // Pinned-app row + "All apps" row: glyph + label, hover-highlighted.
 // Reuses the .audio-row interaction feel for consistency across popups.
 .start-item {
-    background: transparent;
-    border: none;
+    background: $bg-secondary;
+    border: 2px solid $divider;
     border-radius: 4px;
     padding: 6px 8px;
     color: $fg-dim;
 }
 .start-item:hover {
-    background: $bg-secondary;
     color: $fg;
+    border-color: $fg-dim;
 }
 .start-item-icon {
     font-size: 15px;
@@ -763,16 +787,16 @@ $topline: $border !default;
 // Bottom power/session row: icon-only buttons with tooltips.
 .start-power-row { padding-top: 2px; }
 .start-power-button {
-    background: transparent;
-    border: none;
+    background: $bg-secondary;
+    border: 2px solid $divider;
     border-radius: 4px;
     padding: 6px 10px;
     color: $fg-dim;
     font-size: 15px;
 }
 .start-power-button:hover {
-    background: $bg-secondary;
     color: $fg;
+    border-color: $fg-dim;
 }
 
 // Inline confirm shown in place of the power row when a destructive
@@ -785,7 +809,7 @@ $topline: $border !default;
 }
 .start-confirm-yes,
 .start-confirm-no {
-    border: 1px solid $border;
+    border: 2px solid $divider;
     border-radius: 4px;
     padding: 6px 10px;
     color: $fg-dim;
@@ -811,7 +835,7 @@ $topline: $border !default;
 // grid is drawn from JSON rather than GtkCalendar so the Options
 // Sunday/Monday week-start toggle can reorder its columns at runtime.
 .clock-popup {
-    background-color: $bg;
+    background-color: $cell-bg;
     color: $fg;
     border: 2px solid $popup-border;
     border-radius: 6px;
@@ -866,7 +890,7 @@ $topline: $border !default;
 // chrome so popup buttons feel consistent.
 .clock-popup-today {
     background: $bg-secondary;
-    border: 1px solid $border;
+    border: 2px solid $divider;
     border-radius: 4px;
     padding: 4px 10px;
     color: $fg-dim;
@@ -889,7 +913,7 @@ $topline: $border !default;
 }
 .clock-popup-tool {
     background: $bg-secondary;
-    border: 1px solid $border;
+    border: 2px solid $divider;
     border-radius: 4px;
     padding: 4px 10px;
     color: $fg-dim;
@@ -912,4 +936,24 @@ $topline: $border !default;
 .launcher, .tags, .taskbar, .status-group {
     border-top: 1px solid transparent;
     @include top-seam;
+}
+
+// Unify the menu buttons: flat (drop the GTK bevel/raised shadow) $divider-
+// outlined surfaces like the bluetooth/network device-list, with one font.
+.power-profile-button, .theme-toggle,
+.start-item, .start-power-button,
+.clock-popup-today, .clock-popup-tool,
+.start-confirm-yes, .start-confirm-no {
+    box-shadow: none;
+    font-family: $font-family;
+    font-size: $font-size;
+    font-weight: normal;
+}
+// Plain black ($fg) label text on all of them — except the poweroff-confirm
+// "Yes", which keeps its $critical red as a danger cue.
+.power-profile-button, .theme-toggle,
+.start-item, .start-power-button,
+.clock-popup-today, .clock-popup-tool,
+.start-confirm-no {
+    color: $fg;
 }

@@ -19,8 +19,13 @@ $accent:       #b57614;
 // no yellow. $neutral is a mid gray; it flips to a light gray on the dark theme,
 // mirroring how $fg flips against $bg.
 $neutral:            #5b5b5c;
-$accent-fill:        rgba($neutral, 0.18);  // selected bar-cell wash
-$accent-fill-hover:  rgba($neutral, 0.09);  // hover bar-cell wash
+// Inverted highlight (mirrors the dark theme): inactive cells are a gray chip
+// ($cell-bg) and the active/hover cell glows LIGHTER — a near-white wash that
+// fades back into the gray at its edges. (Dark theme keeps $cell-bg = $bg and a
+// light-gray glow; here the glow just goes all the way to white over the gray.)
+$cell-bg:            #d9d6cf;                // inactive cell / glow fade-out colour
+$accent-fill:        rgba(#ffffff, 0.90);    // active cell — near-white glow
+$accent-fill-hover:  rgba(#ffffff, 0.45);    // hover — fainter white glow
 $accent-tint:        rgba($neutral, 0.16);  // "today" calendar chip
 $ui-select:          $fg;                    // selected row / checked box / active icon
 $ui-fill:            $fg-dim;                // volume / brightness / charge fill
@@ -31,7 +36,7 @@ $critical:     #9d0006;
 $border:       #d5d3d0;   // light neutral gray
 // Right-side widget separators — a touch darker than $border so the inset
 // gradient hairline between tray cells reads as a clear seam against $bg.
-$divider:      #cccac6;   // neutral gray (was tan #c8b894)
+$divider:      #bebbb4;   // darker gray so seams read against the $cell-bg chips
 // Bar top-border hairline — lighter than the $divider seams so it reads as a
 // faint frame line, not another seam. (Also tints the section-boundary seams,
 // which share the top line's border-image.)
