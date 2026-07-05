@@ -32,6 +32,10 @@ $border:       #d5d3d0;   // light neutral gray
 // Right-side widget separators — a touch darker than $border so the inset
 // gradient hairline between tray cells reads as a clear seam against $bg.
 $divider:      #cccac6;   // neutral gray (was tan #c8b894)
+// Bar top-border hairline — lighter than the $divider seams so it reads as a
+// faint frame line, not another seam. (Also tints the section-boundary seams,
+// which share the top line's border-image.)
+$topline:      #e9e7e2;
 // Systray/start popup card outlines — a faint neutral frame (see $neutral),
 // so the cards read as a deliberate outline without any accent hue.
 $popup-border: rgba($neutral, 0.4);

@@ -977,6 +977,7 @@
 ;; last tray cell's right border is the shared divider with .bluetooth.
 (defwidget right-side []
   (box :class "status-group" :orientation "h" :space-evenly false :spacing 0 :halign "end"
+    (box :class "status-sep")
     (systray :class "tray" :icon-size 16 :spacing 0)
     (bluetooth)
     (audio)

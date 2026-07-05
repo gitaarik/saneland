@@ -23,10 +23,10 @@ $font-size: 14px !default;
 window#bar {
     background-color: $bg;
     color: $fg;
-    // No hard border-top: it's a 1px $border line across the very top that
-    // doesn't fade (near-invisible in dark, but a clear tan line in light), at
-    // odds with the bar's soft-fade seams and highlights. The distinct bar bg
-    // already separates it from the content above.
+    // The top-border hairline can't live here: gtk-layer-shell doesn't paint a
+    // border or background on the layer window (or its root box). It's drawn on
+    // the group boxes' border-top instead — see the border-top rule after the
+    // @mixin seam / cell rules.
 }
 window#bar > * {
     padding: 0 4px;
@@ -53,6 +53,24 @@ window#bar > * {
                                    rgba($divider, 0) 0%,
                                    $divider 35%, $divider 65%,
                                    rgba($divider, 0) 100%) 1;
+}
+
+// Top-border line colour — a lighter tone than the $divider seams. Per-theme via
+// !default; the light theme dials it up. Also colours the section-boundary seams
+// that share the top-line border-image (see @mixin top-seam).
+$topline: $border !default;
+
+// Variant of @seam for the full-width group boxes that carry the bar's top-border
+// hairline. A border-top samples the border-image's TOP ROW, so unlike @seam
+// (transparent at 0%, which would make the top line invisible) this is SOLID at
+// 0% — painting the line — and only fades to transparent at the bottom so the
+// box's own section-boundary seam still has a soft foot. One border-image per
+// element, so that section seam necessarily shares this (solid-topped, $topline)
+// treatment and connects into the line; the between-cell seams keep @seam.
+@mixin top-seam {
+    border-image: linear-gradient(to bottom,
+                                   $topline 0%, $topline 70%,
+                                   rgba($topline, 0) 100%) 1;
 }
 
 // ---- Active-cell highlight --------------------------------------------------
@@ -106,7 +124,10 @@ window#bar > * {
 .launcher {
     color: $fg;
     font-weight: bold;
-    padding: 0 6px;
+    // Small left padding on top of the bar's 4px edge inset (window#bar > *) —
+    // ~6px total so the glyph sits tight-but-not-cramped in the corner, rather
+    // than the ~10px it had at 6px. Right padding sets the gap to the first tag.
+    padding: 0 6px 0 2px;
 }
 // Highlighted while the start menu is open — mirrors .tag.active.
 .launcher.active {
@@ -257,10 +278,11 @@ window#bar > * {
 // between-item seams, to separate the bar's sections. Carried on the group
 // boxes' left edge because those are always present — unlike the first VISIBLE
 // tag/task, which can't be targeted in CSS when leading workspaces/windows are
-// hidden. It sits flush against that first item's own 1px seam, so the two read
-// as a single ~3px boundary seam.
+// hidden. It sits flush against that first item's own 1px seam, so 1px here +
+// 1px there reads as a single 2px boundary seam — matching the taskbar | status
+// boundary on the right (.status-group), which has no adjacent item seam to add.
 .tags, .taskbar {
-    border-left: 2px solid transparent;
+    border-left: 1px solid transparent;
     @include seam;
 }
 // Mirror that section boundary on the RIGHT group: the status widgets carry
@@ -270,7 +292,18 @@ window#bar > * {
 // (not toggled on window count) so it stays consistent with the left-side
 // section seams even when no windows are open.
 .status-group {
-    border-left: 2px solid transparent;
+    border-left: 1px solid transparent;
+    @include seam;
+}
+// The taskbar | status boundary is the one section seam with no fading cell-seam
+// beside it, so on its own the .status-group border (which shares the solid-
+// topped top-line image, @top-seam) reads as a hard, non-fading line. A dedicated
+// 1px separator as the status-group's first child adds the missing soft seam: it
+// carries the normal @seam (fades top AND bottom) and sits flush against the
+// group's own 1px border, so the pair reads like the left-side boundaries — a
+// soft seam that still meets the top line.
+.status-sep {
+    border-left: 1px solid transparent;
     @include seam;
 }
 // While a systray item's popup is open, tint its bar cell and draw the accent
@@ -864,4 +897,19 @@ window#bar > * {
 .clock-popup-tool:hover {
     color: $fg;
     border-color: $fg-dim;
+}
+
+// Bar top-border hairline. gtk-layer-shell won't paint a border or background on
+// window#bar or its root box, and each element gets only ONE border-image — so
+// the line rides on the border-image of the full-width group boxes via a 1px
+// border-top (border-top samples the image's solid top row; see @mixin top-seam).
+// .launcher + .tags + .taskbar (hexpands to fill the middle) + .status-group tile
+// the whole bar width with no gap. @top-seam here OVERRIDES the plain @seam these
+// boxes get for their section-boundary left seam, so that seam adopts the same
+// solid-topped $topline treatment and reads as connecting into the line. The
+// launcher has no seam of its own — only its border-top has width, so only the
+// top paints (no stray left seam on the first cell).
+.launcher, .tags, .taskbar, .status-group {
+    border-top: 1px solid transparent;
+    @include top-seam;
 }
