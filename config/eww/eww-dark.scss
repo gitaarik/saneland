@@ -12,9 +12,9 @@ $accent-tint:  rgba(215, 153, 33, 0.25);
 // (reads as a glow) but DARKENS/muddies over the cream light bar, so each theme
 // needs its own value. Kept low so the glow stays close to the bar — subtle,
 // not a high-contrast block.
-$accent-fill:  rgba($accent, 0.3);
+$accent-fill:  rgba($accent, 0.28);
 // Even fainter fill for the hover state — same glow, lighter touch.
-$accent-fill-hover: rgba($accent, 0.1);
+$accent-fill-hover: rgba($accent, 0.12);
 $high:         #22c55e;
 $low:          #d79921;
 $warning:      #d65d0e;

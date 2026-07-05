@@ -11,9 +11,9 @@ $accent-tint:  rgba(181, 118, 20, 0.25);
 // edges). Higher alpha than the dark theme: over the pale cream $bg a low-alpha
 // accent desaturates into a muddy tan, so it stays a bit stronger than dark's
 // to read as a clean gold — but still light enough to be a subtle glow.
-$accent-fill:  rgba($accent, 0.4);
+$accent-fill:  rgba($accent, 0.28);
 // Even fainter fill for the hover state — same glow, lighter touch.
-$accent-fill-hover: rgba($accent, 0.13);
+$accent-fill-hover: rgba($accent, 0.09);
 $high:         #16a34a;
 $low:          #b57614;
 $warning:      #af3a03;
