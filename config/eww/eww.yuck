@@ -295,7 +295,7 @@
 ;; config and swap < RAM, so it can't restore a session.
 (defwidget start-popup-content []
   (box :class "start-popup" :orientation "v" :space-evenly false :spacing 2
-    (box :class "start-power-row" :orientation "h" :space-evenly true :spacing 4
+    (box :class "start-power-row" :orientation "h" :space-evenly true :spacing 0
          :visible {start-confirm == ""}
       (start-power         :icon "" :tooltip "Lock   (Super+Escape)"   :cmd "setsid -f hyprlock >/dev/null 2>&1")
       (start-power-confirm :icon "" :tooltip "Suspend"                 :key "suspend")
@@ -310,11 +310,12 @@
     ;; because they legitimately want a fresh window every time.
     (start-item :icon "" :label "All apps"    :cmd "rofi -show drun")
     (box :class "start-popup-divider")
-    (start-item :icon "" :label "Thunderbird" :cmd "thunderbird")
-    (start-item :icon "" :label "Terminal"    :cmd "--new kitty")
-    (start-item :icon "" :label "Files"       :cmd "--new thunar ~")
-    ;; Browser is a per-machine choice — icon/label/cmd come from local.yuck.
-    (start-item :icon browser-icon :label browser-label :cmd browser-cmd)))
+    (box :class "start-item-list" :orientation "v" :space-evenly false
+      (start-item :icon "" :label "Thunderbird" :cmd "thunderbird")
+      (start-item :icon "" :label "Terminal"    :cmd "--new kitty")
+      (start-item :icon "" :label "Files"       :cmd "--new thunar ~")
+      ;; Browser is a per-machine choice — icon/label/cmd come from local.yuck.
+      (start-item :icon browser-icon :label browser-label :cmd browser-cmd))))
 
 ;; Tags 1-12 — Hyprland workspaces. Hidden if the workspace is empty and
 ;; not focused (matches Hyprland's default workspaces module).
@@ -460,7 +461,7 @@
 (defwidget audio-popup-content []
   ;; Input on top, output below: output is the common control so it anchors
   ;; the bottom nearest the systray icon, input rides above it.
-  (box :class "audio-popup" :orientation "v" :space-evenly false :spacing 10
+  (box :class "audio-popup" :orientation "v" :space-evenly false :spacing 18
     (audio-popup-settings)
     (options-section :expanded audio-options-expanded :var "audio-options-expanded"
       (pref-toggle :name "audio-show-volume" :value audio-show-volume
@@ -605,7 +606,7 @@
 (defvar network-options-expanded false)
 
 (defwidget network-popup-content []
-  (box :class "audio-popup" :orientation "v" :space-evenly false :spacing 10
+  (box :class "audio-popup" :orientation "v" :space-evenly false :spacing 18
     (network-popup-settings)
     (options-section :expanded network-options-expanded :var "network-options-expanded"
       (pref-toggle :name "network-show-ssid" :value network-show-ssid
@@ -699,7 +700,7 @@
 (defvar bluetooth-options-expanded false)
 
 (defwidget bluetooth-popup-content []
-  (box :class "audio-popup" :orientation "v" :space-evenly false :spacing 10
+  (box :class "audio-popup" :orientation "v" :space-evenly false :spacing 18
     (bluetooth-popup-blueman)
     (options-section :expanded bluetooth-options-expanded :var "bluetooth-options-expanded"
       (pref-toggle :name "bluetooth-show-device" :value bluetooth-show-device
@@ -865,7 +866,7 @@
 (defvar battery-options-expanded false)
 
 (defwidget battery-popup-content []
-  (box :class "battery-popup" :orientation "v" :space-evenly false :spacing 10
+  (box :class "battery-popup" :orientation "v" :space-evenly false :spacing 18
     (battery-popup-status)
     (battery-popup-profile)
     (options-section :expanded battery-options-expanded :var "battery-options-expanded"
@@ -936,7 +937,7 @@
     ;; backgrounds hyprshot. Tooltips advertise the Hyprland keybind
     ;; so the popup doubles as a teaching surface.
     (label :class "clock-popup-tools-label" :xalign 0 :text "Screenshot")
-    (box :class "clock-popup-tools" :orientation "h" :space-evenly true :spacing 6
+    (box :class "clock-popup-tools" :orientation "h" :space-evenly true :spacing 0
       (button :class "clock-popup-tool"
               :tooltip "Screenshot region   (Print)"
               :onclick "~/.config/eww/scripts/popup-dismiss.sh clock-popup; hyprshot -m region -o ~/Pictures/Screenshots &"
@@ -949,11 +950,12 @@
               :tooltip "Screenshot full screen   (Ctrl+Print)"
               :onclick "~/.config/eww/scripts/popup-dismiss.sh clock-popup; hyprshot -m output -o ~/Pictures/Screenshots &"
         "Full"))
+    (box :class "section-gap")
     (options-section :expanded clock-options-expanded :var "clock-options-expanded"
       (pref-toggle :name "clock-show-date" :value clock-show-date
                    :label "Show date on bar")
       (week-start-toggle :value clock-monday-first))
-    (box :class "clock-popup-divider")
+    (box :class "section-gap")
     (label :class "clock-popup-title" :xalign 0 :text date-tooltip)
     (clock-calendar)
     (button :class "clock-popup-today"

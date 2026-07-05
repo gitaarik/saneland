@@ -394,7 +394,7 @@ $cell-bg: $bg !default;
     color: $fg-dim;
 }
 .audio-row:hover {
-    background: $bg-secondary;
+    background: $accent-fill-hover;
     color: $fg;
 }
 .audio-row.active {
@@ -432,10 +432,10 @@ $cell-bg: $bg !default;
     border-bottom: 1px solid $divider;
 }
 // The shared .audio-row:hover fills with $bg-secondary — invisible now the list
-// itself is $bg-secondary. Lift the hovered row to the lighter $bg instead, so
-// hover still reads (matching the "highlight = lighter" feel of this theme).
+// itself is $bg-secondary. Wash the hovered row with the same $accent-fill-hover
+// tint the interactive bar cells use, so hover reads consistently across the UI.
 .device-list button:hover {
-    background: $bg;
+    background: $accent-fill-hover;
 }
 .device-list button:first-child {
     border-top-left-radius: 5px;
@@ -460,7 +460,7 @@ $cell-bg: $bg !default;
     min-width: 28px;
 }
 .audio-mute:hover {
-    background: $bg-secondary;
+    background: $accent-fill-hover;
     color: $fg;
 }
 .audio-mute.muted {
@@ -586,8 +586,8 @@ $cell-bg: $bg !default;
     color: $fg-dim;
 }
 .power-profile-button:hover {
+    background: $accent-fill-hover;
     color: $fg;
-    border-color: $fg-dim;
 }
 .power-profile-button.active {
     color: $ui-select;
@@ -605,7 +605,7 @@ $cell-bg: $bg !default;
     color: $fg;
 }
 .theme-toggle:hover {
-    border-color: $fg-dim;
+    background: $accent-fill-hover;
 }
 .theme-toggle-icon {
     color: $ui-select;
@@ -669,10 +669,16 @@ $cell-bg: $bg !default;
 // Header: full-width clickable row, transparent so the container fill
 // shows through. Only the heading/chevron text brightens on hover (a row
 // fill would be invisible against the matching container background).
+// Hover fill sits 1px inside the container's 2px border (5px vs the
+// container's 6px), and squares off at the bottom so it flows straight
+// into the revealed body instead of cutting a rounded notch above it.
 .options-row {
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
     padding: 6px 8px;
     box-shadow: none;
 }
@@ -682,8 +688,10 @@ $cell-bg: $bg !default;
     box-shadow: none;
 }
 .options-heading {
-    color: $fg-dim;
-    font-weight: bold;
+    color: $fg;
+}
+.options-row:hover {
+    background: $accent-fill-hover;
 }
 .options-row:hover .options-heading,
 .options-row:hover .options-chevron {
@@ -755,32 +763,86 @@ $cell-bg: $bg !default;
     color: $fg-dim;
 }
 .start-item:hover {
+    background: $accent-fill-hover;
     color: $fg;
-    border-color: $fg-dim;
+}
+// Grouped pinned-app list: same collapsed-border treatment as the
+// bluetooth/network .device-list — one rounded outline around the whole
+// set, rows separated by hairlines instead of each reading as its own
+// card. Drops the per-item radius/border and rounds only the outer
+// corners of the first/last row.
+.start-item-list {
+    border: 2px solid $divider;
+    border-radius: 6px;
+}
+.start-item-list .start-item {
+    border: none;
+    border-radius: 0;
+    border-bottom: 1px solid $divider;
+}
+// Grouped rows inherit the shared .start-item:hover wash; nothing extra
+// is needed here now that hover no longer brightens the border (which
+// would otherwise light up the hairline separators).
+.start-item-list .start-item:first-child {
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+}
+.start-item-list .start-item:last-child {
+    border-bottom: none;
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
 }
 .start-item-icon {
     font-size: 15px;
     min-width: 22px;
 }
-// Thin rule between the pinned list, the "All apps" row, and the power
-// row — same look as .clock-popup-divider.
+// Invisible spacer between the pinned list, the "All apps" row, and the
+// power row — categories are separated by gap alone now, no rule line.
+// Margin preserves the spacing the old 1px border sat in.
 .start-popup-divider {
-    border-top: 1px solid $border;
-    margin: 6px 2px;
+    margin: 7px 2px;
 }
-// Bottom power/session row: icon-only buttons with tooltips.
-.start-power-row { padding-top: 2px; }
-.start-power-button {
+// Invisible category spacer for the clock popup, whose top-level box holds
+// within-category groups (label + screenshot buttons; date + calendar +
+// today) so it can't just use one uniform spacing like the other popups.
+// As an empty child in the spacing-8 box it picks up that spacing on both
+// sides (8 + 8), landing on the same ~18px category gap the other popups
+// get from their spacing-18 boxes. The 1px margin just guarantees the
+// empty box claims a layout slot so both flanking gaps land.
+.section-gap {
+    margin: 1px 0;
+}
+// Bottom power/session row: icon-only buttons with tooltips, drawn as one
+// segmented control — a single rounded outline (like the .start-item-list /
+// .device-list groups) with the buttons divided by vertical hairlines
+// instead of each being its own pill.
+.start-power-row {
+    margin-top: 2px;
     background: $bg-secondary;
     border: 2px solid $divider;
-    border-radius: 4px;
+    border-radius: 6px;
+}
+.start-power-button {
+    background: transparent;
+    border: none;
+    border-right: 1px solid $divider;
+    border-radius: 0;
     padding: 6px 10px;
     color: $fg-dim;
     font-size: 15px;
 }
+.start-power-button:first-child {
+    border-top-left-radius: 5px;
+    border-bottom-left-radius: 5px;
+}
+.start-power-button:last-child {
+    border-right: none;
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
 .start-power-button:hover {
+    background: $accent-fill-hover;
     color: $fg;
-    border-color: $fg-dim;
 }
 
 // Inline confirm shown in place of the power row when a destructive
@@ -793,6 +855,7 @@ $cell-bg: $bg !default;
 }
 .start-confirm-yes,
 .start-confirm-no {
+    background: $bg-secondary;
     border: 2px solid $divider;
     border-radius: 4px;
     padding: 6px 10px;
@@ -810,9 +873,8 @@ $cell-bg: $bg !default;
     color: $bg;
 }
 .start-confirm-no:hover {
-    background: $bg-secondary;
+    background: $accent-fill-hover;
     color: $fg;
-    border-color: $fg-dim;
 }
 
 // Clock popup — title + self-rendered month grid (clock-calendar). The
@@ -847,6 +909,7 @@ $cell-bg: $bg !default;
     color: $fg-dim;
 }
 .clock-cal-nav:hover {
+    background: $accent-fill-hover;
     color: $fg;
 }
 // Weekday header row — dim, small, sits above the day rows.
@@ -880,31 +943,45 @@ $cell-bg: $bg !default;
     color: $fg-dim;
 }
 .clock-popup-today:hover {
+    background: $accent-fill-hover;
     color: $fg;
-    border-color: $fg-dim;
 }
 
-// "Tools" section below the calendar — divider + dim section label +
-// a row of utility buttons (currently just screenshot modes). Buttons
-// reuse the .clock-popup-today chrome so the section feels native.
-.clock-popup-divider {
-    border-top: 1px solid $border;
-    margin-top: 4px;
-}
+// "Tools" section — dim section label + a row of utility buttons
+// (currently just screenshot modes). Buttons reuse the .clock-popup-today
+// chrome so the section feels native.
 .clock-popup-tools-label {
     color: $fg-dim;
     font-weight: bold;
 }
-.clock-popup-tool {
+// Screenshot tools drawn as one segmented control — same collapsed-border
+// treatment as the .start-power-row: a single rounded outline with the
+// buttons divided by vertical hairlines instead of each being its own pill.
+.clock-popup-tools {
     background: $bg-secondary;
     border: 2px solid $divider;
-    border-radius: 4px;
+    border-radius: 6px;
+}
+.clock-popup-tool {
+    background: transparent;
+    border: none;
+    border-right: 1px solid $divider;
+    border-radius: 0;
     padding: 4px 10px;
     color: $fg-dim;
 }
+.clock-popup-tool:first-child {
+    border-top-left-radius: 5px;
+    border-bottom-left-radius: 5px;
+}
+.clock-popup-tool:last-child {
+    border-right: none;
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
 .clock-popup-tool:hover {
+    background: $accent-fill-hover;
     color: $fg;
-    border-color: $fg-dim;
 }
 
 // Bar top-border hairline. gtk-layer-shell won't paint a border or background on
@@ -927,7 +1004,8 @@ $cell-bg: $bg !default;
 .power-profile-button, .theme-toggle,
 .start-item, .start-power-button,
 .clock-popup-today, .clock-popup-tool,
-.start-confirm-yes, .start-confirm-no {
+.start-confirm-yes, .start-confirm-no,
+.options-row, .options-heading {
     box-shadow: none;
     font-family: $font-family;
     font-size: $font-size;
