@@ -306,13 +306,13 @@
     (box :class "start-popup-divider")
     ;; Default rows are "focus-or-launch": click focuses an already-open
     ;; window (switching to its workspace) instead of spawning a second
-    ;; one — see start-launch.sh. Browser + terminal use --new because
-    ;; they legitimately want a fresh window every time.
+    ;; one — see start-launch.sh. Browser, terminal and files use --new
+    ;; because they legitimately want a fresh window every time.
     (start-item :icon "" :label "All apps"    :cmd "rofi -show drun")
     (box :class "start-popup-divider")
     (start-item :icon "" :label "Thunderbird" :cmd "thunderbird")
     (start-item :icon "" :label "Terminal"    :cmd "--new kitty")
-    (start-item :icon "" :label "Files"       :cmd "thunar ~")
+    (start-item :icon "" :label "Files"       :cmd "--new thunar ~")
     ;; Browser is a per-machine choice — icon/label/cmd come from local.yuck.
     (start-item :icon browser-icon :label browser-label :cmd browser-cmd)))
 
