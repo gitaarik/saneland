@@ -55,10 +55,10 @@ window#bar > * {
                                    rgba($divider, 0) 100%) 1;
 }
 
-// Top-border line colour — a lighter tone than the $divider seams. Per-theme via
-// !default; the light theme dials it up. Also colours the section-boundary seams
-// that share the top-line border-image (see @mixin top-seam).
-$topline: $border !default;
+// Top-border line colour. Defaults to the $divider seam colour so the wide top
+// border matches the seams; a theme can override it. Only the top line uses this
+// now — the section-boundary seams are dedicated @seam elements (see .cat-sep).
+$topline: $divider !default;
 
 // Variant of @seam for the full-width group boxes that carry the bar's top-border
 // hairline. A border-top samples the border-image's TOP ROW, so unlike @seam
@@ -129,7 +129,7 @@ $cell-bg: $bg !default;
 // Give the same $cell-bg to the group boxes (so the taskbar's empty hexpand
 // stretch is filled, not the bare window bg) and the systray/status cells, so
 // the whole bar reads as one gray surface rather than gray chips on lighter gaps.
-.tags, .taskbar, .status-group,
+.tags, .taskbar, .status-group, .cat-sep,
 .tray > *, .bluetooth, .audio, .network, .battery, .clock {
     background-color: $cell-bg;
 }
@@ -287,36 +287,20 @@ $cell-bg: $bg !default;
     border-left: 1px solid transparent;
     @include seam;
 }
-// Section boundaries (launcher | tags | taskbar) read thicker than the 1px
-// between-item seams, to separate the bar's sections. Carried on the group
-// boxes' left edge because those are always present — unlike the first VISIBLE
-// tag/task, which can't be targeted in CSS when leading workspaces/windows are
-// hidden. It sits flush against that first item's own 1px seam, so 1px here +
-// 1px there reads as a single 2px boundary seam — matching the taskbar | status
-// boundary on the right (.status-group), which has no adjacent item seam to add.
-.tags, .taskbar {
+// Section boundaries (launcher | tags | taskbar | status) are a 2px $divider seam
+// — stronger than the 1px between-cell seams. The group boxes can't draw it:
+// their one border-image is spent on the top-border line (@top-seam), which is
+// solid at the top so it can't fade like a seam. So dedicated separator elements
+// carry it with the normal (top/bottom-fading) @seam: a 1px .cat-sep between
+// launcher|tags and tags|taskbar sits flush against the next group's first-cell
+// 1px seam (→ 2px), and a 2px .status-sep covers the taskbar|status boundary,
+// whose status widgets seam on their RIGHT (no first-cell seam to pair with).
+.cat-sep {
     border-left: 1px solid transparent;
     @include seam;
 }
-// Mirror that section boundary on the RIGHT group: the status widgets carry
-// their seams on each cell's right edge, so the group's own left edge (where
-// the right-growing taskbar now butts up against it) had none. A 2px seam here
-// closes that gap and reads as the taskbar | status boundary — kept permanent
-// (not toggled on window count) so it stays consistent with the left-side
-// section seams even when no windows are open.
-.status-group {
-    border-left: 1px solid transparent;
-    @include seam;
-}
-// The taskbar | status boundary is the one section seam with no fading cell-seam
-// beside it, so on its own the .status-group border (which shares the solid-
-// topped top-line image, @top-seam) reads as a hard, non-fading line. A dedicated
-// 1px separator as the status-group's first child adds the missing soft seam: it
-// carries the normal @seam (fades top AND bottom) and sits flush against the
-// group's own 1px border, so the pair reads like the left-side boundaries — a
-// soft seam that still meets the top line.
 .status-sep {
-    border-left: 1px solid transparent;
+    border-left: 2px solid transparent;
     @include seam;
 }
 // While a systray item's popup is open, tint its bar cell and draw the accent

@@ -966,7 +966,9 @@
 (defwidget left-side []
   (box :orientation "h" :space-evenly false :spacing 0 :hexpand true
     (launcher)
+    (box :class "cat-sep")
     (tags)
+    (box :class "cat-sep")
     (taskbar)))
 
 ;; :spacing 0 in both boxes so adjacent items literally touch — the SCSS
