@@ -515,11 +515,28 @@ $cell-bg: $bg !default;
 // Brightness row inside the battery popup: icon + scale + trailing
 // percentage. Drag to set, or use XF86MonBrightness keys.
 .brightness-row { padding: 4px 4px; }
+// Same icon-button chrome as the audio popup's mute buttons: a bordered,
+// filled, fixed-width box with the glyph hexpand-centred inside it.
+.brightness-icon-box {
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    box-shadow: none;
+    border-radius: 4px;
+    padding: 4px 0;
+    min-width: 40px;
+}
+.brightness-icon-box:hover {
+    background: $accent-fill-hover;
+}
+.brightness-icon-box:hover .brightness-icon {
+    color: $fg;
+}
 .brightness-icon {
     color: $fg-dim;
-    font-size: 16px;
-    min-width: 28px;
-    padding: 4px 10px;
+    // fa-sun (U+F185) is slightly right-heavy — trim the content box on the
+    // right so the centred glyph lands optically centred (measured to center
+    // with 4px; 8px over-shot it left).
+    padding-right: 4px;
 }
 .brightness-value {
     color: $fg-dim;

@@ -850,11 +850,10 @@
     ;; Click-toggle: halve current brightness if >=50%, double if <50%;
     ;; next click restores the pre-toggle value (state lives in
     ;; $XDG_RUNTIME_DIR/brightness-toggle.state).
-    (eventbox :class "brightness-icon-box"
-              :cursor "pointer"
-              :tooltip "Click to halve / double brightness"
-              :onclick "~/.local/bin/brightness-toggle"
-      (label :class "brightness-icon" :text ""))
+    (button :class "brightness-icon-box"
+            :tooltip "Click to halve / double brightness"
+            :onclick "~/.local/bin/brightness-toggle"
+      (label :class "brightness-icon" :halign "center" :hexpand true :text ""))
     (scale :hexpand true
            :value {brightness}
            :onchange "brightnessctl set {}% && eww update brightness={}"
