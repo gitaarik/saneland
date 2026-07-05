@@ -891,12 +891,12 @@
     (box :class {"clock" + (open-popup == "clock-popup" ? " active" : "")}
          :orientation "h" :space-evenly false :spacing 6
          :tooltip date-tooltip
-      (label :text time)
-      ;; The date rides behind the time, gated by the "Show date on bar"
+      ;; The date rides ahead of the time, gated by the "Show date on bar"
       ;; preference in the clock popup's Options — the time alone is the
       ;; default, so the bar can collapse back to a bare clock.
       (label :class "clock-date" :text date-short
-             :visible {clock-show-date == "true"}))))
+             :visible {clock-show-date == "true"})
+      (label :text time))))
 
 ;; Clock popup — left-click the clock to toggle a calendar with today
 ;; highlighted. The grid is rendered by cal.sh (see cal-data) rather than
