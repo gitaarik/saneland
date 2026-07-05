@@ -300,36 +300,37 @@
              :visible {app.path != ""})
       (label :class "start-app-label" :xalign 0 :hexpand true :text {app.name}))))
 
-;; The "All apps" toggle row + its revealed flyout. Clicking the row flips
-;; the flyout open/closed; the chevron reflects the state. When open, the
-;; left column lists the non-empty categories and the right pane scrolls
-;; the active category's apps (start-apps-cat, seeded to the first category
-;; by popup-toggle.sh on open, then updated by hover).
-(defwidget start-all-apps []
-  (box :orientation "v" :space-evenly false
+;; The "All apps" row in the menu column. Hovering it opens the pop-out
+;; apps panel to the right (start-apps-open); the outer eventbox in
+;; start-popup-content clears it when the pointer leaves the whole menu.
+;; The trailing right-chevron signals the fly-out. Click also opens, so a
+;; tap works as well as a hover.
+(defwidget start-all-apps-row []
+  (eventbox :onhover "eww update start-apps-open=true"
     (button :class {start-apps-open ? "start-item start-all-toggle active" : "start-item start-all-toggle"}
-            :onclick "eww update start-apps-open=${!start-apps-open}"
+            :onclick "eww update start-apps-open=true"
       (box :orientation "h" :space-evenly false :spacing 10
         (label :class "start-item-icon" :text "")
         (label :class "start-item-label" :xalign 0 :hexpand true :text "All apps")
-        (label :class "start-all-chevron" :text {start-apps-open ? "" : ""})))
-    (revealer :transition "slidedown" :duration "120ms" :reveal start-apps-open
-      ;; Fixed-width flyout: the category column takes its natural width and
-      ;; the scroll :hexpands into the rest. min-width on the scroll itself
-      ;; doesn't stick (GtkScrolledWindow sizes to min-content), so the width
-      ;; has to come from the container + hexpand, not the scroll.
-      (box :class "start-flyout" :orientation "h" :space-evenly false :spacing 6
-        (box :class "start-flyout-cats" :orientation "v" :space-evenly false
-          (for c in {start-apps.categories}
-            (start-cat :name c)))
-        ;; :height caps the scrolled window (a busy category would else run
-        ;; the popup off the top of the screen). CSS max-height is rejected
-        ;; by eww 0.5's SCSS compiler — the height attr is the workaround,
-        ;; same as network-popup-scroll.
-        (scroll :class "start-flyout-apps" :hexpand true :vscroll true :hscroll false :height 340
-          (box :orientation "v" :space-evenly false :valign "start"
-            (for app in {start-apps.apps[start-apps-cat]}
-              (start-app :app app))))))))
+        (label :class "start-all-chevron" :text "")))))
+
+;; The pop-out apps panel: flies out to the RIGHT of the menu when "All
+;; apps" is hovered. Two columns — categories (left) and the hovered
+;; category's apps (right, scrollable). Its own card chrome (.start-flyout)
+;; so it reads as a separate popup attached to the menu.
+(defwidget start-apps-panel []
+  (box :class "start-flyout" :orientation "h" :space-evenly false :spacing 6
+    (box :class "start-flyout-cats" :orientation "v" :space-evenly false
+      (for c in {start-apps.categories}
+        (start-cat :name c)))
+    ;; :height caps the scrolled window (a busy category would else run the
+    ;; popup off the top of the screen). CSS max-height is rejected by eww
+    ;; 0.5's SCSS compiler — the height attr is the workaround, same as
+    ;; network-popup-scroll.
+    (scroll :class "start-flyout-apps" :hexpand true :vscroll true :hscroll false :height 340
+      (box :orientation "v" :space-evenly false :valign "start"
+        (for app in {start-apps.apps[start-apps-cat]}
+          (start-app :app app))))))
 
 ;; One icon button in the start menu's bottom power/session row. These
 ;; Lock is harmless/reversible, so it acts immediately: dismiss the menu
@@ -376,28 +377,36 @@
 ;; out. Hibernate is intentionally absent — this system has no resume
 ;; config and swap < RAM, so it can't restore a session.
 (defwidget start-popup-content []
-  (box :class "start-popup" :orientation "v" :space-evenly false :spacing 2
-    (box :class "start-power-row" :orientation "h" :space-evenly true :spacing 0
-         :visible {start-confirm == ""}
-      (start-power         :icon "" :tooltip "Lock   (Super+Escape)"   :cmd "setsid -f hyprlock >/dev/null 2>&1")
-      (start-power-confirm :icon "" :tooltip "Suspend"                 :key "suspend")
-      (start-power-confirm :icon "" :tooltip "Reboot"                  :key "reboot")
-      (start-power-confirm :icon "" :tooltip "Power off"               :key "poweroff")
-      (start-power-confirm :icon "" :tooltip "Log out   (Super+Alt+Q)" :key "logout"))
-    (start-confirm-bar)
-    (box :class "start-popup-divider")
-    (start-all-apps)
-    (box :class "start-popup-divider")
-    ;; Default rows are "focus-or-launch": click focuses an already-open
-    ;; window (switching to its workspace) instead of spawning a second
-    ;; one — see start-launch.sh. Browser, terminal and files use --new
-    ;; because they legitimately want a fresh window every time.
-    (box :class "start-item-list" :orientation "v" :space-evenly false
-      (start-item :icon "" :label "Thunderbird" :cmd "thunderbird")
-      (start-item :icon "" :label "Terminal"    :cmd "--new kitty")
-      (start-item :icon "" :label "Files"       :cmd "--new thunar ~")
-      ;; Browser is a per-machine choice — icon/label/cmd come from local.yuck.
-      (start-item :icon browser-icon :label browser-label :cmd browser-cmd))))
+  ;; Outer eventbox: leaving the whole menu clears the "All apps" pop-out
+  ;; (hovering the row opens it). eww's eventbox filters inferior crossings,
+  ;; so moving onto child widgets doesn't fire onhoverlost. valign "end"
+  ;; bottom-aligns the menu column and the (taller) pop-out above the bar.
+  (eventbox :onhoverlost "eww update start-apps-open=false"
+    (box :orientation "h" :space-evenly false :spacing 0 :valign "end"
+    (box :class "start-popup" :orientation "v" :space-evenly false :spacing 2
+        (box :class "start-power-row" :orientation "h" :space-evenly true :spacing 0
+             :visible {start-confirm == ""}
+          (start-power         :icon "" :tooltip "Lock   (Super+Escape)"   :cmd "setsid -f hyprlock >/dev/null 2>&1")
+          (start-power-confirm :icon "" :tooltip "Suspend"                 :key "suspend")
+          (start-power-confirm :icon "" :tooltip "Reboot"                  :key "reboot")
+          (start-power-confirm :icon "" :tooltip "Power off"               :key "poweroff")
+          (start-power-confirm :icon "" :tooltip "Log out   (Super+Alt+Q)" :key "logout"))
+        (start-confirm-bar)
+        (box :class "start-popup-divider")
+        (start-all-apps-row)
+        (box :class "start-popup-divider")
+        ;; Default rows are "focus-or-launch": click focuses an already-open
+        ;; window (switching to its workspace) instead of spawning a second
+        ;; one — see start-launch.sh. Browser, terminal and files use --new
+        ;; because they legitimately want a fresh window every time.
+        (box :class "start-item-list" :orientation "v" :space-evenly false
+          (start-item :icon "" :label "Thunderbird" :cmd "thunderbird")
+          (start-item :icon "" :label "Terminal"    :cmd "--new kitty")
+          (start-item :icon "" :label "Files"       :cmd "--new thunar ~")
+          ;; Browser is a per-machine choice — icon/label/cmd come from local.yuck.
+          (start-item :icon browser-icon :label browser-label :cmd browser-cmd)))
+      (revealer :transition "slideright" :duration "150ms" :reveal start-apps-open
+        (start-apps-panel)))))
 
 ;; Tags 1-12 — Hyprland workspaces. Hidden if the workspace is empty and
 ;; not focused (matches Hyprland's default workspaces module).

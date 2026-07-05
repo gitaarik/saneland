@@ -861,11 +861,18 @@ $cell-bg: $bg !default;
     background: $accent-fill-hover;
     color: $fg;
 }
+// Pop-out apps panel: flies out to the right of the menu on hover, so it
+// carries its own card chrome (matching .start-popup) and a small gap to
+// read as a detached popup. Fixed overall width — the category column
+// takes its share and the apps scroll :hexpands into the rest.
 .start-flyout {
-    margin-top: 6px;
-    // Fixed overall width; the category column takes its share and the
-    // apps scroll :hexpands into the rest (see the widget comment).
+    margin-left: 8px;
     min-width: 380px;
+    background-color: $cell-bg;
+    color: $fg;
+    border: 2px solid $popup-border;
+    border-radius: 6px;
+    padding: 12px;
 }
 // Left column: category rows grouped in one rounded outline, hairline
 // separators between them — same treatment as .start-item-list.
