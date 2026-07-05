@@ -740,10 +740,12 @@ $cell-bg: $bg !default;
     color: $fg-dim;
     font-size: 0.8em;
 }
-// Body sits inside the container under the header, sharing its fill.
-// Even top/bottom padding sets the toggle row off from the header.
+// Body sits inside the container under the header, sharing its fill. No
+// padding: the rows run edge to edge and butt straight against the header
+// and each other, so hovering fills a contiguous band with no dead gaps.
+// The rows carry their own interior padding for breathing room.
 .options-body {
-    padding: 8px;
+    padding: 0;
 }
 
 // Preference checkbox row inside an Options disclosure ("Show network
@@ -753,8 +755,19 @@ $cell-bg: $bg !default;
 // and let only the checkmark glyph show — dimmed when off, brightened
 // to $fg when on. The label is vertically centered and dimmed like
 // the other rows.
+// The whole row is a clickable eventbox; the padded inner box carries the
+// content and the hover fill. On hover the box washes a full-width squared
+// band (no radius, so it reads as a list band, not a pill) whose background
+// covers its padding — so the content keeps its breathing room inside the
+// fill. Text starts at 8px, matching the header heading.
 .pref-row {
     color: $fg;
+}
+.pref-row-inner {
+    padding: 6px 8px;
+}
+.pref-row:hover > .pref-row-inner {
+    background: $accent-fill-hover;
 }
 .pref-check check {
     min-width: 16px;

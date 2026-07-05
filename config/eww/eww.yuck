@@ -186,16 +186,23 @@
 ;; "true"/"false" string, `label` the row text. onchecked/onunchecked
 ;; pass the explicit target so the state file and checkbox can't drift.
 (defwidget pref-toggle [name value label]
-  (box :class "pref-row" :orientation "h" :space-evenly false :spacing 8
-    (checkbox :class "pref-check"
-              :checked {value == "true"}
-              :onchecked "~/.config/eww/scripts/eww-pref-toggle.sh ${name} true"
-              :onunchecked "~/.config/eww/scripts/eww-pref-toggle.sh ${name} false")
-    ;; Clicking the label flips to whatever the checkbox isn't, so the
-    ;; text is as good a target as the box itself.
-    (eventbox :cursor "pointer"
-              :onclick "~/.config/eww/scripts/eww-pref-toggle.sh ${name} ${value == 'true' ? 'false' : 'true'}"
-      (label :xalign 0 :text label))))
+  ;; The whole row is one clickable eventbox (so it takes a hover wash like
+  ;; the other popup items). Clicking anywhere but the checkbox flips the
+  ;; pref via this handler; clicking the checkbox itself is consumed by the
+  ;; checkbox (which returns the event handled, so this onclick won't also
+  ;; fire) and flips via its own onchecked/onunchecked — never a double toggle.
+  (eventbox :class "pref-row" :cursor "pointer"
+            :onclick "~/.config/eww/scripts/eww-pref-toggle.sh ${name} ${value == 'true' ? 'false' : 'true'}"
+    ;; The padding + hover fill live on this inner box, not the eventbox: a
+    ;; GtkEventBox doesn't paint its background over its own padding, so the
+    ;; wash would stop short of the padded edges. A GtkBox does, so the fill
+    ;; covers the whole padded row.
+    (box :class "pref-row-inner" :orientation "h" :space-evenly false :spacing 8
+      (checkbox :class "pref-check"
+                :checked {value == "true"}
+                :onchecked "~/.config/eww/scripts/eww-pref-toggle.sh ${name} true"
+                :onunchecked "~/.config/eww/scripts/eww-pref-toggle.sh ${name} false")
+      (label :xalign 0 :hexpand true :text label))))
 
 ;; Like pref-toggle, but for the clock-popup's week-start preference: after
 ;; flipping "clock-monday-first" it also re-renders the calendar (cal.sh
@@ -203,14 +210,14 @@
 ;; the next poll. Kept separate from the generic pref-toggle so that widget
 ;; stays a pure state flip with no side effects.
 (defwidget week-start-toggle [value]
-  (box :class "pref-row" :orientation "h" :space-evenly false :spacing 8
-    (checkbox :class "pref-check"
-              :checked {value == "true"}
-              :onchecked   "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first true; ~/.config/eww/scripts/cal.sh refresh"
-              :onunchecked "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first false; ~/.config/eww/scripts/cal.sh refresh")
-    (eventbox :cursor "pointer"
-              :onclick "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first ${value == 'true' ? 'false' : 'true'}; ~/.config/eww/scripts/cal.sh refresh"
-      (label :xalign 0 :text "Start week on Monday"))))
+  (eventbox :class "pref-row" :cursor "pointer"
+            :onclick "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first ${value == 'true' ? 'false' : 'true'}; ~/.config/eww/scripts/cal.sh refresh"
+    (box :class "pref-row-inner" :orientation "h" :space-evenly false :spacing 8
+      (checkbox :class "pref-check"
+                :checked {value == "true"}
+                :onchecked   "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first true; ~/.config/eww/scripts/cal.sh refresh"
+                :onunchecked "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first false; ~/.config/eww/scripts/cal.sh refresh")
+      (label :xalign 0 :hexpand true :text "Start week on Monday"))))
 
 ;; Collapsible "Options" disclosure: a flat clickable header (heading +
 ;; flipping chevron) over a revealer holding the passed children. The
@@ -228,7 +235,7 @@
                :text {expanded ? "" : ""})))
     (revealer :transition "slidedown" :duration "150ms"
               :reveal expanded
-      (box :class "options-body" :orientation "v" :space-evenly false :spacing 8
+      (box :class "options-body" :orientation "v" :space-evenly false :spacing 0
         (children)))))
 
 ;; Start button — left-click toggles a Windows-style start menu
