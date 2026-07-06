@@ -1137,30 +1137,26 @@
 
 ;; Separate overlay window for the "All apps" pop-out, so the panel's
 ;; height never stretches the start-menu window. It's opened together with
-;; the start menu (popup-toggle.sh) and closed with it (popup-dismiss.sh),
-;; and a revealer — not a window map/unmap — shows/hides the panel on
-;; start-apps-open. Keeping the window mapped avoids the layer-shell churn
-;; that hover-driven open/close caused (ghost surfaces eww couldn't close,
-;; which also blocked the menu from dismissing). Anchored bottom-left at
-;; x = start-menu width (268px) + an 8px gap = 276px. The gap is real empty
-;; space between two separate windows (wallpaper shows through), NOT a
-;; margin inside this window — a margin would paint the window's own
-;; background and read as a black strip. A geometry gap is safe now that
-;; crossing it no longer closes anything (the panel reveals in place rather
-;; than hover-toggling). Being an overlay surface, clicks inside it count as
-;; "inside" for popup-dismiss-if-outside, so interacting here doesn't
-;; dismiss the start menu. When collapsed the revealer shrinks the window
-;; to nothing, so it captures no clicks.
+;; the start menu (popup-toggle.sh) and closed with it (popup-dismiss.sh);
+;; the panel inside is shown/hidden with :visible on start-apps-open, which
+;; keeps the window mapped and so avoids the layer-shell churn that
+;; hover-driven open/close caused (ghost surfaces eww couldn't close, which
+;; also blocked the menu from dismissing). NOT a GtkRevealer: the revealer
+;; drew its own opaque black window surface that showed whenever the panel
+;; wasn't covering it. With :visible the panel unmaps entirely when closed,
+;; so the window collapses to nothing — no black, and it captures no clicks.
+;; The reveal is animated by a CSS opacity keyframe on .start-flyout
+;; instead. Anchored bottom-left at x = start-menu width (268px) + an 8px
+;; gap = 276px; the gap is real empty space between two separate windows
+;; (wallpaper shows through). Being an overlay surface, clicks inside it
+;; count as "inside" for popup-dismiss-if-outside, so interacting with the
+;; open panel doesn't dismiss the start menu.
 (defwindow start-apps-popup
   :monitor 0
   :geometry (geometry :x "276px" :y "0px" :anchor "bottom left")
   :stacking "overlay"
   :focusable false
-  ;; Crossfade rather than a slide: the slide's clip left a shrinking sliver
-  ;; at the tail of the collapse, and GTK3's revealer eases the motion so it
-  ;; decelerated at the end. A fade dissolves the panel in place — no clip
-  ;; artifact, no spatial deceleration to notice.
-  (revealer :transition "crossfade" :duration "120ms" :reveal start-apps-open
+  (box :visible start-apps-open
     (start-apps-panel)))
 
 ;; Small popup card anchored just above the bar at the bottom-right.
