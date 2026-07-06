@@ -861,12 +861,19 @@ $cell-bg: $bg !default;
     background: $accent-fill-hover;
     color: $fg;
 }
+// The pop-out is its own layer window. Give it a transparent background:
+// unlike window#bar it sets no background-color, so it would otherwise
+// fall back to GTK's opaque (black) default. That default is what shows as
+// a shrinking black sliver at the tail of the revealer's collapse, once
+// the card has been clipped away — transparent makes any uncovered area
+// read as the gap/wallpaper instead.
+window#start-apps-popup {
+    background-color: transparent;
+}
 // Pop-out apps panel: its own overlay window flush to the right of the
-// start menu (geometry x = menu width), carrying its own card chrome
-// (matching .start-popup). No left margin — the card butts straight
-// against the menu's right edge, so there's no gap strip showing the
-// window background. Fixed overall width — the category column takes its
-// share and the apps scroll :hexpands into the rest.
+// start menu (geometry x = menu width + gap), carrying its own card chrome
+// (matching .start-popup). Fixed overall width — the category column takes
+// its share and the apps scroll :hexpands into the rest.
 .start-flyout {
     min-width: 380px;
     background-color: $cell-bg;
