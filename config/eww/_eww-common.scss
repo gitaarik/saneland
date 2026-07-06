@@ -862,14 +862,12 @@ $cell-bg: $bg !default;
     color: $fg;
 }
 // Pop-out apps panel: its own overlay window flush to the right of the
-// start menu, so it carries its own card chrome (matching .start-popup).
-// The window butts flush against the menu (geometry x = menu width); this
-// margin-left is the visual gap before the card, kept INSIDE the window's
-// eventbox so hovering the gap still counts as hovering the pop-out (no
-// dead zone between the two surfaces). Fixed overall width — the category
-// column takes its share and the apps scroll :hexpands into the rest.
+// start menu (geometry x = menu width), carrying its own card chrome
+// (matching .start-popup). No left margin — the card butts straight
+// against the menu's right edge, so there's no gap strip showing the
+// window background. Fixed overall width — the category column takes its
+// share and the apps scroll :hexpands into the rest.
 .start-flyout {
-    margin-left: 4px;
     min-width: 380px;
     background-color: $cell-bg;
     color: $fg;

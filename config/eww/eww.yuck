@@ -1143,8 +1143,7 @@
 ;; that hover-driven open/close caused (ghost surfaces eww couldn't close,
 ;; which also blocked the menu from dismissing). Anchored bottom-left at
 ;; x = start-menu width (268px) so the card butts flush against the menu's
-;; right edge; the small visual gap before it is a margin-left inside
-;; .start-flyout. Being an overlay surface, clicks inside it count as
+;; right edge with no gap strip. Being an overlay surface, clicks inside it count as
 ;; "inside" for popup-dismiss-if-outside, so interacting here doesn't
 ;; dismiss the start menu. When collapsed the revealer shrinks the window
 ;; to nothing, so it captures no clicks.
@@ -1153,7 +1152,10 @@
   :geometry (geometry :x "268px" :y "0px" :anchor "bottom left")
   :stacking "overlay"
   :focusable false
-  (revealer :transition "slideright" :duration "150ms" :reveal start-apps-open
+  ;; Duration kept short: GTK3's GtkRevealer hard-codes an ease-out-cubic
+  ;; curve (no linear option), so a long slide visibly decelerates at the
+  ;; end. A quick slide keeps that tail negligible, so it reads as continuous.
+  (revealer :transition "slideright" :duration "90ms" :reveal start-apps-open
     (start-apps-panel)))
 
 ;; Small popup card anchored just above the bar at the bottom-right.
