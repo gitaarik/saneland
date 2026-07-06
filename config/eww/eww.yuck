@@ -1153,12 +1153,6 @@
 ;; open panel doesn't dismiss the start menu.
 (defwindow start-apps-popup
   :monitor 0
-  ;; Own layer namespace (default is the shared "gtk-layer-shell") so a
-  ;; Hyprland layerrule can kill the compositor's default layer animation
-  ;; for JUST this window — the panel toggles via :visible, which resizes
-  ;; the surface 1x1<->full, and Hyprland's default `layers` anim made that
-  ;; resize visibly pop. See layerrule in hyprland.conf.
-  :namespace "eww-start-apps"
   :geometry (geometry :x "276px" :y "0px" :anchor "bottom left")
   :stacking "overlay"
   :focusable false
