@@ -1142,14 +1142,18 @@
 ;; start-apps-open. Keeping the window mapped avoids the layer-shell churn
 ;; that hover-driven open/close caused (ghost surfaces eww couldn't close,
 ;; which also blocked the menu from dismissing). Anchored bottom-left at
-;; x = start-menu width (268px) so the card butts flush against the menu's
-;; right edge with no gap strip. Being an overlay surface, clicks inside it count as
+;; x = start-menu width (268px) + an 8px gap = 276px. The gap is real empty
+;; space between two separate windows (wallpaper shows through), NOT a
+;; margin inside this window — a margin would paint the window's own
+;; background and read as a black strip. A geometry gap is safe now that
+;; crossing it no longer closes anything (the panel reveals in place rather
+;; than hover-toggling). Being an overlay surface, clicks inside it count as
 ;; "inside" for popup-dismiss-if-outside, so interacting here doesn't
 ;; dismiss the start menu. When collapsed the revealer shrinks the window
 ;; to nothing, so it captures no clicks.
 (defwindow start-apps-popup
   :monitor 0
-  :geometry (geometry :x "268px" :y "0px" :anchor "bottom left")
+  :geometry (geometry :x "276px" :y "0px" :anchor "bottom left")
   :stacking "overlay"
   :focusable false
   ;; Duration kept short: GTK3's GtkRevealer hard-codes an ease-out-cubic
