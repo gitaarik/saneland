@@ -724,21 +724,23 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
 // shows through. Only the heading/chevron text brightens on hover (a row
 // fill would be invisible against the matching container background).
 // Hover fill sits 1px inside the container's 2px border (5px vs the
-// container's 6px), and squares off at the bottom so it flows straight
-// into the revealed body instead of cutting a rounded notch above it.
+// container's 6px). Collapsed, the header is the only row so all four
+// corners round; when expanded, the bottom squares off (see .open) so the
+// fill flows straight into the revealed body instead of cutting a rounded
+// notch above it.
 .options-row {
     background: transparent;
     border: none;
-    border-top-left-radius: 5px;
-    border-top-right-radius: 5px;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
+    border-radius: 5px;
     padding: 6px 8px;
     box-shadow: none;
 }
-// When expanded the header butts up against the revealed body; drop the
+// When expanded the header butts up against the revealed body: square off
+// its bottom corners so the hover fill flows into the body, and drop the
 // GTK button's bottom shadow so no line shows between them.
 .options-row.open {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
     box-shadow: none;
 }
 .options-heading {
