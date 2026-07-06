@@ -870,20 +870,11 @@ $cell-bg: $bg !default;
 window#start-apps-popup {
     background-color: transparent;
 }
-// Shown/hidden with :visible (not a GtkRevealer): the revealer drew its own
-// opaque black window surface that showed whenever the panel wasn't fully
-// covering it. :visible unmaps the panel entirely when closed (window
-// collapses to nothing, captures no clicks, shows no black). The reveal is
-// animated with this fade instead — a plain opacity keyframe, so it's
-// linear/continuous with no clip artifact. It plays on map (each time the
-// panel becomes visible); hide is instant, which reads fine.
-@keyframes start-flyout-in {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-}
 // Pop-out apps panel: its own overlay window flush to the right of the
 // start menu (geometry x = menu width + gap), carrying its own card chrome
-// (matching .start-popup). Fixed overall width — the category column takes
+// (matching .start-popup). Shown/hidden instantly with :visible on
+// start-apps-open — no revealer (which painted an opaque black window
+// surface) and no fade. Fixed overall width — the category column takes
 // its share and the apps scroll :hexpands into the rest.
 .start-flyout {
     min-width: 380px;
@@ -892,7 +883,6 @@ window#start-apps-popup {
     border: 2px solid $popup-border;
     border-radius: 6px;
     padding: 12px;
-    animation: start-flyout-in 120ms linear;
 }
 // Left column: category rows grouped in one rounded outline, hairline
 // separators between them — same treatment as .start-item-list.

@@ -1145,8 +1145,8 @@
 ;; drew its own opaque black window surface that showed whenever the panel
 ;; wasn't covering it. With :visible the panel unmaps entirely when closed,
 ;; so the window collapses to nothing — no black, and it captures no clicks.
-;; The reveal is animated by a CSS opacity keyframe on .start-flyout
-;; instead. Anchored bottom-left at x = start-menu width (268px) + an 8px
+;; Show/hide is instant (no animation). Anchored bottom-left at x =
+;; start-menu width (268px) + an 8px
 ;; gap = 276px; the gap is real empty space between two separate windows
 ;; (wallpaper shows through). Being an overlay surface, clicks inside it
 ;; count as "inside" for popup-dismiss-if-outside, so interacting with the
