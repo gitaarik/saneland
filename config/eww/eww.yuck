@@ -300,10 +300,12 @@
              :visible {app.path != ""})
       (label :class "start-app-label" :xalign 0 :hexpand true :text {app.name}))))
 
-;; The "All apps" row in the menu column. Hovering it opens the pop-out
-;; apps panel to the right (start-apps-open); the outer eventbox in
-;; start-popup-content clears it when the pointer leaves the whole menu.
-;; The trailing right-chevron signals the fly-out. Click also opens, so a
+;; The "All apps" row in the menu column. Hovering it reveals the pop-out
+;; apps panel in the always-open start-apps-popup window to the right (just
+;; flips start-apps-open — no window map/unmap). It stays revealed until a
+;; DIFFERENT menu row is hovered (those set start-apps-open=false), so the
+;; pointer can freely cross the gap into the pop-out without it collapsing.
+;; The trailing right-chevron signals the fly-out. Click also reveals, so a
 ;; tap works as well as a hover.
 (defwidget start-all-apps-row []
   (eventbox :onhover "eww update start-apps-open=true"
@@ -377,36 +379,34 @@
 ;; out. Hibernate is intentionally absent — this system has no resume
 ;; config and swap < RAM, so it can't restore a session.
 (defwidget start-popup-content []
-  ;; Outer eventbox: leaving the whole menu clears the "All apps" pop-out
-  ;; (hovering the row opens it). eww's eventbox filters inferior crossings,
-  ;; so moving onto child widgets doesn't fire onhoverlost. valign "end"
-  ;; bottom-aligns the menu column and the (taller) pop-out above the bar.
-  (eventbox :onhoverlost "eww update start-apps-open=false"
-    (box :orientation "h" :space-evenly false :spacing 0 :valign "end"
-    (box :class "start-popup" :orientation "v" :space-evenly false :spacing 2
-        (box :class "start-power-row" :orientation "h" :space-evenly true :spacing 0
-             :visible {start-confirm == ""}
-          (start-power         :icon "" :tooltip "Lock   (Super+Escape)"   :cmd "setsid -f hyprlock >/dev/null 2>&1")
-          (start-power-confirm :icon "" :tooltip "Suspend"                 :key "suspend")
-          (start-power-confirm :icon "" :tooltip "Reboot"                  :key "reboot")
-          (start-power-confirm :icon "" :tooltip "Power off"               :key "poweroff")
-          (start-power-confirm :icon "" :tooltip "Log out   (Super+Alt+Q)" :key "logout"))
-        (start-confirm-bar)
-        (box :class "start-popup-divider")
-        (start-all-apps-row)
-        (box :class "start-popup-divider")
-        ;; Default rows are "focus-or-launch": click focuses an already-open
-        ;; window (switching to its workspace) instead of spawning a second
-        ;; one — see start-launch.sh. Browser, terminal and files use --new
-        ;; because they legitimately want a fresh window every time.
-        (box :class "start-item-list" :orientation "v" :space-evenly false
-          (start-item :icon "" :label "Thunderbird" :cmd "thunderbird")
-          (start-item :icon "" :label "Terminal"    :cmd "--new kitty")
-          (start-item :icon "" :label "Files"       :cmd "--new thunar ~")
-          ;; Browser is a per-machine choice — icon/label/cmd come from local.yuck.
-          (start-item :icon browser-icon :label browser-label :cmd browser-cmd)))
-      (revealer :transition "slideright" :duration "150ms" :reveal start-apps-open
-        (start-apps-panel)))))
+  (box :class "start-popup" :orientation "v" :space-evenly false :spacing 2
+    ;; Hovering any non-"All apps" row collapses the pop-out (revealed by
+    ;; the All-apps row). That's how the submenu closes — no onhoverlost,
+    ;; no debounce, so crossing the gap into the pop-out never trips it.
+    (eventbox :onhover "eww update start-apps-open=false"
+     (box :class "start-power-row" :orientation "h" :space-evenly true :spacing 0
+         :visible {start-confirm == ""}
+      (start-power         :icon "" :tooltip "Lock   (Super+Escape)"   :cmd "setsid -f hyprlock >/dev/null 2>&1")
+      (start-power-confirm :icon "" :tooltip "Suspend"                 :key "suspend")
+      (start-power-confirm :icon "" :tooltip "Reboot"                  :key "reboot")
+      (start-power-confirm :icon "" :tooltip "Power off"               :key "poweroff")
+      (start-power-confirm :icon "" :tooltip "Log out   (Super+Alt+Q)" :key "logout"))
+    )
+    (start-confirm-bar)
+    (box :class "start-popup-divider")
+    (start-all-apps-row)
+    (box :class "start-popup-divider")
+    ;; Default rows are "focus-or-launch": click focuses an already-open
+    ;; window (switching to its workspace) instead of spawning a second
+    ;; one — see start-launch.sh. Browser, terminal and files use --new
+    ;; because they legitimately want a fresh window every time.
+    (eventbox :onhover "eww update start-apps-open=false"
+     (box :class "start-item-list" :orientation "v" :space-evenly false
+      (start-item :icon "" :label "Thunderbird" :cmd "thunderbird")
+      (start-item :icon "" :label "Terminal"    :cmd "--new kitty")
+      (start-item :icon "" :label "Files"       :cmd "--new thunar ~")
+      ;; Browser is a per-machine choice — icon/label/cmd come from local.yuck.
+      (start-item :icon browser-icon :label browser-label :cmd browser-cmd)))))
 
 ;; Tags 1-12 — Hyprland workspaces. Hidden if the workspace is empty and
 ;; not focused (matches Hyprland's default workspaces module).
@@ -1134,6 +1134,27 @@
   :stacking "overlay"
   :focusable false
   (start-popup-content))
+
+;; Separate overlay window for the "All apps" pop-out, so the panel's
+;; height never stretches the start-menu window. It's opened together with
+;; the start menu (popup-toggle.sh) and closed with it (popup-dismiss.sh),
+;; and a revealer — not a window map/unmap — shows/hides the panel on
+;; start-apps-open. Keeping the window mapped avoids the layer-shell churn
+;; that hover-driven open/close caused (ghost surfaces eww couldn't close,
+;; which also blocked the menu from dismissing). Anchored bottom-left at
+;; x = start-menu width (268px) so the card butts flush against the menu's
+;; right edge; the small visual gap before it is a margin-left inside
+;; .start-flyout. Being an overlay surface, clicks inside it count as
+;; "inside" for popup-dismiss-if-outside, so interacting here doesn't
+;; dismiss the start menu. When collapsed the revealer shrinks the window
+;; to nothing, so it captures no clicks.
+(defwindow start-apps-popup
+  :monitor 0
+  :geometry (geometry :x "268px" :y "0px" :anchor "bottom left")
+  :stacking "overlay"
+  :focusable false
+  (revealer :transition "slideright" :duration "150ms" :reveal start-apps-open
+    (start-apps-panel)))
 
 ;; Small popup card anchored just above the bar at the bottom-right.
 ;; No close-on-outside-click — toggle via left-click on the audio widget.

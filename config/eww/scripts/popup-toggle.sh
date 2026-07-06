@@ -51,7 +51,7 @@ fi
 # it also recovers if a prior race left more than one popup open.
 while IFS= read -r other; do
   [[ -n $other && $other != "$window" ]] && "$dismiss" "$other"
-done < <(eww active-windows 2>/dev/null | cut -d: -f1 | grep -- '-popup$')
+done < <(eww active-windows 2>/dev/null | cut -d: -f1 | grep -- '-popup$' | grep -vx 'start-apps-popup')
 
 eww open "$window"
 # Surface the open popup as a reactive eww var so widgets can gate
@@ -76,6 +76,10 @@ if [[ $window == start-popup ]]; then
         eww update start-apps-cat="$first_cat" 2>/dev/null || true
     fi
     eww update start-apps-open=false 2>/dev/null || true
+    # Open the pop-out's companion window alongside the menu, collapsed (its
+    # revealer keys on start-apps-open). It's mapped once and closed with the
+    # menu — not hover-toggled — so it never churns into a ghost surface.
+    eww open start-apps-popup 2>/dev/null || true
 fi
 
 # Bluetooth: clear stale error markers from prior connect attempts so the
