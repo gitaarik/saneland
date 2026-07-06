@@ -1156,10 +1156,11 @@
   :geometry (geometry :x "276px" :y "0px" :anchor "bottom left")
   :stacking "overlay"
   :focusable false
-  ;; Duration kept short: GTK3's GtkRevealer hard-codes an ease-out-cubic
-  ;; curve (no linear option), so a long slide visibly decelerates at the
-  ;; end. A quick slide keeps that tail negligible, so it reads as continuous.
-  (revealer :transition "slideright" :duration "90ms" :reveal start-apps-open
+  ;; Crossfade rather than a slide: the slide's clip left a shrinking sliver
+  ;; at the tail of the collapse, and GTK3's revealer eases the motion so it
+  ;; decelerated at the end. A fade dissolves the panel in place — no clip
+  ;; artifact, no spatial deceleration to notice.
+  (revealer :transition "crossfade" :duration "120ms" :reveal start-apps-open
     (start-apps-panel)))
 
 ;; Small popup card anchored just above the bar at the bottom-right.
