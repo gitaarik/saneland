@@ -848,10 +848,33 @@ $cell-bg: $bg !default;
     font-size: 15px;
     min-width: 22px;
 }
-// "All apps" flyout ---------------------------------------------------------
-// The toggle row is a .start-item; its trailing chevron flips ▸/▾ with the
-// revealer. The revealed panel is two columns: a category list (left) and
-// the hovered category's apps in a scroller (right).
+// "Browse apps" / "Search apps" pair + flyout ------------------------------
+// The two rows sit in one collapsed-border group, same treatment as
+// .start-item-list: one rounded outline, a hairline between the rows. Each
+// row is wrapped in an eventbox (for hover-to-expand / hover-to-collapse),
+// so .start-item-list's bare :first-child/:last-child rounding can't reach
+// the buttons — round via the wrapping eventboxes (the direct children)
+// instead. "Browse apps" is a .start-all-toggle; its trailing chevron
+// signals the fly-out. The revealed panel is two columns: a category list
+// (left) and the hovered category's apps in a scroller (right).
+.start-apps-rows {
+    border: 2px solid $divider;
+    border-radius: 6px;
+}
+.start-apps-rows .start-item {
+    border: none;
+    border-radius: 0;
+    border-bottom: 1px solid $divider;
+}
+.start-apps-rows > *:first-child .start-item {
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+}
+.start-apps-rows > *:last-child .start-item {
+    border-bottom: none;
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
 .start-all-chevron {
     color: $fg-dim;
     font-size: 11px;

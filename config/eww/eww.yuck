@@ -300,21 +300,36 @@
              :visible {app.path != ""})
       (label :class "start-app-label" :xalign 0 :hexpand true :text {app.name}))))
 
-;; The "All apps" row in the menu column. Hovering it reveals the pop-out
-;; apps panel in the always-open start-apps-popup window to the right (just
-;; flips start-apps-open — no window map/unmap). It stays revealed until a
-;; DIFFERENT menu row is hovered (those set start-apps-open=false), so the
-;; pointer can freely cross the gap into the pop-out without it collapsing.
-;; The trailing right-chevron signals the fly-out. Click also reveals, so a
-;; tap works as well as a hover.
-(defwidget start-all-apps-row []
+;; "Browse apps" / "Search apps" pair, grouped in one collapsed-border
+;; outline (like the pinned .start-item-list below). "Browse apps" hover-
+;; reveals the two-column pop-out to the right (just flips start-apps-open —
+;; no window map/unmap); it stays revealed until a DIFFERENT menu row is
+;; hovered (those set start-apps-open=false), so the pointer can cross the
+;; gap into the pop-out without it collapsing. The trailing right-chevron
+;; signals the fly-out; click also reveals, so a tap works too. "Search
+;; apps" is the old fallback — it collapses the pop-out and opens rofi's
+;; drun search.
+(defwidget start-apps-rows []
+  (box :class "start-apps-rows" :orientation "v" :space-evenly false
+    (start-browse-apps-row)
+    (start-search-apps-row)))
+
+(defwidget start-browse-apps-row []
   (eventbox :onhover "eww update start-apps-open=true"
     (button :class {start-apps-open ? "start-item start-all-toggle active" : "start-item start-all-toggle"}
             :onclick "eww update start-apps-open=true"
       (box :orientation "h" :space-evenly false :spacing 10
-        (label :class "start-item-icon" :text "")
-        (label :class "start-item-label" :xalign 0 :hexpand true :text "All apps")
+        (label :class "start-item-icon" :text "")
+        (label :class "start-item-label" :xalign 0 :hexpand true :text "Browse apps")
         (label :class "start-all-chevron" :text "")))))
+
+(defwidget start-search-apps-row []
+  (eventbox :onhover "eww update start-apps-open=false"
+    (button :class "start-item"
+            :onclick "~/.config/eww/scripts/start-launch.sh rofi -show drun"
+      (box :orientation "h" :space-evenly false :spacing 10
+        (label :class "start-item-icon" :text "")
+        (label :class "start-item-label" :xalign 0 :hexpand true :text "Search apps")))))
 
 ;; The pop-out apps panel: flies out to the RIGHT of the menu when "All
 ;; apps" is hovered. Two columns — categories (left) and the hovered
@@ -394,7 +409,7 @@
     )
     (start-confirm-bar)
     (box :class "start-popup-divider")
-    (start-all-apps-row)
+    (start-apps-rows)
     (box :class "start-popup-divider")
     ;; Default rows are "focus-or-launch": click focuses an already-open
     ;; window (switching to its workspace) instead of spawning a second
