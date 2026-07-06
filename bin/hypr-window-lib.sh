@@ -49,22 +49,29 @@ hypr_work_area() {
         'BEGIN { printf "%d", (h / s) - t - b }')
 }
 
-# Emit the --batch setprop clauses for a window's "chrome" — the border and
-# corner rounding, which are coupled into two looks:
-#   max     borderless + square corners, for a full-screen window (both are
-#           pure noise there; rounding leaves gaps of desktop at the corners)
-#   normal  2px active border + default rounding, for a sub-work-area window
-# Prints the clauses (no trailing newline) so callers can splice them into
-# an existing hyprctl --batch string; this is the single source of truth for
-# the border/rounding pairing every window-management script applies.
+# Emit the --batch clauses for a window's "chrome" — the border, corner
+# rounding, and hyprbars title bar, which are coupled into three looks:
+#   max     borderless + square corners + NO title bar, for a full-screen
+#           window (all pure noise there; rounding leaves gaps of desktop at
+#           the corners)
+#   snap    2px active border + default rounding + NO title bar, for an
+#           edge-snapped half/quarter (a "tiled" window — no bar wanted)
+#   normal  2px active border + default rounding + title bar, for a free-
+#           floating sub-work-area window (dialogs, mod+c center, etc.)
+# The title bar is toggled with a `nobar` window tag that the `hyprbars:no_bar`
+# windowrule (config/hypr/hyprland.conf) keys off — max/snap add it, normal
+# removes it. Prints the clauses (no trailing newline) so callers can splice
+# them into an existing hyprctl --batch string; this is the single source of
+# truth for the chrome every window-management script applies.
 hypr_chrome() {
-    local addr=$1 mode=$2 border rounding
+    local addr=$1 mode=$2 border rounding nobar
     case $mode in
-        max) border=0 rounding=0 ;;
-        *)   border=2 rounding=unset ;;
+        max)  border=0 rounding=0     nobar=+nobar ;;
+        snap) border=2 rounding=unset nobar=+nobar ;;
+        *)    border=2 rounding=unset nobar=-nobar ;;
     esac
-    printf 'dispatch setprop address:%s border_size %s; dispatch setprop address:%s rounding %s' \
-        "$addr" "$border" "$addr" "$rounding"
+    printf 'dispatch setprop address:%s border_size %s; dispatch setprop address:%s rounding %s; dispatch tagwindow %s address:%s' \
+        "$addr" "$border" "$addr" "$rounding" "$nobar" "$addr"
 }
 
 # Maximize a window: fill the focused monitor's work area and give it the

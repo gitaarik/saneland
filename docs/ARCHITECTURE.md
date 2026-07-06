@@ -128,12 +128,30 @@ Per-theme image pools live in `~/.config/hypr/wallpapers/{dark,light}/`.
 > auto-loads the image). So `hyprpaper.conf` only turns IPC on; everything else
 > goes through the helper scripts.
 
-## hyprbars (optional)
+## hyprbars
 
-Hyprland draws no title bars by default; the `plugin { hyprbars { … } }` block
+Hyprland draws no title bars by default. The `plugin { hyprbars { … } }` block
 adds a per-window bar with clickable close/maximize buttons (touchpad-friendly
-window closing). It's a **compiled plugin pinned to the Hyprland ABI** — after
-every `hyprland` upgrade it silently fails to load until rebuilt:
+window closing).
+
+The bar shows **only on free-floating windows** — snapped and maximized windows
+get none. The bar renders above the window content, so on top/maximized windows
+(the eww bar reserves the *bottom* edge, `RES_TOP = 0`) it clips off the top of
+the screen anyway, and on bottom snaps it used to appear as a stray mid-screen
+titlebar. To make it deterministic, the window-management helpers tag snapped
+and maximized windows `nobar` (via `hypr_chrome` in `bin/hypr-window-lib.sh` —
+the `max` and `snap` looks add the tag, the `normal` look removes it), and this
+windowrule hides the bar on anything carrying it:
+
+```
+windowrule = hyprbars:no_bar 1, match:tag nobar
+```
+
+So: bar on free floats (dialogs, `mod+c` center), no bar on snapped
+(`mod+Ctrl+h/j/k/l`) or maximized windows.
+
+It's a **compiled plugin pinned to the Hyprland ABI** — after every `hyprland`
+upgrade it silently fails to load until rebuilt:
 
 ```bash
 hyprpm update    # re-sync headers to the new Hyprland, rebuild plugins

@@ -5,8 +5,8 @@
 #
 # Same work-area logic as hypr-fill-work-area, via hypr_work_area in the
 # shared lib (wlr-randr for precise scale, reserved zones subtracted for the
-# eww bar). Also resets border so the snapped window looks like a proper
-# floating half.
+# eww bar). Applies the "snap" chrome (2px border, no hyprbars title bar) so
+# the snapped window looks like a proper tiled half rather than a free float.
 
 set -uo pipefail
 source "${HOME}/.local/bin/hypr-window-lib.sh"
@@ -82,4 +82,4 @@ fi
 hyprctl --batch \
     "dispatch resizewindowpixel exact ${w} ${h},address:${target}; \
      dispatch movewindowpixel exact ${x} ${y},address:${target}; \
-     $(hypr_chrome "$target" normal)" >/dev/null
+     $(hypr_chrome "$target" snap)" >/dev/null
