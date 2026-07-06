@@ -786,6 +786,13 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
 .pref-row:hover > .pref-row-inner {
     background: $row-hover;
 }
+// The last row sits at the container's bottom, so round its hover fill there
+// to follow the rounded corners (5px, matching the header's top) instead of
+// squaring off past the edge.
+.pref-row:last-child:hover > .pref-row-inner {
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
 .pref-check check {
     min-width: 16px;
     min-height: 16px;
