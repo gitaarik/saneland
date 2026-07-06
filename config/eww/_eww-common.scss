@@ -114,6 +114,21 @@ $cell-bg: $bg !default;
 @mixin cell-active { @include cell-fill($accent-fill); }
 @mixin cell-hover  { @include cell-fill($accent-fill-hover); }
 
+// Opaque hover fill for the flat buttons/rows inside the systray menus and the
+// start menu. $accent-fill-hover is a TRANSLUCENT wash, so on a flat button it
+// composites over whatever container sits behind it, and the popups use two
+// backdrops: the darker $cell-bg card (pinned/Browse/Search rows, categories)
+// and the lighter $bg-secondary "list band" (the power/session row, the flyout
+// app list, the device list). The same wash therefore reads greyer over the
+// card and whiter over the band — the power buttons look right, the app/row
+// hovers look muddy. Flatten the wash over the lighter $bg-secondary ONCE here
+// into a solid colour, so every popup button paints that same strong (whiter)
+// highlight regardless of its own backdrop. Derived from the theme's own
+// $accent-fill-hover + $bg-secondary, so it tracks both automatically. (Bar
+// cells keep the translucent fill via cell-hover — they always sit on $cell-bg,
+// so there's no inconsistency to flatten there.)
+$row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-hover) * 100%) !default;
+
 // The left-side cells are Gtk `button`s (the systray cells on the right are
 // plain `box`es), so they inherit the GTK theme's default raised button chrome
 // — an alternate background with rounded corners + a bevel shadow. Strip it so
@@ -396,7 +411,7 @@ $cell-bg: $bg !default;
     color: $fg;
 }
 .audio-row:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
     color: $fg;
 }
 .audio-row.active {
@@ -434,10 +449,10 @@ $cell-bg: $bg !default;
     border-bottom: 1px solid $divider;
 }
 // The shared .audio-row:hover fills with $bg-secondary — invisible now the list
-// itself is $bg-secondary. Wash the hovered row with the same $accent-fill-hover
-// tint the interactive bar cells use, so hover reads consistently across the UI.
+// itself is $bg-secondary. Wash the hovered row with the shared $row-hover so
+// hover reads consistently (the same whiter highlight) across the popups.
 .device-list button:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
 }
 .device-list button:first-child {
     border-top-left-radius: 5px;
@@ -481,7 +496,7 @@ $cell-bg: $bg !default;
 .audio-mute-glyph-sink-on     { padding-right: 8px; }  // speaker + sound waves (right-heavy)
 .audio-mute-glyph-source-muted { padding-right: 9px; }  // muted mic (right-heavy)
 .audio-mute:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
     box-shadow: none;
     color: $fg;
 }
@@ -531,7 +546,7 @@ $cell-bg: $bg !default;
     min-width: 40px;
 }
 .brightness-icon-box:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
 }
 .brightness-icon-box:hover .brightness-icon {
     color: $fg;
@@ -625,7 +640,7 @@ $cell-bg: $bg !default;
     color: $fg-dim;
 }
 .power-profile-button:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
     color: $fg;
 }
 .power-profile-button.active {
@@ -644,7 +659,7 @@ $cell-bg: $bg !default;
     color: $fg;
 }
 .theme-toggle:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
 }
 .theme-toggle-icon {
     color: $ui-select;
@@ -730,7 +745,7 @@ $cell-bg: $bg !default;
     color: $fg;
 }
 .options-row:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
 }
 .options-row:hover .options-heading,
 .options-row:hover .options-chevron {
@@ -767,7 +782,7 @@ $cell-bg: $bg !default;
     padding: 6px 8px;
 }
 .pref-row:hover > .pref-row-inner {
-    background: $accent-fill-hover;
+    background: $row-hover;
 }
 .pref-check check {
     min-width: 16px;
@@ -815,7 +830,7 @@ $cell-bg: $bg !default;
     color: $fg-dim;
 }
 .start-item:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
     color: $fg;
 }
 // Grouped pinned-app list: same collapsed-border treatment as the
@@ -881,7 +896,7 @@ $cell-bg: $bg !default;
     min-width: 16px;
 }
 .start-all-toggle.active {
-    background: $accent-fill-hover;
+    background: $row-hover;
     color: $fg;
 }
 // The pop-out is its own layer window. Give it a transparent background:
@@ -931,7 +946,7 @@ window#start-apps-popup {
     border-bottom-right-radius: 5px;
 }
 .start-cat:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
     color: $fg;
 }
 // Active category (its apps are showing): accent wash + a visible chevron.
@@ -962,7 +977,7 @@ window#start-apps-popup {
     color: $fg-dim;
 }
 .start-app:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
     color: $fg;
 }
 .start-app-icon {
@@ -1016,7 +1031,7 @@ window#start-apps-popup {
     border-bottom-right-radius: 5px;
 }
 .start-power-button:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
     color: $fg;
 }
 
@@ -1048,7 +1063,7 @@ window#start-apps-popup {
     color: $bg;
 }
 .start-confirm-no:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
     color: $fg;
 }
 
@@ -1084,7 +1099,7 @@ window#start-apps-popup {
     color: $fg-dim;
 }
 .clock-cal-nav:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
     color: $fg;
 }
 // Weekday header row — dim, small, sits above the day rows.
@@ -1118,7 +1133,7 @@ window#start-apps-popup {
     color: $fg-dim;
 }
 .clock-popup-today:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
     color: $fg;
 }
 
@@ -1155,7 +1170,7 @@ window#start-apps-popup {
     border-bottom-right-radius: 5px;
 }
 .clock-popup-tool:hover {
-    background: $accent-fill-hover;
+    background: $row-hover;
     color: $fg;
 }
 
