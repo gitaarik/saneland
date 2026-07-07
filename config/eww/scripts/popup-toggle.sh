@@ -76,10 +76,8 @@ if [[ $window == start-popup ]]; then
         eww update start-apps-cat="$first_cat" 2>/dev/null || true
     fi
     eww update start-apps-open=false 2>/dev/null || true
-    # Open the pop-out's companion window alongside the menu, collapsed (its
-    # revealer keys on start-apps-open). It's mapped once and closed with the
-    # menu — not hover-toggled — so it never churns into a ghost surface.
-    eww open start-apps-popup 2>/dev/null || true
+    # NOTE: the companion window (start-apps-popup) is opened at the very
+    # END of this script, not here — see the deferred `eww open` below.
 fi
 
 # Bluetooth: clear stale error markers from prior connect attempts so the
@@ -143,3 +141,20 @@ sock=${XDG_RUNTIME_DIR:-/run/user/$UID}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.s
 } &
 echo $! > "$pid_file"
 disown
+
+# Open the start menu's "Browse apps" flyout companion window, collapsed
+# (its content keys on start-apps-open). It's mapped once and closed with
+# the menu (popup-dismiss.sh) — not hover-toggled — so it never churns into
+# a ghost surface.
+#
+# Deferred to the very end and DETACHED on purpose. `eww open` issued
+# synchronously from inside eww's own button-onclick handler deadlocks and
+# never returns; when this ran mid-hook it stalled the script before it
+# armed the Esc / mouse:272 / activewindow dismiss routes, leaving the start
+# menu impossible to close by Escape or click-outside. Backgrounding it lets
+# the script finish arming those binds and return — eww then processes the
+# open once its onclick handler is free.
+if [[ $window == start-popup ]]; then
+    eww open start-apps-popup >/dev/null 2>&1 &
+    disown
+fi
