@@ -427,41 +427,59 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
     color: $critical;
 }
 
-// Grouped-list chrome for the network + bluetooth device lists (the
-// .device-row rows). Instead of each row reading as its own rounded,
-// drop-shadowed card, draw one rounded border around the whole list and
-// separate the rows with hairlines. Rows are .audio-row buttons, so here
-// we drop their per-item radius + GTK button shadow, add a collapsing
-// bottom-border separator, and round only the first/last row's outer
-// corners to sit flush inside the container. Scoped to .device-list so
-// the audio popup's rows keep their original look.
-.device-list {
-    // Filled with the menu-button surface ($bg-secondary) so the list reads as a
-    // distinct panel on the popup card, with a darker $divider outline + row
-    // separators for definition.
+// ---- Grouped list ----------------------------------------------------------
+// The collapsed-border treatment shared by every stacked row list in the
+// popups: the bluetooth/network device lists, the start menu's pinned apps,
+// the Browse/Search pair, and the apps-browser category + app lists. Instead
+// of each row reading as its own rounded, drop-shadowed card, it draws ONE
+// rounded outline around the whole set and separates the rows with $divider
+// hairlines — only the first/last row's outer corners round, to sit flush
+// inside the outline. Resetting border + radius + box-shadow on every row is
+// what stops GTK's default button chrome (a rounded, shadowed pill) from
+// leaking onto the interior rows.
+//
+// $row is the row selector, relative to the container the mixin is @included
+// in. Callers still own each row's own fill / padding / text colour / hover /
+// active state — this owns only the grouping chrome. For lists whose rows are
+// each wrapped in an eventbox (so a bare `#{$row}:first-child` would match the
+// button inside EVERY wrapper, not just the end ones), pass $first / $last as
+// container-relative selectors pointing at the button in the first/last slot.
+@mixin grouped-list($row, $first: null, $last: null) {
+    @if $first == null { $first: "#{$row}:first-child"; }
+    @if $last  == null { $last:  "#{$row}:last-child"; }
+    // Filled with the menu-button surface ($bg-secondary) so the list reads as
+    // a distinct panel on the popup card, with a darker $divider outline.
     background-color: $bg-secondary;
     border: 2px solid $divider;
     border-radius: 6px;
+    #{$row} {
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        border-bottom: 1px solid $divider;
+    }
+    #{$first} {
+        border-top-left-radius: 5px;
+        border-top-right-radius: 5px;
+    }
+    #{$last} {
+        border-bottom: none;
+        border-bottom-left-radius: 5px;
+        border-bottom-right-radius: 5px;
+    }
 }
-.device-list button {
-    border-radius: 0;
-    box-shadow: none;
-    border-bottom: 1px solid $divider;
+
+// Bluetooth + network device lists. Rows are .audio-row buttons; the mixin
+// drops their per-item radius/shadow and adds the collapsing hairlines.
+.device-list {
+    @include grouped-list("button");
 }
-// The shared .audio-row:hover fills with $bg-secondary — invisible now the list
-// itself is $bg-secondary. Wash the hovered row with the shared $row-hover so
-// hover reads consistently (the same whiter highlight) across the popups.
+// The shared .audio-row:hover fills with $bg-secondary — invisible now the
+// list itself is $bg-secondary. Wash the hovered row with the shared
+// $row-hover so hover reads consistently (the same whiter highlight) across
+// the popups.
 .device-list button:hover {
     background: $row-hover;
-}
-.device-list button:first-child {
-    border-top-left-radius: 5px;
-    border-top-right-radius: 5px;
-}
-.device-list button:last-child {
-    border-bottom: none;
-    border-bottom-left-radius: 5px;
-    border-bottom-right-radius: 5px;
 }
 
 // Volume row at the top of the popup: mute toggle + GTK scale + value label.
@@ -842,62 +860,29 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
     background: $row-hover;
     color: $fg;
 }
-// Grouped pinned-app list: same collapsed-border treatment as the
-// bluetooth/network .device-list — one rounded outline around the whole
-// set, rows separated by hairlines instead of each reading as its own
-// card. Drops the per-item radius/border and rounds only the outer
-// corners of the first/last row.
+// Grouped pinned-app list: the shared collapsed-border treatment (see
+// @grouped-list). Rows inherit the shared .start-item:hover wash; nothing
+// extra is needed now that hover no longer brightens the border (which would
+// otherwise light up the hairline separators).
 .start-item-list {
-    border: 2px solid $divider;
-    border-radius: 6px;
-}
-.start-item-list .start-item {
-    border: none;
-    border-radius: 0;
-    border-bottom: 1px solid $divider;
-}
-// Grouped rows inherit the shared .start-item:hover wash; nothing extra
-// is needed here now that hover no longer brightens the border (which
-// would otherwise light up the hairline separators).
-.start-item-list .start-item:first-child {
-    border-top-left-radius: 5px;
-    border-top-right-radius: 5px;
-}
-.start-item-list .start-item:last-child {
-    border-bottom: none;
-    border-bottom-left-radius: 5px;
-    border-bottom-right-radius: 5px;
+    @include grouped-list(".start-item");
 }
 .start-item-icon {
     font-size: 15px;
     min-width: 22px;
 }
 // "Browse apps" / "Search apps" pair + flyout ------------------------------
-// The two rows sit in one collapsed-border group, same treatment as
-// .start-item-list: one rounded outline, a hairline between the rows. Each
-// row is wrapped in an eventbox (for hover-to-expand / hover-to-collapse),
-// so .start-item-list's bare :first-child/:last-child rounding can't reach
-// the buttons — round via the wrapping eventboxes (the direct children)
-// instead. "Browse apps" is a .start-all-toggle; its trailing chevron
-// signals the fly-out. The revealed panel is two columns: a category list
-// (left) and the hovered category's apps in a scroller (right).
+// The two rows sit in one collapsed-border group (the shared @grouped-list
+// treatment). Each row is wrapped in an eventbox (for hover-to-expand /
+// hover-to-collapse), so a bare .start-item:first-child would match the
+// button in BOTH wrappers — round via the first/last wrapper slot instead.
+// "Browse apps" is a .start-all-toggle; its trailing chevron signals the
+// fly-out. The revealed panel is two columns: a category list (left) and the
+// hovered category's apps in a scroller (right).
 .start-apps-rows {
-    border: 2px solid $divider;
-    border-radius: 6px;
-}
-.start-apps-rows .start-item {
-    border: none;
-    border-radius: 0;
-    border-bottom: 1px solid $divider;
-}
-.start-apps-rows > *:first-child .start-item {
-    border-top-left-radius: 5px;
-    border-top-right-radius: 5px;
-}
-.start-apps-rows > *:last-child .start-item {
-    border-bottom: none;
-    border-bottom-left-radius: 5px;
-    border-bottom-right-radius: 5px;
+    @include grouped-list(".start-item",
+        $first: "> *:first-child .start-item",
+        $last:  "> *:last-child .start-item");
 }
 .start-all-chevron {
     color: $fg-dim;
@@ -931,28 +916,22 @@ window#start-apps-popup {
     border-radius: 6px;
     padding: 12px;
 }
-// Left column: category rows grouped in one rounded outline, hairline
-// separators between them — same treatment as .start-item-list.
+// Left column: category rows, grouped with the shared collapsed-border
+// treatment (see @grouped-list). Rows carry their own fill / padding / colour
+// and hover + active states below. Each .start-cat is eventbox-wrapped (for
+// the hover handler), so — like .start-apps-rows — a bare .start-cat:first-
+// child would match the button in EVERY wrapper; round via the first/last
+// wrapper slot instead.
 .start-flyout-cats {
     min-width: 132px;
-    border: 2px solid $divider;
-    border-radius: 6px;
+    @include grouped-list(".start-cat",
+        $first: "> *:first-child .start-cat",
+        $last:  "> *:last-child .start-cat");
 }
 .start-cat {
     background: $bg-secondary;
-    border: none;
-    border-bottom: 1px solid $divider;
     padding: 6px 8px;
     color: $fg-dim;
-}
-.start-cat:first-child {
-    border-top-left-radius: 5px;
-    border-top-right-radius: 5px;
-}
-.start-cat:last-child {
-    border-bottom: none;
-    border-bottom-left-radius: 5px;
-    border-bottom-right-radius: 5px;
 }
 .start-cat:hover {
     background: $row-hover;
@@ -971,18 +950,19 @@ window#start-apps-popup {
 .start-cat.active .start-cat-chevron {
     color: $fg;
 }
-// Right pane: scrollable app list. Height is capped by the widget's
-// :height attr (GTK CSS has no max-height — it's rejected outright and
-// takes the whole stylesheet down with it).
+// Right pane: scrollable app list, grouped with the shared collapsed-border
+// treatment (see @grouped-list). Height is capped by the widget's :height
+// attr (GTK CSS has no max-height — it's rejected outright and takes the
+// whole stylesheet down with it).
 .start-flyout-apps {
-    border: 2px solid $divider;
-    border-radius: 6px;
-    background: $bg-secondary;
+    @include grouped-list(".start-app");
 }
+// Opaque row fill (like .start-cat / .start-item): the scroller's own
+// background-color doesn't paint behind its rows, so without this the rows
+// would reveal the lighter $cell-bg flyout card underneath.
 .start-app {
-    background: transparent;
-    border: none;
-    padding: 5px 8px;
+    background-color: $bg-secondary;
+    padding: 6px 8px;
     color: $fg-dim;
 }
 .start-app:hover {
