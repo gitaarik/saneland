@@ -303,9 +303,12 @@
 ;; "Browse apps" / "Search apps" pair, grouped in one collapsed-border
 ;; outline (like the pinned .start-item-list below). "Browse apps" hover-
 ;; reveals the two-column pop-out to the right (just flips start-apps-open —
-;; no window map/unmap); it stays revealed until a DIFFERENT menu row is
-;; hovered (those set start-apps-open=false), so the pointer can cross the
-;; gap into the pop-out without it collapsing. The trailing right-chevron
+;; no window map/unmap), but after a short hover-intent delay so a pointer
+;; passing over the row on its way elsewhere doesn't flash it open — see
+;; start-browse-hover.sh. A click still opens instantly. It stays revealed
+;; until a DIFFERENT menu row is hovered (those set start-apps-open=false),
+;; so the pointer can cross the gap into the pop-out without it collapsing.
+;; The trailing right-chevron
 ;; signals the fly-out; click also reveals, so a tap works too. "Search
 ;; apps" is the old fallback — it collapses the pop-out and opens rofi's
 ;; drun search.
@@ -315,7 +318,8 @@
     (start-search-apps-row)))
 
 (defwidget start-browse-apps-row []
-  (eventbox :onhover "eww update start-apps-open=true"
+  (eventbox :onhover "~/.config/eww/scripts/start-browse-hover.sh arm"
+            :onhoverlost "~/.config/eww/scripts/start-browse-hover.sh cancel"
     (button :class {start-apps-open ? "start-item start-all-toggle active" : "start-item start-all-toggle"}
             :onclick "eww update start-apps-open=true"
       (box :orientation "h" :space-evenly false :spacing 10
