@@ -129,6 +129,22 @@ $cell-bg: $bg !default;
 // so there's no inconsistency to flatten there.)
 $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-hover) * 100%) !default;
 
+// ---- Corner radii -----------------------------------------------------------
+// Rounding is used as an affordance signal: only things you interact with are
+// rounded, so a rounded corner reads as "clickable". Structural surfaces — the
+// bar, the Hyprland windows, and the popup CARDS these controls sit on — stay
+// square (border-radius: 0, set per-selector). That split is the whole system;
+// keep it when adding chrome.
+//
+// Two tiers, by role:
+//   $radius-control — individual buttons, rows, sliders, small indicators.
+//   $radius-group   — the outline around a grouped list / segmented control /
+//                     options section. Larger than $radius-control so the inner
+//                     rows' corners ($radius-group - 1px, sitting just inside
+//                     the 2px border) nest cleanly against it.
+$radius-control: 4px !default;
+$radius-group: 6px !default;
+
 // The left-side cells are Gtk `button`s (the systray cells on the right are
 // plain `box`es), so they inherit the GTK theme's default raised button chrome
 // — an alternate background with rounded corners + a bevel shadow. Strip it so
@@ -392,7 +408,7 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
     background-color: $cell-bg;
     color: $fg;
     border: 2px solid $popup-border;
-    border-radius: 6px;
+    border-radius: 0;
     padding: 12px;
     min-width: 320px;
 }
@@ -406,7 +422,7 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
 .audio-row {
     background: transparent;
     border: none;
-    border-radius: 4px;
+    border-radius: $radius-control;
     padding: 4px 8px;
     color: $fg;
 }
@@ -431,12 +447,12 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
 // The collapsed-border treatment shared by every stacked row list in the
 // popups: the bluetooth/network device lists, the start menu's pinned apps,
 // the Browse/Search pair, and the apps-browser category + app lists. Instead
-// of each row reading as its own rounded, drop-shadowed card, it draws ONE
-// rounded outline around the whole set and separates the rows with $divider
-// hairlines — only the first/last row's outer corners round, to sit flush
-// inside the outline. Resetting border + radius + box-shadow on every row is
-// what stops GTK's default button chrome (a rounded, shadowed pill) from
-// leaking onto the interior rows.
+// of each row reading as its own drop-shadowed card, it draws ONE rounded
+// outline ($radius-group) around the whole set and separates the rows with
+// $divider hairlines — only the first/last row's outer corners round, to sit
+// flush inside the outline. Resetting border + radius + box-shadow on every
+// row is what stops GTK's default button chrome (a rounded, shadowed pill)
+// from leaking onto the interior rows.
 //
 // $row is the row selector, relative to the container the mixin is @included
 // in. Callers still own each row's own fill / padding / text colour / hover /
@@ -451,21 +467,23 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
     // a distinct panel on the popup card, with a darker $divider outline.
     background-color: $bg-secondary;
     border: 2px solid $divider;
-    border-radius: 6px;
+    border-radius: $radius-group;
     #{$row} {
         border: none;
         border-radius: 0;
         box-shadow: none;
         border-bottom: 1px solid $divider;
     }
+    // Round only the outer corners of the end rows so they nest inside the
+    // container's border ($radius-group - 1px, just inside the 2px outline).
     #{$first} {
-        border-top-left-radius: 5px;
-        border-top-right-radius: 5px;
+        border-top-left-radius: $radius-group - 1px;
+        border-top-right-radius: $radius-group - 1px;
     }
     #{$last} {
         border-bottom: none;
-        border-bottom-left-radius: 5px;
-        border-bottom-right-radius: 5px;
+        border-bottom-left-radius: $radius-group - 1px;
+        border-bottom-right-radius: $radius-group - 1px;
     }
 }
 
@@ -498,7 +516,7 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
     // inside a fixed-width box, so both the mic and speaker buttons are the
     // same width regardless of the glyph's advance.
     padding: 4px 0;
-    border-radius: 4px;
+    border-radius: $radius-control;
     min-width: 40px;
 }
 // The nerd-font speaker/mic glyphs carry uneven side-bearings, so a plain
@@ -531,19 +549,22 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
 .audio-volume scale trough,
 .brightness-row scale trough {
     background-color: $bg-secondary;
-    border-radius: 4px;
+    border-radius: $radius-control;
     min-height: 6px;
 }
 .audio-volume scale trough highlight,
 .brightness-row scale trough highlight {
     background-color: $ui-fill;
-    border-radius: 4px;
+    border-radius: $radius-control;
     min-height: 6px;
 }
 .audio-volume scale slider,
 .brightness-row scale slider {
     background-color: $fg;
     border: none;
+    // Kept round: this is a grab handle, not a panel corner — a circular knob
+    // reads as draggable where a square block wouldn't. The one deliberate
+    // exception to the otherwise-square UI.
     border-radius: 50%;
     min-width: 14px;
     min-height: 14px;
@@ -559,7 +580,7 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
     background: $bg-secondary;
     border: 2px solid $divider;
     box-shadow: none;
-    border-radius: 4px;
+    border-radius: $radius-control;
     padding: 4px 0;
     min-width: 40px;
 }
@@ -587,7 +608,7 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
     background-color: $cell-bg;
     color: $fg;
     border: 2px solid $popup-border;
-    border-radius: 6px;
+    border-radius: 0;
     padding: 12px;
     min-width: 260px;
 }
@@ -633,12 +654,12 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
 .battery-popup-charge { padding: 2px 0; }
 .battery-popup-charge progressbar trough {
     background-color: $bg-secondary;
-    border-radius: 4px;
+    border-radius: $radius-control;
     min-height: 6px;
 }
 .battery-popup-charge progressbar trough progress {
     background-color: $ui-fill;
-    border-radius: 4px;
+    border-radius: $radius-control;
     min-height: 6px;
 }
 .battery-popup-charge.high     progressbar trough progress { background-color: $high; }
@@ -653,7 +674,7 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
 .power-profile-button {
     background: $bg-secondary;
     border: 2px solid $divider;
-    border-radius: 4px;
+    border-radius: $radius-control;
     padding: 6px 8px;
     color: $fg-dim;
 }
@@ -672,7 +693,7 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
 .theme-toggle {
     background: $bg-secondary;
     border: 2px solid $divider;
-    border-radius: 4px;
+    border-radius: $radius-control;
     padding: 6px 8px;
     color: $fg;
 }
@@ -736,20 +757,19 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
 .options-section {
     background: $bg-secondary;
     border: 2px solid $divider;
-    border-radius: 6px;
+    border-radius: $radius-group;
 }
 // Header: full-width clickable row, transparent so the container fill
 // shows through. Only the heading/chevron text brightens on hover (a row
-// fill would be invisible against the matching container background).
-// Hover fill sits 1px inside the container's 2px border (5px vs the
-// container's 6px). Collapsed, the header is the only row so all four
-// corners round; when expanded, the bottom squares off (see .open) so the
-// fill flows straight into the revealed body instead of cutting a rounded
-// notch above it.
+// fill would be invisible against the matching container background). Hover
+// fill sits 1px inside the container's 2px border ($radius-group - 1px).
+// Collapsed, the header is the only row so all four corners round; when
+// expanded, the bottom squares off (see .open) so the fill flows straight
+// into the revealed body instead of cutting a rounded notch above it.
 .options-row {
     background: transparent;
     border: none;
-    border-radius: 5px;
+    border-radius: $radius-group - 1px;
     padding: 6px 8px;
     box-shadow: none;
 }
@@ -817,11 +837,11 @@ revealer { background-color: transparent; }
     background: $row-hover;
 }
 // The last row sits at the container's bottom, so round its hover fill there
-// to follow the rounded corners (5px, matching the header's top) instead of
-// squaring off past the edge.
+// to follow the rounded corners ($radius-group - 1px, matching the header's
+// top) instead of squaring off past the edge.
 .pref-row:last-child:hover > .pref-row-inner {
-    border-bottom-left-radius: 5px;
-    border-bottom-right-radius: 5px;
+    border-bottom-left-radius: $radius-group - 1px;
+    border-bottom-right-radius: $radius-group - 1px;
 }
 .pref-check check {
     min-width: 16px;
@@ -850,7 +870,7 @@ revealer { background-color: transparent; }
     background-color: $cell-bg;
     color: $fg;
     border: 2px solid $popup-border;
-    border-radius: 6px;
+    border-radius: 0;
     padding: 12px;
     min-width: 240px;
 }
@@ -864,7 +884,7 @@ revealer { background-color: transparent; }
 .start-item {
     background: $bg-secondary;
     border: 2px solid $divider;
-    border-radius: 4px;
+    border-radius: $radius-control;
     padding: 6px 8px;
     color: $fg-dim;
 }
@@ -925,7 +945,7 @@ window#start-apps-popup {
     background-color: $cell-bg;
     color: $fg;
     border: 2px solid $popup-border;
-    border-radius: 6px;
+    border-radius: 0;
     padding: 12px;
 }
 // Left column: category rows, grouped with the shared collapsed-border
@@ -1011,7 +1031,7 @@ window#start-apps-popup {
     margin-top: 2px;
     background: $bg-secondary;
     border: 2px solid $divider;
-    border-radius: 6px;
+    border-radius: $radius-group;
 }
 .start-power-button {
     background: transparent;
@@ -1023,13 +1043,13 @@ window#start-apps-popup {
     font-size: 15px;
 }
 .start-power-button:first-child {
-    border-top-left-radius: 5px;
-    border-bottom-left-radius: 5px;
+    border-top-left-radius: $radius-group - 1px;
+    border-bottom-left-radius: $radius-group - 1px;
 }
 .start-power-button:last-child {
     border-right: none;
-    border-top-right-radius: 5px;
-    border-bottom-right-radius: 5px;
+    border-top-right-radius: $radius-group - 1px;
+    border-bottom-right-radius: $radius-group - 1px;
 }
 .start-power-button:hover {
     background: $row-hover;
@@ -1048,7 +1068,7 @@ window#start-apps-popup {
 .start-confirm-no {
     background: $bg-secondary;
     border: 2px solid $divider;
-    border-radius: 4px;
+    border-radius: $radius-control;
     padding: 6px 10px;
     color: $fg-dim;
 }
@@ -1075,7 +1095,7 @@ window#start-apps-popup {
     background-color: $cell-bg;
     color: $fg;
     border: 2px solid $popup-border;
-    border-radius: 6px;
+    border-radius: 0;
     padding: 12px;
     min-width: 260px;
 }
@@ -1115,7 +1135,7 @@ window#start-apps-popup {
     color: $fg;
     min-width: 26px;
     min-height: 22px;
-    border-radius: 4px;
+    border-radius: $radius-control;
 }
 // Today's chip. A translucent neutral fill (matching the selection
 // wash) keeps the day text readable rather than washing it out.
@@ -1129,7 +1149,7 @@ window#start-apps-popup {
 .clock-popup-today {
     background: $bg-secondary;
     border: 2px solid $divider;
-    border-radius: 4px;
+    border-radius: $radius-control;
     padding: 4px 10px;
     color: $fg-dim;
 }
@@ -1146,12 +1166,12 @@ window#start-apps-popup {
     font-weight: bold;
 }
 // Screenshot tools drawn as one segmented control — same collapsed-border
-// treatment as the .start-power-row: a single rounded outline with the
-// buttons divided by vertical hairlines instead of each being its own pill.
+// treatment as the .start-power-row: a single rounded outline with the buttons
+// divided by vertical hairlines instead of each being its own pill.
 .clock-popup-tools {
     background: $bg-secondary;
     border: 2px solid $divider;
-    border-radius: 6px;
+    border-radius: $radius-group;
 }
 .clock-popup-tool {
     background: transparent;
@@ -1162,13 +1182,13 @@ window#start-apps-popup {
     color: $fg-dim;
 }
 .clock-popup-tool:first-child {
-    border-top-left-radius: 5px;
-    border-bottom-left-radius: 5px;
+    border-top-left-radius: $radius-group - 1px;
+    border-bottom-left-radius: $radius-group - 1px;
 }
 .clock-popup-tool:last-child {
     border-right: none;
-    border-top-right-radius: 5px;
-    border-bottom-right-radius: 5px;
+    border-top-right-radius: $radius-group - 1px;
+    border-bottom-right-radius: $radius-group - 1px;
 }
 .clock-popup-tool:hover {
     background: $row-hover;
