@@ -782,6 +782,18 @@ $row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-h
 .options-body {
     padding: 0;
 }
+// GtkRevealer backs itself with an opaque surface painted in the GTK theme's
+// default window colour (white on the light theme, dark on the dark one). eww
+// wraps every widget carrying a reactive `:visible` binding in one of these —
+// so the bluetooth "Paired" list, the wifi list, and their loading/empty hints
+// all sat on a white rectangle that showed through the popup card's rounded
+// corners (the systray popup windows are otherwise transparent). The audio
+// popup escaped only because its wallpaper-facing corners happened to sit over
+// pale sky. Clear the surface so revealers (both the explicit options-section
+// one and eww's implicit `:visible` wrappers) composite transparently and the
+// corners read as the wallpaper. Revealers never show their own background —
+// the revealed content always paints its own — so this is safe globally.
+revealer { background-color: transparent; }
 
 // Preference checkbox row inside an Options disclosure ("Show network
 // name on bar" / "Show volume percentage on bar"), rendered by the
