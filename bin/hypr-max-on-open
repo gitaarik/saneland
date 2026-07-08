@@ -21,6 +21,13 @@
 #     Thunderbird event-details popup never overwrites the main mail
 #     window's saved size.
 #
+#   - On fullscreen>>1: if a client maximized *itself* (a GTK/GNOME
+#     client-side-decoration maximize button -> set_maximized), reroute it
+#     to the same stateless work-area maximize mod+m uses, so app-maximize
+#     and mod+m look and behave identically instead of being two separate
+#     actions. Real fullscreen (mod+Shift+m, or an app's own F11) is left
+#     untouched.
+#
 # Hyprland's closewindow event arrives after the window is dropped
 # from `hyprctl clients`, so a background loop snapshots clients to
 # a cache file every 2s and the close handler looks the window up
@@ -41,6 +48,12 @@ fi
 state_dir=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-state
 cache_file=$state_dir/clients-cache.json
 mkdir -p "$state_dir"
+
+# Short-lived per-address markers so the fullscreen>>1 handler can tell
+# "user maximized a running window" (reroute it) from "window maximized
+# itself as it opened" (already owned by the openwindow branch — leave it).
+grace_dir=$state_dir/opening
+mkdir -p "$grace_dir"
 
 # Policy skip: never maximize, never persist. Tor Browser specifically
 # because window dimensions feed fingerprinting.
@@ -168,6 +181,12 @@ ncat -U "$sock" | while IFS= read -r line; do
             title=${rest2#*,}
             addr_full="0x${addr}"
 
+            # Mark as freshly opened so a self-maximize-on-open (Thunderbird
+            # popups) isn't re-handled by the fullscreen branch. Cleared after
+            # 2s so a genuine user maximize later on is not suppressed.
+            touch "$grace_dir/$addr_full"
+            ( sleep 2; rm -f "$grace_dir/$addr_full" ) &
+
             [[ $class =~ $policy_skip_class_re  ]] && continue
             [[ $class =~ $no_size_hint_class_re ]] && continue
 
@@ -229,6 +248,44 @@ ncat -U "$sock" | while IFS= read -r line; do
                 [[ $is_main == 0 ]] && exit 0
 
                 apply_or_maximize "$class" "$addr_full"
+            ) &
+            ;;
+
+        fullscreen*)
+            # Format: fullscreen>>0 (exited) / fullscreen>>1 (entered).
+            # Only the "entered" edge, and only a client's own MAXIMIZE (a GTK
+            # CSD maximize button), gets rerouted to the stateless mod+m
+            # maximize. Real fullscreen (compositor mod+Shift+m, or an app's
+            # F11) is left as-is.
+            state=${line#fullscreen>>}
+            [[ $state == 1 ]] || continue
+
+            (
+                # No address in the event; the window that changed state is the
+                # focused one (the user clicked its own maximize button).
+                aw=$(hyprctl -j activewindow 2>/dev/null)
+                addr=$(jq -r '.address // empty' <<<"$aw")
+                [[ -z $addr || $addr == null ]] && exit 0
+
+                # eFullscreenMode: 0 none, 1 maximized, 2 fullscreen. Check both
+                # the client-requested and effective fields so the app maximize
+                # is caught however Hyprland records it — but never touch a real
+                # fullscreen (mode 2).
+                fc=$(jq -r '.fullscreenClient // 0' <<<"$aw")
+                fe=$(jq -r '.fullscreen // 0'       <<<"$aw")
+                [[ $fc == 2 || $fe == 2 ]] && exit 0     # real fullscreen -> leave
+                [[ $fc == 1 || $fe == 1 ]] || exit 0     # not a maximize   -> leave
+
+                # Don't fight the openwindow branch over a self-maximize-on-open.
+                [[ -e $grace_dir/$addr ]] && exit 0
+
+                # Drop the native maximize state, then apply the custom,
+                # stateless work-area maximize + stripped chrome (== mod+m).
+                # Dispatching state 0 fires fullscreen>>0, which this branch
+                # ignores, so there's no feedback loop.
+                hyprctl dispatch fullscreenstate "0 0,address:$addr" >/dev/null
+                sleep 0.05
+                hypr_set_max "$addr"
             ) &
             ;;
 
