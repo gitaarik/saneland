@@ -65,16 +65,23 @@ eww update open-popup="$window" 2>/dev/null || true
 if [[ $window == start-popup ]]; then
     eww update start-confirm="" 2>/dev/null || true
     # Refresh the categorized "All apps" data (cheap: served from cache
-    # unless an application dir changed) and reset the flyout so the menu
-    # always opens collapsed, with the first category preselected for the
-    # right pane once it's expanded.
-    apps_json=$("$HOME/.config/eww/scripts/start-apps.sh" 2>/dev/null)
-    if [[ -n $apps_json ]]; then
-        first_cat=$(printf '%s' "$apps_json" | python3 -c \
-            'import json,sys; c=json.load(sys.stdin)["categories"]; print(c[0] if c else "")')
-        eww update start-apps="$apps_json" 2>/dev/null || true
-        eww update start-apps-cat="$first_cat" 2>/dev/null || true
-    fi
+    # unless an application dir changed) and preselect the first category for
+    # the right pane once the flyout is expanded. Run DETACHED so a slow
+    # rebuild — an app dir changed, forcing a full .desktop rescan — doesn't
+    # block the menu from opening or the dismiss binds below from arming. While
+    # start-apps.categories is still empty the flyout shows a "Loading apps…"
+    # line (see start-apps-panel); this update fills it in when the scan lands.
+    # The cached no-change path returns in milliseconds, well within the
+    # Browse-apps hover-intent delay, so that line never actually flashes then.
+    ( apps_json=$("$HOME/.config/eww/scripts/start-apps.sh" 2>/dev/null)
+      if [[ -n $apps_json ]]; then
+          first_cat=$(printf '%s' "$apps_json" | python3 -c \
+              'import json,sys; c=json.load(sys.stdin)["categories"]; print(c[0] if c else "")')
+          eww update start-apps="$apps_json" 2>/dev/null || true
+          eww update start-apps-cat="$first_cat" 2>/dev/null || true
+      fi ) &
+    disown
+    # Reset the flyout so the menu always opens collapsed.
     eww update start-apps-open=false 2>/dev/null || true
     # NOTE: the companion window (start-apps-popup) is opened at the very
     # END of this script, not here — see the deferred `eww open` below.

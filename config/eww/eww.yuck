@@ -339,19 +339,36 @@
 ;; apps" is hovered. Two columns — categories (left) and the hovered
 ;; category's apps (right, scrollable). Its own card chrome (.start-flyout)
 ;; so it reads as a separate popup attached to the menu.
+;;
+;; Until the first scan lands (start-apps.categories still empty — the empty
+;; seed on the very first open, or a slow rebuild after an app dir changed)
+;; a "Loading apps…" line stands in for the two-column grid, so the flyout
+;; never reveals as a blank card. start-apps.sh runs DETACHED from the menu
+;; open (see popup-toggle.sh), so the flyout can be revealed before its data
+;; arrives; this fills that gap. Once categories is non-empty the real grid
+;; replaces it, and a later background refresh swaps app data in silently
+;; without flashing back to "Loading". On the common cached path the scan
+;; returns in milliseconds — well inside the Browse-apps hover-intent delay —
+;; so the loading line is never actually seen then.
 (defwidget start-apps-panel []
-  (box :class "start-flyout" :orientation "h" :space-evenly false :spacing 6
-    (box :class "start-flyout-cats" :orientation "v" :space-evenly false
-      (for c in {start-apps.categories}
-        (start-cat :name c)))
-    ;; :height caps the scrolled window (a busy category would else run the
-    ;; popup off the top of the screen). CSS max-height is rejected by eww
-    ;; 0.5's SCSS compiler — the height attr is the workaround, same as
-    ;; network-popup-scroll.
-    (scroll :class "start-flyout-apps" :hexpand true :vscroll true :hscroll false :height 340
-      (box :orientation "v" :space-evenly false :valign "start"
-        (for app in {start-apps.apps[start-apps-cat]}
-          (start-app :app app))))))
+  (box :class "start-flyout" :orientation "v" :space-evenly false
+    (box :class "start-flyout-loading" :orientation "h" :space-evenly false
+         :halign "center" :valign "center"
+         :visible {arraylength(start-apps.categories) == 0}
+      (label :class "start-flyout-loading-label" :text "Loading apps…"))
+    (box :orientation "h" :space-evenly false :spacing 6
+         :visible {arraylength(start-apps.categories) > 0}
+      (box :class "start-flyout-cats" :orientation "v" :space-evenly false
+        (for c in {start-apps.categories}
+          (start-cat :name c)))
+      ;; :height caps the scrolled window (a busy category would else run the
+      ;; popup off the top of the screen). CSS max-height is rejected by eww
+      ;; 0.5's SCSS compiler — the height attr is the workaround, same as
+      ;; network-popup-scroll.
+      (scroll :class "start-flyout-apps" :hexpand true :vscroll true :hscroll false :height 340
+        (box :orientation "v" :space-evenly false :valign "start"
+          (for app in {start-apps.apps[start-apps-cat]}
+            (start-app :app app)))))))
 
 ;; One icon button in the start menu's bottom power/session row. These
 ;; Lock is harmless/reversible, so it acts immediately: dismiss the menu

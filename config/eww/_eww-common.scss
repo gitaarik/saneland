@@ -948,6 +948,18 @@ window#start-apps-popup {
     border-radius: 0;
     padding: 12px;
 }
+// Stand-in shown in place of the two-column grid until the first scan lands
+// (start-apps.categories still empty — see start-apps-panel). start-apps.sh
+// runs detached from the menu open, so the flyout can reveal before its data
+// arrives; this keeps it from reading as an empty card in that gap. A min
+// height near the grid's own so the card doesn't visibly resize on swap-in.
+.start-flyout-loading {
+    min-height: 120px;
+}
+.start-flyout-loading-label {
+    color: $fg-dim;
+    font-style: italic;
+}
 // Left column: category rows, grouped with the shared collapsed-border
 // treatment (see @grouped-list). Rows carry their own fill / padding / colour
 // and hover + active states below. Each .start-cat is eventbox-wrapped (for
