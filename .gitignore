@@ -2,6 +2,7 @@
 # flipped by the `theme` script). The tracked sources are the -dark/-light
 # variants; the active symlink is machine state, not source.
 /config/eww/eww.scss
+/config/hypr/border-colors.conf
 /config/rofi/colorScheme.rasi
 /config/rofi/guiSize.rasi
 /config/swaync/style.css

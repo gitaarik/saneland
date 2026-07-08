@@ -47,7 +47,14 @@ if [[ -d ~/.config/eww ]] && pgrep -x eww >/dev/null; then
     setsid -f bash -c 'eww kill &>/dev/null; sleep 0.2; eww open bar &>/dev/null' &>/dev/null
 fi
 
-# --- Hyprland — border colors are hardcoded in hyprland.conf; reload it ---
+# --- Hyprland — flip the theme-aware border palette symlink, then reload ---
+# border-colors.conf (sourced by hyprland.conf) points at
+# border-colors-{dark,light}.conf. Active border contrasts with the wallpaper,
+# inactive blends in — so the flip keeps "active = most noticeable" on both
+# themes rather than leaving dark-theme borders on a light background.
+if [[ -d ~/.config/hypr ]]; then
+    (cd ~/.config/hypr/ && ln -sf "border-colors-$COLOR_SCHEME.conf" border-colors.conf)
+fi
 if pgrep -x Hyprland >/dev/null; then
     hyprctl reload &>/dev/null
 fi

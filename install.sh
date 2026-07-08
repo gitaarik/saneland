@@ -49,6 +49,7 @@ link() {
 # Format: "<relative symlink path> <target>"
 DEFAULT_THEME_LINKS=(
   "config/eww/eww.scss          eww-dark.scss"
+  "config/hypr/border-colors.conf border-colors-dark.conf"
   "config/rofi/colorScheme.rasi colorSchemes/dark.rasi"
   "config/rofi/guiSize.rasi     guiSizes/normal.rasi"
   "config/swaync/style.css      style-dark.css"

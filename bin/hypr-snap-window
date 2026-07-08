@@ -19,7 +19,7 @@ work_w=$WORK_W work_h=$WORK_H res_top=$RES_TOP
 # Border size: visible borders take pixels on each side, so inset position +
 # shrink size accordingly. Otherwise borders on edges that touch the screen
 # boundary render outside the visible area.
-bw=2
+bw=3
 
 target=$(hyprctl -j activewindow | jq -r '.address')
 [[ -z $target || $target = "null" ]] && exit 0

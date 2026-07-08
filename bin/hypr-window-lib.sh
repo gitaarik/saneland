@@ -67,8 +67,8 @@ hypr_chrome() {
     local addr=$1 mode=$2 border rounding nobar
     case $mode in
         max)  border=0 rounding=0     nobar=+nobar ;;
-        snap) border=2 rounding=unset nobar=+nobar ;;
-        *)    border=2 rounding=unset nobar=-nobar ;;
+        snap) border=3 rounding=unset nobar=+nobar ;;
+        *)    border=3 rounding=unset nobar=-nobar ;;
     esac
     printf 'dispatch setprop address:%s border_size %s; dispatch setprop address:%s rounding %s; dispatch tagwindow %s address:%s' \
         "$addr" "$border" "$addr" "$rounding" "$nobar" "$addr"
