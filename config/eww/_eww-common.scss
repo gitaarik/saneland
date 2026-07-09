@@ -864,8 +864,9 @@ revealer { background-color: transparent; }
 
 // Start menu popup (left-click the launcher / start button). Same card
 // chrome as the other popups, but anchored bottom-LEFT. A list of pinned
-// apps, an "All apps" row that falls back to rofi, and a bottom row of
-// power/session icon buttons (mirrors hypr-power-menu).
+// apps, a "Browse apps" categorized flyout, a "Search apps" row that falls
+// back to rofi, and a bottom row of power/session icon buttons (mirrors
+// hypr-power-menu).
 .start-popup {
     background-color: $cell-bg;
     color: $fg;
@@ -879,8 +880,9 @@ revealer { background-color: transparent; }
     font-weight: bold;
     padding: 2px 0 4px 0;
 }
-// Pinned-app row + "All apps" row: glyph + label, hover-highlighted.
-// Reuses the .audio-row interaction feel for consistency across popups.
+// Pinned-app rows plus the "Browse apps"/"Search apps" rows: glyph + label,
+// hover-highlighted. Reuses the .audio-row interaction feel for consistency
+// across popups.
 .start-item {
     background: $bg-secondary;
     border: 2px solid $divider;
@@ -1019,7 +1021,7 @@ window#start-apps-popup {
 .start-app-label {
     color: inherit;
 }
-// Invisible spacer between the pinned list, the "All apps" row, and the
+// Invisible spacer between the pinned list, the Browse/Search apps rows, and the
 // power row — categories are separated by gap alone now, no rule line.
 // Margin preserves the spacing the old 1px border sat in.
 .start-popup-divider {

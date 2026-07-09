@@ -2,8 +2,9 @@
 #
 # Stream bluetooth adapter state + paired devices for eww's deflisten.
 # Emits one JSON object per change:
-#   {"powered": bool, "transitioning": bool,
-#    "connected_count": int, "devices": [{mac, name, connected}]}
+#   {"powered": bool, "transitioning": bool, "target": str,
+#    "connected_count": int, "connected_name": str,
+#    "devices": [{mac, name, connected: bool, state: str}]}
 #
 # Reactivity:
 #   - `gdbus monitor --system --dest org.bluez` for D-Bus PropertyChanged

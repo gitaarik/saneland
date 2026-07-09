@@ -107,7 +107,7 @@
 ;; intentionally delegated to blueman-manager — agent registration +
 ;; PIN dialogs aren't worth building in eww.
 (deflisten bluetooth
-  :initial '{"powered":false,"transitioning":false,"target":"","connected_count":0,"connected_name":"","devices":[],"state":"idle"}'
+  :initial '{"powered":false,"transitioning":false,"target":"","connected_count":0,"connected_name":"","devices":[]}'
   "~/.config/eww/scripts/bluetooth-state.sh")
 
 ;; UI preference: show the connected device name next to the systray
@@ -170,13 +170,13 @@
 ;; every start-menu open so a stale armed state never carries over.
 (defvar start-confirm "")
 
-;; Categorized "All apps" data for the start-menu flyout, built by
+;; Categorized "Browse apps" data for the start-menu flyout, built by
 ;; start-apps.sh (scans .desktop files → main freedesktop categories).
 ;; popup-toggle.sh refreshes this on every start-menu open, so newly
 ;; installed apps appear without an eww restart. Seeded empty so the
 ;; flyout is inert until the first refresh lands.
 (defvar start-apps '{"categories":[],"apps":{}}')
-;; Whether the "All apps" flyout is expanded (the two-column category +
+;; Whether the "Browse apps" flyout is expanded (the two-column category +
 ;; app panel). popup-toggle.sh resets this to false on each menu open.
 (defvar start-apps-open false)
 ;; Which category's apps the flyout's right pane shows — set by hovering
@@ -252,8 +252,9 @@
         (children)))))
 
 ;; Start button — left-click toggles a Windows-style start menu
-;; (start-popup) with pinned apps, an "All apps" rofi fallback, and a
-;; power/session row. Highlights (.launcher.active) while its popup is
+;; (start-popup) with pinned apps, a "Browse apps" categorized flyout, a
+;; "Search apps" rofi fallback, and a power/session row. Highlights
+;; (.launcher.active) while its popup is
 ;; open, matching the systray widgets that gate on `open-popup`.
 (defwidget launcher []
   (button :class {open-popup == "start-popup" ? "launcher active" : "launcher"}
@@ -269,8 +270,8 @@
       (label :class "start-item-icon" :text icon)
       (label :class "start-item-label" :xalign 0 :hexpand true :text label))))
 
-;; --- "All apps" flyout ------------------------------------------------------
-;; A Windows-style flyout: the "All apps" row expands into a two-column
+;; --- "Browse apps" flyout ---------------------------------------------------
+;; A Windows-style flyout: the "Browse apps" row expands into a two-column
 ;; panel — every installed app auto-bucketed into freedesktop categories
 ;; (left), the hovered category's apps shown on the right. Data comes from
 ;; start-apps.sh via the `start-apps` var (refreshed on each menu open).
@@ -416,8 +417,8 @@
 ;; config and swap < RAM, so it can't restore a session.
 (defwidget start-popup-content []
   (box :class "start-popup" :orientation "v" :space-evenly false :spacing 2
-    ;; Hovering any non-"All apps" row collapses the pop-out (revealed by
-    ;; the All-apps row). That's how the submenu closes — no onhoverlost,
+    ;; Hovering any non-"Browse apps" row collapses the pop-out (revealed by
+    ;; the Browse-apps row). That's how the submenu closes — no onhoverlost,
     ;; no debounce, so crossing the gap into the pop-out never trips it.
     (eventbox :onhover "eww update start-apps-open=false"
      (box :class "start-power-row" :orientation "h" :space-evenly true :spacing 0
@@ -607,11 +608,6 @@
                           :muted {audio.muted} :volume {audio.volume}
                           :glyph_active "" :glyph_muted "")))
 
-;; Bluetooth systray icon. Click toggles the bluetooth-popup. State
-;; class drives color: off = dim, on-with-connection = accent, on-idle
-;; = default. No text — too binary for a count to matter, popup has
-;; the details. Reuses .audio's padding via the shared selector list
-;; in _eww-common.scss.
 ;; Network systray icon. Same single-glyph approach as bluetooth — one
 ;; wifi glyph, color/class encodes state (connected via wifi or
 ;; ethernet → accent, idle → default, wifi-off → dim). Click toggles
@@ -742,6 +738,11 @@
     (network-popup-list)
     (network-popup-toggle)))
 
+;; Bluetooth systray icon. Click toggles the bluetooth-popup. State
+;; class drives color: off = dim, on-with-connection = accent, on-idle
+;; = default. No text — too binary for a count to matter, popup has
+;; the details. Reuses .audio's padding via the shared selector list
+;; in _eww-common.scss.
 (defwidget bluetooth []
   (eventbox :onclick "~/.config/eww/scripts/popup-toggle.sh bluetooth-popup"
     (box :class {(bluetooth.transitioning ? "bluetooth transitioning"
@@ -1171,7 +1172,7 @@
   :focusable false
   (start-popup-content))
 
-;; Separate overlay window for the "All apps" pop-out, so the panel's
+;; Separate overlay window for the "Browse apps" pop-out, so the panel's
 ;; height never stretches the start-menu window. It's opened together with
 ;; the start menu (popup-toggle.sh) and closed with it (popup-dismiss.sh);
 ;; the panel inside is shown/hidden with :visible on start-apps-open, which

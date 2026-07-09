@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build the categorized "All apps" data for the start-menu flyout.
+# Build the categorized "Browse apps" data for the start-menu flyout.
 #
 # Scans the freedesktop application directories, parses each .desktop
 # entry, drops the ones a launcher shouldn't show (NoDisplay/Hidden/

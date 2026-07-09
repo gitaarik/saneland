@@ -48,7 +48,7 @@ case $window in
         [[ -f $net_pid_file ]] && kill -USR1 "$(<"$net_pid_file")" 2>/dev/null
         ;;
     start-popup)
-        # The "All apps" pop-out is a companion window of the start menu —
+        # The "Browse apps" pop-out is a companion window of the start menu —
         # close it too and reset its reveal state so it can't linger after
         # the menu is gone.
         eww close start-apps-popup 2>/dev/null || true

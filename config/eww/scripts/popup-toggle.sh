@@ -64,7 +64,7 @@ eww update open-popup="$window" 2>/dev/null || true
 # by clicking outside.
 if [[ $window == start-popup ]]; then
     eww update start-confirm="" 2>/dev/null || true
-    # Refresh the categorized "All apps" data (cheap: served from cache
+    # Refresh the categorized "Browse apps" data (cheap: served from cache
     # unless an application dir changed) and preselect the first category for
     # the right pane once the flyout is expanded. Run DETACHED so a slow
     # rebuild — an app dir changed, forcing a full .desktop rescan — doesn't
@@ -119,13 +119,14 @@ fi
 ) &
 disown
 
-# Esc closes the popup. The window is `:focusable true`, so it holds the
-# keyboard while open — this is the primary keyboard escape route (and a
-# consuming `bind`, not bindrn, so Esc dismisses the popup rather than
-# leaking through to the window that regains focus). Hyprland evaluates
-# keybinds before delivering keys to the focused surface, so it fires even
-# with the layer's keyboard grab. Registered immediately (unlike the mouse
-# bind there's no open-click to race); popup-dismiss.sh unbinds it.
+# Esc closes the popup. The windows are `:focusable false` (see the focusable
+# note in eww.yuck), so they never hold the keyboard and Esc can't come from
+# the surface — instead we register a global Hyprland `bind` for it. It's a
+# consuming `bind` (not bindrn), so Esc dismisses the popup rather than leaking
+# through to whatever surface is focused. Hyprland evaluates keybinds before
+# delivering keys, so it fires regardless of focus. Registered immediately
+# (unlike the mouse bind there's no open-click to race); popup-dismiss.sh
+# unbinds it.
 hyprctl keyword "bind" ", ESCAPE, exec, $dismiss $window" >/dev/null 2>&1
 
 # Close action lives INSIDE the while loop, not after it. Reason: with
