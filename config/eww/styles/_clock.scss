@@ -1,0 +1,107 @@
+// Clock popup — title + self-rendered month grid (clock-calendar). The
+// grid is drawn from JSON rather than GtkCalendar so the Options
+// Sunday/Monday week-start toggle can reorder its columns at runtime.
+.clock-popup {
+    background-color: $cell-bg;
+    color: $fg;
+    border: 2px solid $popup-border;
+    border-radius: 0;
+    padding: 12px;
+    min-width: 260px;
+}
+.clock-popup-title {
+    color: $fg;
+    font-weight: bold;
+}
+// Self-rendered month grid (clock-calendar widget).
+.clock-cal {
+    padding: 4px 2px 2px 2px;
+}
+// Heading row: dim month/year title flanked by prev/next arrows.
+.clock-cal-title {
+    color: $fg;
+    font-weight: bold;
+}
+.clock-cal-nav {
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0 8px;
+    color: $fg-dim;
+}
+.clock-cal-nav:hover {
+    background: $row-hover;
+    color: $fg;
+}
+// Weekday header row — dim, small, sits above the day rows.
+.clock-cal-weekday {
+    color: $fg-dim;
+    font-size: 0.8em;
+    padding: 2px 0;
+}
+// Day cells. Each cell reserves a square so the columns stay aligned as
+// months change length; blank pad cells render empty.
+.clock-cal-day {
+    color: $fg;
+    min-width: 26px;
+    min-height: 22px;
+    border-radius: $radius-control;
+}
+// Today's chip. A translucent neutral fill (matching the selection
+// wash) keeps the day text readable rather than washing it out.
+.clock-cal-day.today {
+    background-color: $accent-tint;
+    font-weight: bold;
+}
+
+// "Today" jump-back button below the calendar. Matches power-profile
+// chrome so popup buttons feel consistent.
+.clock-popup-today {
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    border-radius: $radius-control;
+    padding: 4px 10px;
+    color: $fg-dim;
+}
+.clock-popup-today:hover {
+    background: $row-hover;
+    color: $fg;
+}
+
+// "Tools" section — dim section label + a row of utility buttons
+// (currently just screenshot modes). Buttons reuse the .clock-popup-today
+// chrome so the section feels native.
+.clock-popup-tools-label {
+    color: $fg;
+    font-weight: bold;
+}
+// Screenshot tools drawn as one segmented control — same collapsed-border
+// treatment as the .start-power-row: a single rounded outline with the buttons
+// divided by vertical hairlines instead of each being its own pill.
+.clock-popup-tools {
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    border-radius: $radius-group;
+}
+.clock-popup-tool {
+    background: transparent;
+    border: none;
+    border-right: 1px solid $divider;
+    border-radius: 0;
+    padding: 4px 10px;
+    color: $fg-dim;
+}
+.clock-popup-tool:first-child {
+    border-top-left-radius: $radius-group - 1px;
+    border-bottom-left-radius: $radius-group - 1px;
+}
+.clock-popup-tool:last-child {
+    border-right: none;
+    border-top-right-radius: $radius-group - 1px;
+    border-bottom-right-radius: $radius-group - 1px;
+}
+.clock-popup-tool:hover {
+    background: $row-hover;
+    color: $fg;
+}
+

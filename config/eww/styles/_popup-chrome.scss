@@ -1,0 +1,98 @@
+// Audio device picker popup (left-click the audio widget). Small layer-shell
+// window anchored above the bar — the entire surface is the card, no overlay.
+.popup-card {
+    background-color: $cell-bg;
+    color: $fg;
+    border: 2px solid $popup-border;
+    border-radius: 0;
+    padding: 12px;
+    min-width: 320px;
+}
+.popup-title {
+    color: $fg;
+    font-weight: bold;
+    // No left padding: section headers sit flush with the content-left edge
+    // where the device lists, buttons and icon boxes below them all align.
+    padding: 2px 0;
+}
+.popup-row {
+    background: transparent;
+    border: none;
+    border-radius: $radius-control;
+    padding: 4px 8px;
+    color: $fg;
+}
+.popup-row:hover {
+    background: $row-hover;
+    color: $fg;
+}
+.popup-row.active {
+    color: $ui-select;
+}
+// Bluetooth device-row in-flight states (also reuses .popup-row). The
+// row label is prefixed with a sync glyph for connecting / disconnecting
+// and a warning triangle for error; the color cues are here.
+.popup-row.connecting {
+    color: $accent;
+}
+.popup-row.error {
+    color: $critical;
+}
+
+// ---- Grouped list ----------------------------------------------------------
+// The collapsed-border treatment shared by every stacked row list in the
+// popups: the bluetooth/network device lists, the start menu's pinned apps,
+// the Browse/Search pair, and the apps-browser category + app lists. Instead
+// of each row reading as its own drop-shadowed card, it draws ONE rounded
+// outline ($radius-group) around the whole set and separates the rows with
+// $divider hairlines — only the first/last row's outer corners round, to sit
+// flush inside the outline. Resetting border + radius + box-shadow on every
+// row is what stops GTK's default button chrome (a rounded, shadowed pill)
+// from leaking onto the interior rows.
+//
+// $row is the row selector, relative to the container the mixin is @included
+// in. Callers still own each row's own fill / padding / text colour / hover /
+// active state — this owns only the grouping chrome. For lists whose rows are
+// each wrapped in an eventbox (so a bare `#{$row}:first-child` would match the
+// button inside EVERY wrapper, not just the end ones), pass $first / $last as
+// container-relative selectors pointing at the button in the first/last slot.
+@mixin grouped-list($row, $first: null, $last: null) {
+    @if $first == null { $first: "#{$row}:first-child"; }
+    @if $last  == null { $last:  "#{$row}:last-child"; }
+    // Filled with the menu-button surface ($bg-secondary) so the list reads as
+    // a distinct panel on the popup card, with a darker $divider outline.
+    background-color: $bg-secondary;
+    border: 2px solid $divider;
+    border-radius: $radius-group;
+    #{$row} {
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        border-bottom: 1px solid $divider;
+    }
+    // Round only the outer corners of the end rows so they nest inside the
+    // container's border ($radius-group - 1px, just inside the 2px outline).
+    #{$first} {
+        border-top-left-radius: $radius-group - 1px;
+        border-top-right-radius: $radius-group - 1px;
+    }
+    #{$last} {
+        border-bottom: none;
+        border-bottom-left-radius: $radius-group - 1px;
+        border-bottom-right-radius: $radius-group - 1px;
+    }
+}
+
+// Bluetooth + network device lists. Rows are .popup-row buttons; the mixin
+// drops their per-item radius/shadow and adds the collapsing hairlines.
+.device-list {
+    @include grouped-list("button");
+}
+// The shared .popup-row:hover fills with $bg-secondary — invisible now the
+// list itself is $bg-secondary. Wash the hovered row with the shared
+// $row-hover so hover reads consistently (the same whiter highlight) across
+// the popups.
+.device-list button:hover {
+    background: $row-hover;
+}
+

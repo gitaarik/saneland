@@ -1,0 +1,132 @@
+* {
+    // No `all: unset` — that reset backgrounds on every element including
+    // window#bar, leaving the bar transparent. Just set our font.
+    font-family: $font-family;
+    font-size: $font-size;
+}
+
+window#bar {
+    background-color: $bg;
+    color: $fg;
+    // The top-border hairline can't live here: gtk-layer-shell doesn't paint a
+    // border or background on the layer window (or its root box). It's drawn on
+    // the group boxes' border-top instead — see the border-top rule after the
+    // @mixin seam / cell rules.
+}
+window#bar > * {
+    padding: 0 4px;
+}
+
+// ---- Faded hairline seam ----------------------------------------------------
+// The 1px vertical-gradient divider between adjacent bar cells, shared by the
+// workspace/taskbar group (left) and the status group (right). A $divider
+// hairline brightest through the middle that ramps to transparent before the
+// bar's top/bottom edges, so the soft ends read as a deliberate seam rather
+// than a hard edge-to-edge line ($border is lighter than $bg and looked like a
+// scratch). Drawn as a border-image on whichever single side the caller gives a
+// 1px transparent border — border-image-width follows border-width, so only
+// that side paints. The 1px slice samples the full vertical column and GTK
+// stretches it down the cell, mapping the % stops to the cell height; the stops
+// are GRADUAL (solid only across the 35–65% core) so the fade shows — hard
+// stops here would just produce a shorter solid line.
+@mixin seam {
+    // Fade to rgba($divider, 0), not the `transparent` keyword: `transparent` is
+    // transparent BLACK, so the ends ramp the RGB toward black as alpha drops —
+    // invisible against the dark bar but a dark fringe on the light one. Zero-
+    // alpha $divider keeps the seam's colour and only ramps the alpha.
+    border-image: linear-gradient(to bottom,
+                                   rgba($divider, 0) 0%,
+                                   $divider 35%, $divider 65%,
+                                   rgba($divider, 0) 100%) 1;
+}
+
+// Top-border line colour. Defaults to the $divider seam colour so the wide top
+// border matches the seams; a theme can override it. Only the top line uses this
+// now — the section-boundary seams are dedicated @seam elements (see .cat-sep).
+$topline: $divider !default;
+
+// Variant of @seam for the full-width group boxes that carry the bar's top-border
+// hairline. A border-top samples the border-image's TOP ROW, so unlike @seam
+// (transparent at 0%, which would make the top line invisible) this is SOLID at
+// 0% — painting the line — and only fades to transparent at the bottom so the
+// box's own section-boundary seam still has a soft foot. One border-image per
+// element, so that section seam necessarily shares this (solid-topped, $topline)
+// treatment and connects into the line; the between-cell seams keep @seam.
+@mixin top-seam {
+    border-image: linear-gradient(to bottom,
+                                   $topline 0%, $topline 70%,
+                                   rgba($topline, 0) 100%) 1;
+}
+
+// ---- Active-cell highlight --------------------------------------------------
+// A solid orange core with a fixed 5px fade band on EACH side (a uniform inset
+// frame, not a fade radiating from the centre). True-transparent edges on all
+// four sides would need a mask (unsupported in GTK), but fading to the bar's $bg
+// is identical on the bar AND is stackable: four linear gradients, one per edge,
+// each painting opaque $bg at its edge and easing to transparent 5px in, layered
+// over the orange fill ($bg covers the orange only within the 5px band; past it
+// the orange shows). Corners are where two bands overlap. (A radial fades from
+// the centre; an inset box-shadow blurs rather than giving a clean linear band —
+// this is an exact 5px ramp.) The fill colour is the parameter, so the same glow
+// serves both the active state ($accent-fill) and hover ($accent-fill-hover, a
+// fainter touch). Knobs: those two per-theme fills and the 5px band width.
+//
+// background-clip: padding-box — without it the fill defaults to border-box and
+// bleeds under the 1px seam border on the active side; since the seam's border-
+// image is transparent at its top/bottom ends, that bleed shows through as a
+// 1px orange line. Clipping to the padding box stops the fill before the border.
+// Colour an inactive cell shows, and the colour an active/hover fill fades OUT
+// to at its edges (so the highlight melts into its neighbours). Defaults to $bg
+// — the dark theme leaves inactive cells transparent-over-$bg and the glow fades
+// to the dark bar. The light theme sets it to a gray, so inactive cells read as
+// gray chips and the (now lighter/white) active glow fades into that gray.
+$cell-bg: $bg !default;
+
+@mixin cell-fill($fill) {
+    background-color: $fill;
+    // Fade to rgba($cell-bg, 0), NOT the `transparent` keyword: `transparent` is
+    // transparent BLACK (rgba(0,0,0,0)), so `$cell-bg, transparent` interpolates
+    // the RGB toward black as the alpha drops — a darker fringe just inside each
+    // edge before it reaches the fill. rgba($cell-bg, 0) keeps the surround's
+    // colour and only ramps the alpha, so the fill melts into the cell surround.
+    background-image:
+        linear-gradient(to bottom, $cell-bg, rgba($cell-bg, 0) 5px),
+        linear-gradient(to top,    $cell-bg, rgba($cell-bg, 0) 5px),
+        linear-gradient(to right,  $cell-bg, rgba($cell-bg, 0) 5px),
+        linear-gradient(to left,   $cell-bg, rgba($cell-bg, 0) 5px);
+    background-clip: padding-box;
+}
+@mixin cell-active { @include cell-fill($accent-fill); }
+@mixin cell-hover  { @include cell-fill($accent-fill-hover); }
+
+// Opaque hover fill for the flat buttons/rows inside the systray menus and the
+// start menu. $accent-fill-hover is a TRANSLUCENT wash, so on a flat button it
+// composites over whatever container sits behind it, and the popups use two
+// backdrops: the darker $cell-bg card (pinned/Browse/Search rows, categories)
+// and the lighter $bg-secondary "list band" (the power/session row, the flyout
+// app list, the device list). The same wash therefore reads greyer over the
+// card and whiter over the band — the power buttons look right, the app/row
+// hovers look muddy. Flatten the wash over the lighter $bg-secondary ONCE here
+// into a solid colour, so every popup button paints that same strong (whiter)
+// highlight regardless of its own backdrop. Derived from the theme's own
+// $accent-fill-hover + $bg-secondary, so it tracks both automatically. (Bar
+// cells keep the translucent fill via cell-hover — they always sit on $cell-bg,
+// so there's no inconsistency to flatten there.)
+$row-hover: mix(rgba($accent-fill-hover, 1), $bg-secondary, alpha($accent-fill-hover) * 100%) !default;
+
+// ---- Corner radii -----------------------------------------------------------
+// Rounding is used as an affordance signal: only things you interact with are
+// rounded, so a rounded corner reads as "clickable". Structural surfaces — the
+// bar, the Hyprland windows, and the popup CARDS these controls sit on — stay
+// square (border-radius: 0, set per-selector). That split is the whole system;
+// keep it when adding chrome.
+//
+// Two tiers, by role:
+//   $radius-control — individual buttons, rows, sliders, small indicators.
+//   $radius-group   — the outline around a grouped list / segmented control /
+//                     options section. Larger than $radius-control so the inner
+//                     rows' corners ($radius-group - 1px, sitting just inside
+//                     the 2px border) nest cleanly against it.
+$radius-control: 4px !default;
+$radius-group: 6px !default;
+

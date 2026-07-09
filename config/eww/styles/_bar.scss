@@ -1,0 +1,257 @@
+// The left-side cells are Gtk `button`s (the systray cells on the right are
+// plain `box`es), so they inherit the GTK theme's default raised button chrome
+// — an alternate background with rounded corners + a bevel shadow. Strip it so
+// they sit flat on the bar $bg, identical to the systray boxes. The seam border
+// and the active tint/accent-bar are re-applied by their own rules below (both
+// later in the cascade, so they win).
+.launcher, .tag, .task {
+    background: $cell-bg;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+// Give the same $cell-bg to the group boxes (so the taskbar's empty hexpand
+// stretch is filled, not the bare window bg) and the systray/status cells, so
+// the whole bar reads as one gray surface rather than gray chips on lighter gaps.
+.tags, .taskbar, .status-group, .cat-sep,
+.tray > *, .bluetooth, .audio, .network, .battery, .clock {
+    background-color: $cell-bg;
+}
+
+.launcher {
+    color: $fg;
+    font-weight: bold;
+    // Small left padding on top of the bar's 4px edge inset (window#bar > *) —
+    // ~6px total so the glyph sits tight-but-not-cramped in the corner, rather
+    // than the ~10px it had at 6px. Right padding sets the gap to the first tag.
+    padding: 0 6px 0 2px;
+}
+// Highlighted while the start menu is open — mirrors .tag.active.
+.launcher.active {
+    color: $fg;
+    @include cell-active;
+}
+
+// Group paddings zeroed and the yuck boxes set to :spacing 0 so every cell on
+// the left touches its neighbour — the seam (added below) then sits as a single
+// hairline between each pair, matching the status group on the right.
+.tags {
+    padding: 0;
+}
+.tag {
+    padding: 0 4px;
+    color: $fg;
+    border-radius: 0;
+}
+.tag.active {
+    color: $fg;
+    @include cell-active;
+}
+
+.taskbar {
+    padding: 0;
+}
+// Flush, seamed cells (no rounded pill / margin) so the taskbar reads as part
+// of the same hairline-separated row as the tags and the status group.
+.task {
+    padding: 0 4px;
+    color: $fg;
+}
+.task.active {
+    color: $fg;
+    @include cell-active;
+}
+
+// Hover: the same soft glow as .active but with a fainter fill, on every
+// interactive bar cell. :not(.active) so hovering an already-active cell keeps
+// the stronger active glow instead of dimming it.
+//
+// Left side (launcher/tags/tasks) are buttons, which take :hover directly. The
+// systray cells are boxes inside eventboxes, and GTK puts prelight on the
+// eventbox, not the inner box — so `.audio:hover` never fires. Instead match the
+// child via the hovered parent (`*:hover > .audio`): each systray widget has its
+// own eventbox with a single styled child, so this stays scoped to that one
+// cell (unlike the shared tags/taskbar eventbox, where a parent-hover form would
+// light every child at once — hence the direct :hover for those).
+.launcher:hover:not(.active),
+.tag:hover:not(.active):not(.no-hover),
+.task:hover:not(.active):not(.no-hover),
+*:hover > .audio:not(.active),
+*:hover > .network:not(.active),
+*:hover > .bluetooth:not(.active),
+*:hover > .battery:not(.active),
+*:hover > .clock:not(.active) {
+    @include cell-hover;
+}
+
+// Inner breathing room: pad each cell's CONTENT (the tag number, the task's
+// icon+title box, the launcher glyph) so a highlighted item's content doesn't
+// touch the edge of the accent-tint wash, which is clipped to the content box.
+// This is a second, inner zone — distinct from the cell's own horizontal
+// padding, which stays as bar-$bg between the highlight and the seam.
+.launcher > label,
+.task > box {
+    padding: 0 5px;
+}
+// Workspace tags get a touch more interior room than the rest.
+.tag > label {
+    padding: 0 5px;
+}
+
+.tray {
+    padding: 0;
+}
+
+.audio, .network, .bluetooth, .battery, .clock {
+    padding: 0 6px;
+}
+// The optional bar date rides behind the time; dim it so the time still
+// reads as the primary figure (toggled by the clock popup's Options).
+.clock-date {
+    color: $fg-dim;
+}
+// FA wifi glyph (U+F1EB) is right-anchored in its character cell — the
+// visible arc paints to the cell's right edge. Give the glyph its own
+// right padding so it breathes regardless of what follows: when an SSID
+// is shown this is the gap before the text; when it isn't, it's the
+// clearance before the collapsed-border divider.
+.network-icon { padding-right: 8px; }
+// Same idea for the audio glyph: own its right clearance (rather than
+// relying on the box's inter-child spacing, which vanishes when the
+// percentage label is hidden) so the icon keeps a gap before the divider
+// when the "Show volume percentage" preference is off. The widget's box
+// spacing is dropped to 6px so the shown icon→text gap stays ~14px.
+.audio-icon { padding-right: 8px; }
+
+// Right-side widgets rendered as a single bordered button-group row,
+// reading as buttons (matching the GtkButton chrome of the tags/taskbar
+// on the left) without doubling 1px borders between adjacent items.
+// The right-side box uses :spacing 0 so adjacent borders touch, then
+// every item after the first drops its left border — the last tray
+// cell's right border collapses with .bluetooth's left border too, so
+// the tray group and status-widget group join without a visible seam.
+//
+// Each tray item is an outer wrapper containing an inner GtkButton
+// with the icon. Plain `padding` gets absorbed by the button chrome
+// and doesn't widen the cell — `min-width` does, but only when set on
+// BOTH levels (otherwise the wrapper widens but the inner stays sized
+// to the icon, leaving the icon flush against the wrapper's left edge).
+.tray > *, .tray > * > * {
+    min-width: 28px;
+}
+// App systray icons (Signal, Telegram, WhatsDesk, Syncthing, …): give each tray
+// cell the same hover wash as the self-built status cells. eww builds every item
+// as a gtk::EventBox (.tray > *) wrapping the icon Image; on hover GTK flags that
+// eventbox :hover and its background paints the cell — the same soft fill the
+// .audio/.clock cells use.
+//
+// DORMANT on eww ≤ 0.6.0: those releases create the tray eventbox without
+// enter/leave crossing handlers, so it never enters the :hover state and this
+// rule simply never fires (verified against eww 0.5.0). The fix — tray items
+// setting StateFlags::PRELIGHT on pointer enter/leave — landed after 0.6.0
+// (elkowar/eww changelog: "Add support for :hover css selectors for tray items"),
+// so this lights up once you're on an eww built from git master (e.g. the eww-git
+// AUR package). Harmless no-op until then.
+.tray > *:hover {
+    @include cell-hover;
+}
+// Right side: each cell carries the seam on its RIGHT edge; cells touch
+// (:spacing 0) so a single hairline sits between each pair. .clock is the last
+// item in the row and is omitted, so no seam closes off the right edge.
+.tray > *,
+.bluetooth, .audio, .network, .battery {
+    border-right: 1px solid transparent;
+    @include seam;
+}
+// Left side: the mirror — the seam rides each cell's LEFT edge, so the launcher
+// (the first item) is the one omitted. Putting it on the left also means the
+// dynamic, right-growing taskbar never leaves a seam dangling after its last
+// window. Every tag/task touches its neighbour (:spacing 0 in the yuck boxes).
+.tag, .task {
+    border-left: 1px solid transparent;
+    @include seam;
+}
+// Section boundaries (launcher | tags | taskbar | status) are a 2px $divider seam
+// — stronger than the 1px between-cell seams. The group boxes can't draw it:
+// their one border-image is spent on the top-border line (@top-seam), which is
+// solid at the top so it can't fade like a seam. So dedicated separator elements
+// carry it with the normal (top/bottom-fading) @seam: a 1px .cat-sep between
+// launcher|tags and tags|taskbar sits flush against the next group's first-cell
+// 1px seam (→ 2px), and a 2px .status-sep covers the taskbar|status boundary,
+// whose status widgets seam on their RIGHT (no first-cell seam to pair with).
+.cat-sep {
+    border-left: 1px solid transparent;
+    @include seam;
+}
+.status-sep {
+    border-left: 2px solid transparent;
+    @include seam;
+}
+// While a systray item's popup is open, tint its bar cell and draw the accent
+// bottom bar — the same active treatment as .launcher/.tag/.task. The popups
+// all anchor to the bottom-RIGHT corner regardless of which icon opened them,
+// so this highlight is what ties the far-right popup back to its source icon.
+// Only the background/accent bar are set here — each widget keeps its own
+// state color (bluetooth green, battery tier, etc.).
+.audio.active, .network.active, .bluetooth.active, .battery.active, .clock.active {
+    @include cell-active;
+}
+
+// Settled "connected" state uses the same $high green as the >80%-
+// charged battery — green = "all good", saves the accent orange for
+// in-progress / transitional UI. Transitioning stays orange.
+.bluetooth.off           { color: $fg-dim; }
+.bluetooth.connected     { color: $high; }
+.bluetooth.transitioning { color: $accent; }
+
+// SSID text rides alongside the glyph; nudge it down a touch from the
+// icon size and inherit the .network state color so it greens with the
+// connection. The right-anchored glyph swallows .network-icon's
+// padding-right, so the text owns its own left gap from the icon.
+.network-ssid { font-size: 0.85em; padding-left: 6px; }
+// Connected-device name beside the bluetooth glyph; same nudge as the
+// network SSID and inherits .bluetooth's state color so it greens with
+// the connection. Unlike the audio/network glyphs, the bluetooth glyph
+// renders wide enough that the box's :spacing 6 alone gives a balanced
+// icon→text gap (~half the other tray widgets), so the text carries no
+// left padding.
+.bluetooth-device { font-size: 0.85em; }
+// The box's :spacing 6 collapses when the device label is hidden, leaving
+// the glyph only the box's 6px right padding before the divider — a hair
+// tight. Give the icon 1px of its own right clearance so the no-device
+// case breathes; negligible on the icon→text gap when a name is shown.
+.bluetooth-icon { padding-right: 1px; }
+
+.network.off      { color: $fg-dim; }
+.network.idle     { color: $fg; }
+.network.wifi     { color: $high; }
+.network.ethernet { color: $high; }
+
+// Cap on the scrollable wifi list lives on the eww widget itself
+// (`:height 240`). Tried both `max-height` and `min/max-content-height`
+// in CSS — grass (eww 0.5's SCSS compiler) rejects them and refuses
+// to load the entire stylesheet, leaving every widget unstyled.
+.battery.high      { color: $high; }
+.battery.low       { color: $low; }
+.battery.warning   { color: $warning; }
+.battery.critical  { color: $critical; }
+.audio.muted       { color: $fg-dim; }
+
+// Rotated FA battery glyph sits visually too high in the line box, and
+// rotation also widens its bounding box → extra apparent gap before the
+// percentage. Nudge down for baseline, pull right to match the bolt's
+// trailing gap. Bolt (shown when AC is online) needs neither.
+.battery-icon.rotated {
+    margin-top: 5px;
+    margin-right: -3px;
+}
+.battery-icon.bolt { margin-right: 1px; }
+
+// Warning triangle shown left of the battery icon when on battery and
+// at/below the critical threshold. Same color as `.battery.critical`
+// so the row reads as one urgency cue.
+.battery-alert {
+    color: $critical;
+    margin-right: 2px;
+}
+

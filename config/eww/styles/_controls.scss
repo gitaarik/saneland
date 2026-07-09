@@ -1,0 +1,175 @@
+// Theme toggle: single full-width button showing the active scheme.
+// Click to flip via `theme toggle`. No active-state highlight — the
+// icon + label *is* the state indicator.
+.full-button {
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    border-radius: $radius-control;
+    padding: 6px 8px;
+    color: $fg;
+}
+.full-button:hover {
+    background: $row-hover;
+}
+.full-button-icon {
+    color: $ui-select;
+}
+// .off modifier for tinted icons inside a full-button-style button
+// (e.g. the bluetooth power toggle when the adapter is off).
+.full-button-icon.off {
+    color: $fg-dim;
+}
+// The fa-wifi glyph (U+F1EB) is wide and its ink overhangs its advance
+// box on the right, so the network toggle's 8px box spacing gets eaten
+// and the "On/Off" label ends up hugging the icon. A small right margin
+// restores a gap matching the bluetooth/theme toggles, whose glyphs sit
+// within their advance box.
+.network-toggle-icon {
+    margin-right: 4px;
+}
+// Leading state glyph on the network + bluetooth device rows, given a
+// fixed-width "column" so the label (SSID / device name) starts at the
+// same x on every row regardless of which glyph shows (connecting
+// spinner / error triangle / ●/○). GTK CSS has no display:grid, so a
+// min-width label + :xalign 0 is the equivalent. 22px clears the widest
+// glyph (the ● bullet's 12.8px advance) plus ~9px of gap. The remaining
+// ~1px variance across glyphs is their differing ink widths and is
+// imperceptible.
+.row-state-icon {
+    min-width: 22px;
+}
+// Placeholder row in the wifi list while the first scan after opening is
+// still in flight ("Searching…") or when it completed with no networks
+// in range ("No networks found"). Dim, mirrors the list rows' padding.
+// Dim placeholder line inside a popup's device list — loading / empty states
+// (e.g. "Searching for networks…", "Loading devices…"). Shared by the network
+// and audio popups so both read the same inside the bordered list frame.
+.popup-hint {
+    color: $fg;
+    padding: 6px 8px;
+}
+// Trailing padlock on each wifi row: a closed lock for secured networks,
+// an open lock for unsecured ones. Kept dim so it reads as a quiet hint
+// next to the SSID; the open lock leans on $warning to flag that traffic
+// is unencrypted.
+.network-lock {
+    color: $fg-dim;
+    font-size: 0.8em;
+    padding-left: 8px;
+}
+.network-lock.open {
+    color: $warning;
+}
+// Collapsible "Options" disclosure shared by every systray popup
+// (audio/network/battery/bluetooth) via the `options-section` widget.
+// The header row and its revealed body live inside one filled, rounded
+// container so they read as a single unit — the header sits at the top,
+// the body drops in below it within the same box.
+.options-section {
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    border-radius: $radius-group;
+}
+// Header: full-width clickable row, transparent so the container fill
+// shows through. Only the heading/chevron text brightens on hover (a row
+// fill would be invisible against the matching container background). Hover
+// fill sits 1px inside the container's 2px border ($radius-group - 1px).
+// Collapsed, the header is the only row so all four corners round; when
+// expanded, the bottom squares off (see .open) so the fill flows straight
+// into the revealed body instead of cutting a rounded notch above it.
+.options-row {
+    background: transparent;
+    border: none;
+    border-radius: $radius-group - 1px;
+    padding: 6px 8px;
+    box-shadow: none;
+}
+// When expanded the header butts up against the revealed body: square off
+// its bottom corners so the hover fill flows into the body, and drop the
+// GTK button's bottom shadow so no line shows between them.
+.options-row.open {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    box-shadow: none;
+}
+.options-heading {
+    color: $fg;
+}
+.options-row:hover {
+    background: $row-hover;
+}
+.options-row:hover .options-heading,
+.options-row:hover .options-chevron {
+    color: $fg;
+}
+.options-chevron {
+    color: $fg-dim;
+    font-size: 0.8em;
+}
+// Body sits inside the container under the header, sharing its fill. No
+// padding: the rows run edge to edge and butt straight against the header
+// and each other, so hovering fills a contiguous band with no dead gaps.
+// The rows carry their own interior padding for breathing room.
+.options-body {
+    padding: 0;
+}
+// GtkRevealer backs itself with an opaque surface painted in the GTK theme's
+// default window colour (white on the light theme, dark on the dark one). eww
+// wraps every widget carrying a reactive `:visible` binding in one of these —
+// so the bluetooth "Paired" list, the wifi list, and their loading/empty hints
+// all sat on a white rectangle that showed through the popup card's rounded
+// corners (the systray popup windows are otherwise transparent). The audio
+// popup escaped only because its wallpaper-facing corners happened to sit over
+// pale sky. Clear the surface so revealers (both the explicit options-section
+// one and eww's implicit `:visible` wrappers) composite transparently and the
+// corners read as the wallpaper. Revealers never show their own background —
+// the revealed content always paints its own — so this is safe globally.
+revealer { background-color: transparent; }
+
+// Preference checkbox row inside an Options disclosure ("Show network
+// name on bar" / "Show volume percentage on bar"), rendered by the
+// shared `pref-toggle` widget. The indicator is a GTK `check` node
+// inside the checkbutton; we strip the box (no background, no border)
+// and let only the checkmark glyph show — dimmed when off, brightened
+// to $fg when on. The label is vertically centered and dimmed like
+// the other rows.
+// The whole row is a clickable eventbox; the padded inner box carries the
+// content and the hover fill. On hover the box washes a full-width squared
+// band (no radius, so it reads as a list band, not a pill) whose background
+// covers its padding — so the content keeps its breathing room inside the
+// fill. Text starts at 8px, matching the header heading.
+.pref-row {
+    color: $fg;
+}
+.pref-row-inner {
+    padding: 6px 8px;
+}
+.pref-row:hover > .pref-row-inner {
+    background: $row-hover;
+}
+// The last row sits at the container's bottom, so round its hover fill there
+// to follow the rounded corners ($radius-group - 1px, matching the header's
+// top) instead of squaring off past the edge.
+.pref-row:last-child:hover > .pref-row-inner {
+    border-bottom-left-radius: $radius-group - 1px;
+    border-bottom-right-radius: $radius-group - 1px;
+}
+.pref-check check {
+    min-width: 16px;
+    min-height: 16px;
+    border: none;
+    background: none;
+    box-shadow: none;
+    color: $fg-dim;
+}
+.pref-check check:checked {
+    color: $ui-select;
+}
+
+.battery-popup-footer {
+    color: $fg;
+    font-size: 11px;
+    padding-top: 4px;
+    border-top: 1px solid $border;
+}
+

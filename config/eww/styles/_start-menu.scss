@@ -1,0 +1,240 @@
+// Start menu popup (left-click the launcher / start button). Same card
+// chrome as the other popups, but anchored bottom-LEFT. A list of pinned
+// apps, a "Browse apps" categorized flyout, a "Search apps" row that falls
+// back to rofi, and a bottom row of power/session icon buttons (mirrors
+// hypr-power-menu).
+.start-popup {
+    background-color: $cell-bg;
+    color: $fg;
+    border: 2px solid $popup-border;
+    border-radius: 0;
+    padding: 12px;
+    min-width: 240px;
+}
+.start-popup-title {
+    color: $fg;
+    font-weight: bold;
+    padding: 2px 0 4px 0;
+}
+// Pinned-app rows plus the "Browse apps"/"Search apps" rows: glyph + label,
+// hover-highlighted. Reuses the .popup-row interaction feel for consistency
+// across popups.
+.start-item {
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    border-radius: $radius-control;
+    padding: 6px 8px;
+    color: $fg-dim;
+}
+.start-item:hover {
+    background: $row-hover;
+    color: $fg;
+}
+// Grouped pinned-app list: the shared collapsed-border treatment (see
+// @grouped-list). Rows inherit the shared .start-item:hover wash; nothing
+// extra is needed now that hover no longer brightens the border (which would
+// otherwise light up the hairline separators).
+.start-item-list {
+    @include grouped-list(".start-item");
+}
+.start-item-icon {
+    font-size: 15px;
+    min-width: 22px;
+}
+// "Browse apps" / "Search apps" pair + flyout ------------------------------
+// The two rows sit in one collapsed-border group (the shared @grouped-list
+// treatment). Each row is wrapped in an eventbox (for hover-to-expand /
+// hover-to-collapse), so a bare .start-item:first-child would match the
+// button in BOTH wrappers — round via the first/last wrapper slot instead.
+// "Browse apps" is a .start-browse-toggle; its trailing chevron signals the
+// fly-out. The revealed panel is two columns: a category list (left) and the
+// hovered category's apps in a scroller (right).
+.start-apps-rows {
+    @include grouped-list(".start-item",
+        $first: "> *:first-child .start-item",
+        $last:  "> *:last-child .start-item");
+}
+.start-browse-chevron {
+    color: $fg-dim;
+    font-size: 11px;
+    min-width: 16px;
+}
+.start-browse-toggle.active {
+    background: $row-hover;
+    color: $fg;
+}
+// The pop-out is its own layer window. Give it a transparent background:
+// unlike window#bar it sets no background-color, so it would otherwise
+// fall back to GTK's opaque (black) default. That default is what shows as
+// a shrinking black sliver at the tail of the revealer's collapse, once
+// the card has been clipped away — transparent makes any uncovered area
+// read as the gap/wallpaper instead.
+window#start-apps-popup {
+    background-color: transparent;
+}
+// Pop-out apps panel: its own overlay window flush to the right of the
+// start menu (geometry x = menu width + gap), carrying its own card chrome
+// (matching .start-popup). Shown/hidden instantly with :visible on
+// start-apps-open — no revealer (which painted an opaque black window
+// surface) and no fade. Fixed overall width — the category column takes
+// its share and the apps scroll :hexpands into the rest.
+.start-flyout {
+    min-width: 380px;
+    background-color: $cell-bg;
+    color: $fg;
+    border: 2px solid $popup-border;
+    border-radius: 0;
+    padding: 12px;
+}
+// Stand-in shown in place of the two-column grid until the first scan lands
+// (start-apps.categories still empty — see start-apps-panel). start-apps.sh
+// runs detached from the menu open, so the flyout can reveal before its data
+// arrives; this keeps it from reading as an empty card in that gap. A min
+// height near the grid's own so the card doesn't visibly resize on swap-in.
+.start-flyout-loading {
+    min-height: 120px;
+}
+.start-flyout-loading-label {
+    color: $fg-dim;
+    font-style: italic;
+}
+// Left column: category rows, grouped with the shared collapsed-border
+// treatment (see @grouped-list). Rows carry their own fill / padding / colour
+// and hover + active states below. Each .start-cat is eventbox-wrapped (for
+// the hover handler), so — like .start-apps-rows — a bare .start-cat:first-
+// child would match the button in EVERY wrapper; round via the first/last
+// wrapper slot instead.
+.start-flyout-cats {
+    min-width: 132px;
+    @include grouped-list(".start-cat",
+        $first: "> *:first-child .start-cat",
+        $last:  "> *:last-child .start-cat");
+}
+.start-cat {
+    background: $bg-secondary;
+    padding: 6px 8px;
+    color: $fg-dim;
+}
+.start-cat:hover {
+    background: $row-hover;
+    color: $fg;
+}
+// Active category (its apps are showing): accent wash + a visible chevron.
+.start-cat.active {
+    background: $accent-fill;
+    color: $fg;
+}
+.start-cat-chevron {
+    color: $fg-dim;
+    font-size: 10px;
+    min-width: 12px;
+}
+.start-cat.active .start-cat-chevron {
+    color: $fg;
+}
+// Right pane: scrollable app list, grouped with the shared collapsed-border
+// treatment (see @grouped-list). Height is capped by the widget's :height
+// attr (GTK CSS has no max-height — it's rejected outright and takes the
+// whole stylesheet down with it).
+.start-flyout-apps {
+    @include grouped-list(".start-app");
+}
+// Opaque row fill (like .start-cat / .start-item): the scroller's own
+// background-color doesn't paint behind its rows, so without this the rows
+// would reveal the lighter $cell-bg flyout card underneath.
+.start-app {
+    background-color: $bg-secondary;
+    padding: 6px 8px;
+    color: $fg-dim;
+}
+.start-app:hover {
+    background: $row-hover;
+    color: $fg;
+}
+.start-app-icon {
+    min-width: 20px;
+}
+.start-app-label {
+    color: inherit;
+}
+// Invisible spacer between the pinned list, the Browse/Search apps rows, and the
+// power row — categories are separated by gap alone now, no rule line.
+// Margin preserves the spacing the old 1px border sat in.
+.start-popup-divider {
+    margin: 7px 2px;
+}
+// Invisible category spacer for the clock popup, whose top-level box holds
+// within-category groups (label + screenshot buttons; date + calendar +
+// today) so it can't just use one uniform spacing like the other popups.
+// As an empty child in the spacing-8 box it picks up that spacing on both
+// sides (8 + 8), landing on the same ~18px category gap the other popups
+// get from their spacing-18 boxes. The 1px margin just guarantees the
+// empty box claims a layout slot so both flanking gaps land.
+.section-gap {
+    margin: 1px 0;
+}
+// Bottom power/session row: icon-only buttons with tooltips, drawn as one
+// segmented control — a single rounded outline (like the .start-item-list /
+// .device-list groups) with the buttons divided by vertical hairlines
+// instead of each being its own pill.
+.start-power-row {
+    margin-top: 2px;
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    border-radius: $radius-group;
+}
+.start-power-button {
+    background: transparent;
+    border: none;
+    border-right: 1px solid $divider;
+    border-radius: 0;
+    padding: 6px 10px;
+    color: $fg-dim;
+    font-size: 15px;
+}
+.start-power-button:first-child {
+    border-top-left-radius: $radius-group - 1px;
+    border-bottom-left-radius: $radius-group - 1px;
+}
+.start-power-button:last-child {
+    border-right: none;
+    border-top-right-radius: $radius-group - 1px;
+    border-bottom-right-radius: $radius-group - 1px;
+}
+.start-power-button:hover {
+    background: $row-hover;
+    color: $fg;
+}
+
+// Inline confirm shown in place of the power row when a destructive
+// action (poweroff/reboot/suspend/logout) is armed.
+.start-confirm { padding-top: 2px; }
+.start-confirm-label {
+    color: $fg;
+    font-weight: bold;
+    padding: 2px 4px;
+}
+.start-confirm-yes,
+.start-confirm-no {
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    border-radius: $radius-control;
+    padding: 6px 10px;
+    color: $fg-dim;
+}
+.start-confirm-yes {
+    // The destructive choice — accent it so it reads as the deliberate
+    // action, not the default. (No focus model here, so this is the only
+    // affordance distinguishing it from Cancel.)
+    color: $critical;
+    border-color: $critical;
+}
+.start-confirm-yes:hover {
+    background: $critical;
+    color: $bg;
+}
+.start-confirm-no:hover {
+    background: $row-hover;
+    color: $fg;
+}
+

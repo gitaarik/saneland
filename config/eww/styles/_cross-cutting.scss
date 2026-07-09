@@ -1,0 +1,35 @@
+// Bar top-border hairline. gtk-layer-shell won't paint a border or background on
+// window#bar or its root box, and each element gets only ONE border-image — so
+// the line rides on the border-image of the full-width group boxes via a 1px
+// border-top (border-top samples the image's solid top row; see @mixin top-seam).
+// .launcher + .tags + .taskbar (hexpands to fill the middle) + .status-group tile
+// the whole bar width with no gap. @top-seam here OVERRIDES the plain @seam these
+// boxes get for their section-boundary left seam, so that seam adopts the same
+// solid-topped $topline treatment and reads as connecting into the line. The
+// launcher has no seam of its own — only its border-top has width, so only the
+// top paints (no stray left seam on the first cell).
+.launcher, .tags, .taskbar, .status-group {
+    border-top: 1px solid transparent;
+    @include top-seam;
+}
+
+// Unify the menu buttons: flat (drop the GTK bevel/raised shadow) $divider-
+// outlined surfaces like the bluetooth/network device-list, with one font.
+.power-profile-button, .full-button,
+.start-item, .start-power-button,
+.clock-popup-today, .clock-popup-tool,
+.start-confirm-yes, .start-confirm-no,
+.options-row, .options-heading {
+    box-shadow: none;
+    font-family: $font-family;
+    font-size: $font-size;
+    font-weight: normal;
+}
+// Plain black ($fg) label text on all of them — except the poweroff-confirm
+// "Yes", which keeps its $critical red as a danger cue.
+.power-profile-button, .full-button,
+.start-item, .start-power-button,
+.clock-popup-today, .clock-popup-tool,
+.start-confirm-no {
+    color: $fg;
+}

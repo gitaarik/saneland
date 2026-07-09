@@ -1,0 +1,85 @@
+// Battery popup — same card chrome as the audio popup, plus a 3-button
+// power-profile selector and a small footer with health/cycles/rate.
+.battery-popup {
+    background-color: $cell-bg;
+    color: $fg;
+    border: 2px solid $popup-border;
+    border-radius: 0;
+    padding: 12px;
+    min-width: 260px;
+}
+.battery-popup-percent {
+    font-size: 22px;
+    font-weight: bold;
+}
+.battery-popup-percent.high     { color: $high; }
+.battery-popup-percent.low      { color: $low; }
+.battery-popup-percent.warning  { color: $warning; }
+.battery-popup-percent.critical { color: $critical; }
+
+// Warning triangle next to the big percentage when on battery and
+// at/below the critical threshold. Sized to feel paired with the 22px
+// percent label without dwarfing it.
+.battery-popup-alert {
+    color: $critical;
+    font-size: 18px;
+}
+
+// Battery icon left of the big percentage in the popup. Either the
+// charging bolt (when AC is online) or the rotated FA battery glyph
+// stepped by level (when on battery) — same scheme as the systray
+// widget, just bigger to pair with the 22px percent label. Tier
+// classes mirror the percent label's so icon + number read as one
+// unit (default $fg, then yellow/orange/red as the battery drains
+// even while charging). The rotation nudge mirrors `.battery-icon.rotated`
+// in the systray widget: GtkLabel's rotated bounding box sits visually
+// high and wide, so we pull it back into line with the percent.
+.battery-popup-icon {
+    color: $fg;
+    font-size: 20px;
+    min-width: 28px;
+}
+.battery-popup-icon.high     { color: $high; }
+.battery-popup-icon.low      { color: $low; }
+.battery-popup-icon.warning  { color: $warning; }
+.battery-popup-icon.critical { color: $critical; }
+
+// Horizontal charge bar between the percent label and the power-profile
+// row. Track color tracks the tier (low / warning / critical) so the
+// bar visually echoes the colored percentage above it.
+.battery-popup-charge { padding: 2px 0; }
+.battery-popup-charge progressbar trough {
+    background-color: $bg-secondary;
+    border-radius: $radius-control;
+    min-height: 6px;
+}
+.battery-popup-charge progressbar trough progress {
+    background-color: $ui-fill;
+    border-radius: $radius-control;
+    min-height: 6px;
+}
+.battery-popup-charge.high     progressbar trough progress { background-color: $high; }
+.battery-popup-charge.low      progressbar trough progress { background-color: $low; }
+.battery-popup-charge.warning  progressbar trough progress { background-color: $warning; }
+.battery-popup-charge.critical progressbar trough progress { background-color: $critical; }
+
+.battery-popup-time {
+    color: $fg-dim;
+}
+.power-profile-row { padding: 2px 0; }
+.power-profile-button {
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    border-radius: $radius-control;
+    padding: 6px 8px;
+    color: $fg-dim;
+}
+.power-profile-button:hover {
+    background: $row-hover;
+    color: $fg;
+}
+.power-profile-button.active {
+    color: $ui-select;
+    border-color: $ui-select;
+}
+

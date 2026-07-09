@@ -1,0 +1,102 @@
+// Volume row at the top of the popup: mute toggle + GTK scale + value label.
+// No horizontal padding: it would indent the mute button (and the whole row)
+// past the card's content edge, where the full-width buttons and device lists
+// sit. Keep the vertical padding.
+.audio-volume {
+    padding: 4px 0;
+}
+.audio-mute {
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    box-shadow: none;
+    color: $fg;
+    // No horizontal padding: the glyph label hexpands and centres itself
+    // inside a fixed-width box, so both the mic and speaker buttons are the
+    // same width regardless of the glyph's advance.
+    padding: 4px 0;
+    border-radius: $radius-control;
+    min-width: 40px;
+}
+// The nerd-font speaker/mic glyphs carry uneven side-bearings, so a plain
+// text-centre leaves them visibly left-shifted. Give the glyph label the
+// full button width and centre it there.
+// Each of the four mute glyphs carries its own side-bearings, so centring the
+// advance box leaves some of them visibly off. Trim the content box on the
+// right (with xalign 0.5 this shifts the ink left by ~half the padding) per
+// glyph, keyed on kind + mute state. Zero-correction glyphs are already
+// symmetric and get no rule. (No min-width on the label: the button owns the
+// fixed 40px width; a min-width here would clamp the content box and swallow
+// this padding.)
+.audio-mute-glyph-sink-on     { padding-right: 8px; }  // speaker + sound waves (right-heavy)
+.audio-mute-glyph-source-muted { padding-right: 9px; }  // muted mic (right-heavy)
+.audio-mute:hover {
+    background: $row-hover;
+    box-shadow: none;
+    color: $fg;
+}
+.audio-mute.muted {
+    color: $accent;
+}
+.audio-volume-value {
+    color: $fg;
+    min-width: 38px;
+}
+// Shared slider styling for the audio-volume and brightness rows —
+// both use a GtkScale (drag to set; scroll steps by 1% due to eww 0.5
+// hard-coding the scale's step_increment).
+.audio-volume scale trough,
+.brightness-row scale trough {
+    background-color: $bg-secondary;
+    border-radius: $radius-control;
+    min-height: 6px;
+}
+.audio-volume scale trough highlight,
+.brightness-row scale trough highlight {
+    background-color: $ui-fill;
+    border-radius: $radius-control;
+    min-height: 6px;
+}
+.audio-volume scale slider,
+.brightness-row scale slider {
+    background-color: $fg;
+    border: none;
+    // Kept round: this is a grab handle, not a panel corner — a circular knob
+    // reads as draggable where a square block wouldn't. The one deliberate
+    // exception to the otherwise-square UI.
+    border-radius: 50%;
+    min-width: 14px;
+    min-height: 14px;
+    margin: -4px;
+}
+
+// Brightness row inside the battery popup: icon + scale + trailing
+// percentage. Drag to set, or use XF86MonBrightness keys.
+.brightness-row { padding: 4px 0; }
+// Same icon-button chrome as the audio popup's mute buttons: a bordered,
+// filled, fixed-width box with the glyph hexpand-centred inside it.
+.brightness-icon-box {
+    background: $bg-secondary;
+    border: 2px solid $divider;
+    box-shadow: none;
+    border-radius: $radius-control;
+    padding: 4px 0;
+    min-width: 40px;
+}
+.brightness-icon-box:hover {
+    background: $row-hover;
+}
+.brightness-icon-box:hover .brightness-icon {
+    color: $fg;
+}
+.brightness-icon {
+    color: $fg;
+    // fa-sun (U+F185) is slightly right-heavy — trim the content box on the
+    // right so the centred glyph lands optically centred (measured to center
+    // with 4px; 8px over-shot it left).
+    padding-right: 4px;
+}
+.brightness-value {
+    color: $fg;
+    min-width: 38px;
+}
+
