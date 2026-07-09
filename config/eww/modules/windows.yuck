@@ -1,0 +1,128 @@
+;; -----------------------------------------------------------------------------
+;; Window
+;; -----------------------------------------------------------------------------
+
+(defwindow bar
+  :monitor 0
+  :geometry (geometry :x "0%" :y "0%"
+                      :width "100%" :height "30px"
+                      :anchor "bottom center")
+  :stacking "fg"
+  :exclusive true
+  :focusable false
+  (bar))
+
+;; Start menu — the only popup anchored bottom-LEFT, sitting flush above
+;; the start button. Same :y "0px" trick as the systray popups (the bar
+;; is :exclusive, so "bottom left" lands at the bar's top edge). :x/:y "0px"
+;; keep it flush with the screen's left edge and the bar's top edge.
+;;
+;; All popups are `:focusable false` — deliberately NO keyboard grab.
+;; `:focusable true` maps to gtk-layer-shell's *exclusive* keyboard mode
+;; (in eww 0.5.0 `:focusable` is a BOOLEAN; the string enum
+;; `"exclusive"`/`"ondemand"` silently fails to render, so on-demand isn't
+;; available until eww is upgraded). That exclusive grab broke one-click
+;; popup switching: with a popup open, the first click on another systray
+;; icon is spent breaking the grab, so the `mouse:272` dismiss fired (old
+;; popup closed) but the click never reached eww's eventbox — the new
+;; popup only opened on a SECOND click. Dropping the grab lets the click
+;; hit the bar immediately, so clicking a different icon closes the open
+;; popup and opens the new one in a single click.
+;;
+;; None of these popups accept typed input, so losing the grab costs
+;; nothing. Escape routes are all grab-independent and still armed by
+;; popup-toggle.sh: a click-outside dismiss (`mouse:272` bindrn +
+;; `popup-dismiss-if-outside.sh`), a focus-change dismiss (clicking another
+;; window fires `activewindow`), and an Esc keybind — a *global* `hyprctl
+;; bind` that Hyprland evaluates before key delivery regardless of focus
+;; (eww has no key handler of its own). popup-dismiss.sh tears the Esc bind
+;; and mouse bind down again on close.
+(defwindow start-popup
+  :monitor 0
+  :geometry (geometry :x "0px" :y "0px"
+                      :anchor "bottom left")
+  :stacking "overlay"
+  :focusable false
+  (start-popup-content))
+
+;; Separate overlay window for the "Browse apps" pop-out, so the panel's
+;; height never stretches the start-menu window. It's opened together with
+;; the start menu (popup-toggle.sh) and closed with it (popup-dismiss.sh);
+;; the panel inside is shown/hidden with :visible on start-apps-open, which
+;; keeps the window mapped and so avoids the layer-shell churn that
+;; hover-driven open/close caused (ghost surfaces eww couldn't close, which
+;; also blocked the menu from dismissing). NOT a GtkRevealer: the revealer
+;; drew its own opaque black window surface that showed whenever the panel
+;; wasn't covering it. With :visible the panel unmaps entirely when closed,
+;; so the window collapses to nothing — no black, and it captures no clicks.
+;; Show/hide is instant (no animation). Anchored bottom-left at x =
+;; start-menu width (268px) + an 8px
+;; gap = 276px; the gap is real empty space between two separate windows
+;; (wallpaper shows through). Being an overlay surface, clicks inside it
+;; count as "inside" for popup-dismiss-if-outside, so interacting with the
+;; open panel doesn't dismiss the start menu.
+(defwindow start-apps-popup
+  :monitor 0
+  :geometry (geometry :x "276px" :y "0px" :anchor "bottom left")
+  :stacking "overlay"
+  :focusable false
+  (box :visible start-apps-open
+    (start-apps-panel)))
+
+;; Small popup card anchored just above the bar at the bottom-right.
+;; No close-on-outside-click — toggle via left-click on the audio widget.
+;; (The full-screen overlay approach was abandoned: Hyprland blurs the
+;; entire layer-shell surface so the transparent area showed as a gray
+;; tint, and 0.55.4's layerrule syntax couldn't be coaxed to skip it.)
+;; The bar is `:exclusive true`, so its 30px is reserved space — a
+;; "bottom right" anchor already lands at the TOP of the bar, not the
+;; screen bottom. So :x/:y "0px" keep it flush with the screen's right
+;; edge and the bar's top edge.
+;; Reuse :x/:y "0px" for any other systray popup so they line up.
+(defwindow audio-popup
+  :monitor 0
+  :geometry (geometry :x "0px" :y "0px"
+                      :anchor "bottom right")
+  :stacking "overlay"
+  :focusable false
+  (audio-popup-content))
+
+;; Network popup window — same anchor pattern as the other systray
+;; popups so they all sit flush with the bar's top edge.
+(defwindow network-popup
+  :monitor 0
+  :geometry (geometry :x "0px" :y "0px"
+                      :anchor "bottom right")
+  :stacking "overlay"
+  :focusable false
+  (network-popup-content))
+
+;; Bluetooth popup window — same anchor pattern as the other systray
+;; popups so they all sit flush with the bar's top edge.
+(defwindow bluetooth-popup
+  :monitor 0
+  :geometry (geometry :x "0px" :y "0px"
+                      :anchor "bottom right")
+  :stacking "overlay"
+  :focusable false
+  (bluetooth-popup-content))
+
+;; Battery popup window — same anchor/y as audio-popup so they line up
+;; flush with the bar's top edge.
+(defwindow battery-popup
+  :monitor 0
+  :geometry (geometry :x "0px" :y "0px"
+                      :anchor "bottom right")
+  :stacking "overlay"
+  :focusable false
+  (battery-popup-content))
+
+;; Clock popup window — same anchor as audio/battery so they all line
+;; up flush with the bar's top edge.
+(defwindow clock-popup
+  :monitor 0
+  :geometry (geometry :x "0px" :y "0px"
+                      :anchor "bottom right")
+  :stacking "overlay"
+  :focusable false
+  (clock-popup-content))

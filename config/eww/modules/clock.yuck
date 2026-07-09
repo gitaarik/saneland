@@ -1,0 +1,85 @@
+(defwidget clock []
+  ;; Reset the calendar to the current month on every open/close so the
+  ;; popup always comes up on today rather than wherever the user last
+  ;; navigated (cal.sh today clears the persisted month offset).
+  (eventbox :onclick "~/.config/eww/scripts/popup-toggle.sh clock-popup; ~/.config/eww/scripts/cal.sh today"
+    (box :class {"clock" + (open-popup == "clock-popup" ? " active" : "")}
+         :orientation "h" :space-evenly false :spacing 6
+         :tooltip date-tooltip
+      ;; The date rides ahead of the time, gated by the "Show date on bar"
+      ;; preference in the clock popup's Options — the time alone is the
+      ;; default, so the bar can collapse back to a bare clock.
+      (label :class "clock-date" :text date-short
+             :visible {clock-show-date == "true"})
+      (label :text time))))
+
+;; Clock popup — left-click the clock to toggle a calendar with today
+;; highlighted. The grid is rendered by cal.sh (see cal-data) rather than
+;; eww's built-in GtkCalendar widget, because GtkCalendar's first day of
+;; the week is fixed by the locale with no runtime override — and the
+;; popup's Options offer a Sunday/Monday week-start toggle. The prev/next
+;; arrows and Today button drive cal.sh's persisted month offset.
+;;
+;; Expansion flag for the clock popup's Options disclosure (rendered by
+;; the shared options-section widget). Ephemeral — resets on reload.
+(defvar clock-options-expanded false)
+
+;; The self-rendered month grid: a heading with prev/next arrows, a
+;; weekday header row, then one row per week. Column count is a fixed 7
+;; and both header and week rows use :space-evenly so the columns line up;
+;; blank pad cells (empty :text) fill the leading/trailing days. cal-data
+;; supplies the layout already ordered for the current week-start pref.
+;; Wrapped in an eventbox so scrolling anywhere over the grid steps the
+;; month (scroll up = previous); {} is eww's scroll-direction marker,
+;; handed straight to cal.sh alongside the prev/next arrow buttons.
+(defwidget clock-calendar []
+  (eventbox :onscroll "~/.config/eww/scripts/cal.sh scroll {}"
+    (box :class "clock-cal" :orientation "v" :space-evenly false :spacing 4
+      (box :class "clock-cal-head" :orientation "h" :space-evenly false :spacing 4
+        (button :class "clock-cal-nav" :onclick "~/.config/eww/scripts/cal.sh prev" "")
+        (label :class "clock-cal-title" :hexpand true :text {cal-data.heading})
+        (button :class "clock-cal-nav" :onclick "~/.config/eww/scripts/cal.sh next" ""))
+      (box :class "clock-cal-weekdays" :orientation "h" :space-evenly true
+        (for wd in {cal-data.weekdays}
+          (label :class "clock-cal-weekday" :text wd)))
+      (box :orientation "v" :space-evenly false :spacing 2
+        (for week in {cal-data.weeks}
+          (box :orientation "h" :space-evenly true
+            (for cell in {week}
+              (label :class {cell.today ? "clock-cal-day today" : "clock-cal-day"}
+                     :text {cell.d}))))))
+))
+
+(defwidget clock-popup-content []
+  (box :class "clock-popup" :orientation "v" :space-evenly false :spacing 8
+    ;; Screenshot section sits at the top so the utility is the first
+    ;; thing under the mouse when the popup opens. Each button
+    ;; dismisses the popup first (so slurp/hyprshot isn't competing
+    ;; with the layer-shell surface for the click region) then
+    ;; backgrounds hyprshot. Tooltips advertise the Hyprland keybind
+    ;; so the popup doubles as a teaching surface.
+    (label :class "clock-popup-tools-label" :xalign 0 :text "Screenshot")
+    (box :class "clock-popup-tools" :orientation "h" :space-evenly true :spacing 0
+      (button :class "clock-popup-tool"
+              :tooltip "Screenshot region   (Print)"
+              :onclick "~/.config/eww/scripts/popup-dismiss.sh clock-popup; hyprshot -m region -o ~/Pictures/Screenshots &"
+        "Region")
+      (button :class "clock-popup-tool"
+              :tooltip "Screenshot window   (Alt+Print)"
+              :onclick "~/.config/eww/scripts/popup-dismiss.sh clock-popup; hyprshot -m window -o ~/Pictures/Screenshots &"
+        "Window")
+      (button :class "clock-popup-tool"
+              :tooltip "Screenshot full screen   (Ctrl+Print)"
+              :onclick "~/.config/eww/scripts/popup-dismiss.sh clock-popup; hyprshot -m output -o ~/Pictures/Screenshots &"
+        "Full"))
+    (box :class "section-gap")
+    (options-section :expanded clock-options-expanded :var "clock-options-expanded"
+      (pref-toggle :name "clock-show-date" :value clock-show-date
+                   :label "Show date on bar")
+      (week-start-toggle :value clock-monday-first))
+    (box :class "section-gap")
+    (label :class "clock-popup-title" :xalign 0 :text date-tooltip)
+    (clock-calendar)
+    (button :class "clock-popup-today"
+            :onclick "~/.config/eww/scripts/cal.sh today"
+      "Today")))

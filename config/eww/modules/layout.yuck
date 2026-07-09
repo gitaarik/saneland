@@ -1,0 +1,34 @@
+;; :hexpand so the left group claims all the room the (fixed-width) right group
+;; doesn't need; the taskbar inside it (also :hexpand) soaks up that slack,
+;; pushing the window buttons out to the status group on the right.
+(defwidget left-side []
+  (box :orientation "h" :space-evenly false :spacing 0 :hexpand true
+    (launcher)
+    (box :class "cat-sep")
+    (tags)
+    (box :class "cat-sep")
+    (taskbar)))
+
+;; :spacing 0 in both boxes so adjacent items literally touch — the SCSS
+;; then drops the left border on every non-first item so the previous
+;; item's right border serves as the divider (no doubled 1px lines
+;; between buttons). The tray group and the status-widget group join
+;; seamlessly because .bluetooth also drops its left border, so the
+;; last tray cell's right border is the shared divider with .bluetooth.
+(defwidget right-side []
+  (box :class "status-group" :orientation "h" :space-evenly false :spacing 0 :halign "end"
+    (box :class "status-sep")
+    (systray :class "tray" :icon-size 16 :spacing 0)
+    (bluetooth)
+    (audio)
+    (network)
+    (battery)
+    (clock)))
+
+;; Plain box, not centerbox: left-side is :hexpand so it eats the middle and
+;; pushes right-side flush to the edge (the taskbar inside left-side fills that
+;; slack). centerbox would instead reserve a centred slot and fight the fill.
+(defwidget bar []
+  (box :orientation "h" :space-evenly false :spacing 0
+    (left-side)
+    (right-side)))

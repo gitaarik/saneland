@@ -1,0 +1,166 @@
+(defwidget battery []
+  ;; Scroll-to-adjust mirrors the audio widget: only while the battery
+  ;; popup is open. Scroll adjusts brightness (the popup's main slider)
+  ;; via brightness-step so it uses the same perceptual step curve as
+  ;; the XF86MonBrightness keys.
+  (eventbox :onscroll {open-popup == "battery-popup"
+                       ? "~/.local/bin/brightness-step {}"
+                       : "true"}
+            :onclick "~/.config/eww/scripts/popup-toggle.sh battery-popup"
+    (box :class {(battery-capacity <= 10 ? "battery critical"
+              : battery-capacity <= 20 ? "battery warning"
+              : battery-capacity <= 30 ? "battery low"
+              : (ac-online == "1" && battery-capacity > 80) ? "battery high"
+              : "battery")
+                 + (open-popup == "battery-popup" ? " active" : "")}
+         ;; ~4–5px glyph→% gap at 13px font.
+         :orientation "h" :space-evenly false :spacing 5
+      ;; Warning triangle (FA U+F071) only when on battery AND <=10% — a
+      ;; charging bolt next to an alert glyph would be contradictory.
+      (label :class "battery-alert"
+             :visible {ac-online != "1" && battery-capacity <= 10}
+             :text "")
+      ;; FA horizontal batteries (U+F240..F244) rotated 90° (CCW) read as
+      ;; upright with + terminal at the top, matching a real battery.
+      ;; Bolt (U+F0E7) stays unrotated.
+      (label :class {ac-online == "1" ? "battery-icon bolt" : "battery-icon rotated"}
+             :angle {ac-online == "1" ? 0 : 90}
+             :text {ac-online == "1" ? ""
+                  : battery-capacity > 75 ? ""
+                  : battery-capacity > 55 ? ""
+                  : battery-capacity > 30 ? ""
+                  : battery-capacity > 10 ? ""
+                  :                         ""})
+      ;; Percentage hidden by the "Show battery percentage on bar"
+      ;; preference — the icon alone still encodes the charge tier, so the
+      ;; bar can collapse to a glyph (matches the audio widget's pattern).
+      (label :text "${battery-capacity}%"
+             :visible {battery-show-percent == "true"}))))
+
+;; Battery popup — toggle by left-clicking the battery widget. Shows the
+;; charge state + time remaining, a power-profile selector (hidden when
+;; powerprofilesctl isn't installed), and a small footer with health,
+;; cycle count, and current power rate.
+(defwidget battery-popup-status []
+  (box :class "battery-popup-status" :orientation "v" :space-evenly false :spacing 6
+    (box :orientation "h" :space-evenly false :spacing 10
+      ;; Icon: bolt when AC is online, FA battery glyph stepped by level
+      ;; when on battery. Unlike the systray (which rotates to fit the
+      ;; cramped bar), the popup shows the glyph horizontally so it
+      ;; baselines naturally with the percent text — rotated GtkLabels
+      ;; render their glyph offset from the box center in a way CSS
+      ;; can't correct. Tier classes mirror the percent label so the
+      ;; two read as one unit (default / low / warning / critical).
+      (label :class {battery-info.percent <= 10 ? "battery-popup-icon critical"
+                  : battery-info.percent <= 20 ? "battery-popup-icon warning"
+                  : battery-info.percent <= 30 ? "battery-popup-icon low"
+                  : (ac-online == "1" && battery-info.percent > 80) ? "battery-popup-icon high"
+                  : "battery-popup-icon"}
+             :valign "center"
+             :text {ac-online == "1" ? ""
+                  : battery-info.percent > 75 ? ""
+                  : battery-info.percent > 55 ? ""
+                  : battery-info.percent > 30 ? ""
+                  : battery-info.percent > 10 ? ""
+                  :                             ""})
+      (label :class {battery-info.percent <= 10 ? "battery-popup-percent critical"
+                  : battery-info.percent <= 20 ? "battery-popup-percent warning"
+                  : battery-info.percent <= 30 ? "battery-popup-percent low"
+                  : (ac-online == "1" && battery-info.percent > 80) ? "battery-popup-percent high"
+                  : "battery-popup-percent"}
+             :xalign 0 :valign "center" :text "${battery-info.percent}%")
+      ;; Warning triangle on battery + <=10%; sits to the right of the
+      ;; percent so the icon→percent pairing stays visually tight.
+      (label :class "battery-popup-alert"
+             :visible {ac-online != "1" && battery-info.percent <= 10}
+             :valign "center" :text ""))
+    ;; Charge bar colored by tier — visually echoes the percent above.
+    (box :class {battery-info.percent <= 10 ? "battery-popup-charge critical"
+              : battery-info.percent <= 20 ? "battery-popup-charge warning"
+              : battery-info.percent <= 30 ? "battery-popup-charge low"
+              : (ac-online == "1" && battery-info.percent > 80) ? "battery-popup-charge high"
+              : "battery-popup-charge"}
+      (progress :hexpand true :orientation "h" :value {battery-info.percent}))
+    (label :class "battery-popup-time" :xalign 0
+           :text {battery-info.time != ""
+                  ? "${battery-info.time} ${battery-info.time_label}"
+                  : battery-info.time_label})))
+
+(defwidget battery-popup-profile-button [profile current label]
+  (button :class {profile == current ? "power-profile-button active" : "power-profile-button"}
+          :onclick "~/.config/eww/scripts/power-profile-set.sh ${profile}"
+    (label :text label)))
+
+(defwidget battery-popup-profile []
+  (box :class "power-profile-section" :orientation "v" :space-evenly false :spacing 4
+       :visible {battery-info.profile_available}
+    (label :class "popup-title" :xalign 0 :text "Power profile")
+    (box :class "power-profile-row" :orientation "h" :space-evenly true :spacing 6
+      (battery-popup-profile-button :profile "power-saver"
+                                    :current {battery-info.profile} :label "Save")
+      (battery-popup-profile-button :profile "balanced"
+                                    :current {battery-info.profile} :label "Balanced")
+      (battery-popup-profile-button :profile "performance"
+                                    :current {battery-info.profile} :label "Performance"))))
+
+(defwidget battery-popup-theme []
+  (box :class "theme-section" :orientation "v" :space-evenly false :spacing 4
+    (label :class "popup-title" :xalign 0 :text "Theme")
+    ;; Icon + label both describe the TARGET, not the current state, so
+    ;; the action is unambiguous: currently dark → sun icon + "Switch to
+    ;; light", currently light → moon icon + "Switch to dark".
+    (button :class "full-button"
+            :onclick "~/.local/bin/theme toggle"
+      (box :orientation "h" :space-evenly false :spacing 8 :halign "center"
+        (label :class "full-button-icon"
+               :text {current-theme == "dark" ? "" : ""})
+        (label :text {current-theme == "dark" ? "Switch to light" : "Switch to dark"})))))
+
+(defwidget battery-popup-footer []
+  (label :class "battery-popup-footer" :xalign 0
+         :text "Health ${battery-info.health}% · ${battery-info.cycles} cycles · ${battery-info.rate}"))
+
+(defwidget battery-popup-brightness []
+  ;; Brightness row in the battery popup — GtkScale so the user can drag
+  ;; to set, matching the audio volume slider. brightnessctl runs on
+  ;; every value change, and `brightness` is pushed alongside it so the
+  ;; trailing value label tracks the slider live instead of waiting on
+  ;; the 2s defpoll.
+  ;;
+  ;; Trade-off: scrolling on the scale steps by 1% (eww 0.5 hard-codes
+  ;; GtkScale's step_increment with no override), so it doesn't match
+  ;; the systray battery widget's perceptual 5%/1% curve. Scrolling on
+  ;; the systray icon still routes through brightness-step. Drag was
+  ;; deemed more important than scroll-speed uniformity inside the popup.
+  ;;
+  ;; :min 1 floors the slider at 1% to match brightness-step's clamp —
+  ;; prevents an accidental drag-to-zero from blanking the screen.
+  (box :class "brightness-row" :orientation "h" :space-evenly false :spacing 8
+    ;; Click-toggle: halve current brightness if >=50%, double if <50%;
+    ;; next click restores the pre-toggle value (state lives in
+    ;; $XDG_RUNTIME_DIR/brightness-toggle.state).
+    (button :class "brightness-icon-box"
+            :tooltip "Click to halve / double brightness"
+            :onclick "~/.local/bin/brightness-toggle"
+      (label :class "brightness-icon" :halign "center" :hexpand true :text ""))
+    (scale :hexpand true
+           :value {brightness}
+           :onchange "brightnessctl set {}% && eww update brightness={}"
+           :min 1 :max 101
+           :round-digits 0)
+    (label :class "brightness-value" :text "${brightness}%")))
+
+;; Expansion flag for the battery popup's Options disclosure (rendered by
+;; the shared options-section widget). Ephemeral — resets on reload.
+(defvar battery-options-expanded false)
+
+(defwidget battery-popup-content []
+  (box :class "battery-popup" :orientation "v" :space-evenly false :spacing 18
+    (battery-popup-status)
+    (battery-popup-profile)
+    (options-section :expanded battery-options-expanded :var "battery-options-expanded"
+      (pref-toggle :name "battery-show-percent" :value battery-show-percent
+                   :label "Show battery percentage on bar"))
+    (battery-popup-theme)
+    (battery-popup-footer)
+    (battery-popup-brightness)))

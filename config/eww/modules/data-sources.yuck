@@ -1,0 +1,167 @@
+;; -----------------------------------------------------------------------------
+;; Data sources
+;; -----------------------------------------------------------------------------
+
+(deflisten hypr
+  :initial '{"focused_workspace":0,"tag_focused":[false,false,false,false,false,false,false,false,false,false,false,false],"tag_visible":[false,false,false,false,false,false,false,false,false,false,false,false],"windows":[]}'
+  "~/.config/eww/scripts/hypr-state.sh")
+
+;; Volume + mute state. Driven by `pactl subscribe` so the bar updates the
+;; instant audio changes, not on a 1-second poll tick.
+(deflisten audio
+  :initial '{"volume":0,"muted":false,"in_volume":0,"in_muted":false}'
+  "~/.config/eww/scripts/audio-state.sh")
+
+;; `loaded` starts false so the popup shows a loading hint until the first
+;; poll lands, rather than a blank box (the initial sinks/sources are empty).
+(defpoll audio-devices :interval "2s"
+  :initial '{"sinks":[],"sources":[],"loaded":false}'
+  "~/.config/eww/scripts/audio-devices.sh")
+
+;; Initial values matter because the widget compares battery-capacity
+;; numerically (> 85 etc.) — without :initial the variable is "" at startup
+;; and eww errors with "Failed to turn `` into a value of type f64".
+(deflisten battery-capacity
+  :initial "100"
+  "while true; do cat /sys/class/power_supply/BAT*/capacity 2>/dev/null | head -1; sleep 30; done")
+
+(deflisten battery-status
+  :initial "Unknown"
+  "while true; do cat /sys/class/power_supply/BAT*/status 2>/dev/null | head -1; sleep 30; done")
+
+;; AC adapter online state (1 = plugged in, 0 = unplugged). Used for the
+;; charging-bolt icon — `battery-status` says "Not charging" when the
+;; battery is full but the cable is still plugged in, which isn't what
+;; the user wants to see. Polled fast (2s) for snappy plug/unplug response.
+(deflisten ac-online
+  :initial "0"
+  "while true; do cat /sys/class/power_supply/A*/online 2>/dev/null | head -1; sleep 2; done")
+
+;; Network (NetworkManager): connection kind (wifi / ethernet / none),
+;; wifi radio state, current SSID, and available wifi networks. Same
+;; reactivity pattern as bluetooth (gdbus monitor + adaptive poller).
+;; Pairing-equivalent flows (enterprise wifi, VPN, ethernet profile
+;; editing) delegate to nm-connection-editor via the popup's "Open
+;; Network Settings" button.
+(deflisten network
+  :initial '{"kind":"none","wifi_enabled":false,"wifi_transitioning":false,"wifi_target":"","ethernet_connected":false,"connected_ssid":"","networks":[],"networks_loaded":false}'
+  "~/.config/eww/scripts/network-state.sh")
+
+;; UI preferences: each toggles a piece of systray text on/off (SSID next
+;; to the network icon, volume % next to the audio icon, charge % next to
+;; the battery icon, device name next to the bluetooth icon). These are
+;; persisted UI state, not live system state, so they share a generic
+;; seeder/toggler pair (eww-pref-{state,toggle}.sh) keyed by the var name:
+;; the state script seeds the value once at startup and blocks, the popup
+;; checkbox flips it live via `eww update`. Held as the strings
+;; "true"/"false" and compared as such (not coerced to bool).
+(deflisten network-show-ssid
+  :initial "true"
+  "~/.config/eww/scripts/eww-pref-state.sh network-show-ssid")
+
+(deflisten audio-show-volume
+  :initial "true"
+  "~/.config/eww/scripts/eww-pref-state.sh audio-show-volume")
+
+(deflisten battery-show-percent
+  :initial "true"
+  "~/.config/eww/scripts/eww-pref-state.sh battery-show-percent")
+
+;; UI preference: show the current date alongside the clock's time on the
+;; bar (shares the generic pref seeder). Defaults off so the bar stays a
+;; bare clock unless the user opts in via the clock popup's Options.
+(deflisten clock-show-date
+  :initial "false"
+  "~/.config/eww/scripts/eww-pref-state.sh clock-show-date false")
+
+;; UI preference: start the clock-popup calendar's week on Monday instead
+;; of Sunday (shares the generic pref seeder). Defaults on because the
+;; daemon is launched with LC_TIME=en_GB.UTF-8 (see hyprland.conf) purely
+;; to get a Monday-first GtkCalendar — this preserves that out of the box.
+;; cal.sh reads the same state file to lay out its columns.
+(deflisten clock-monday-first
+  :initial "true"
+  "~/.config/eww/scripts/eww-pref-state.sh clock-monday-first true")
+
+;; Bluetooth: adapter power state + paired device list with connection
+;; status. Driven by `gdbus monitor` on the org.bluez D-Bus service for
+;; snappy power/connect/disconnect updates, plus a 5s safety-net poll
+;; for rfkill flips that don't surface through bluez. Pairing is
+;; intentionally delegated to blueman-manager — agent registration +
+;; PIN dialogs aren't worth building in eww.
+(deflisten bluetooth
+  :initial '{"powered":false,"transitioning":false,"target":"","connected_count":0,"connected_name":"","devices":[]}'
+  "~/.config/eww/scripts/bluetooth-state.sh")
+
+;; UI preference: show the connected device name next to the systray
+;; bluetooth icon (shares the generic pref seeder — see the block above).
+(deflisten bluetooth-show-device
+  :initial "true"
+  "~/.config/eww/scripts/eww-pref-state.sh bluetooth-show-device")
+
+;; Rich battery info for the battery popup: state, time remaining, power
+;; rate, cycle count, health, current power profile. Driven by upower
+;; (parsed in battery-state.sh) at 5s cadence.
+(deflisten battery-info
+  :initial '{"state":"unknown","percent":100,"time":"","time_label":"","rate":"0.0 W","cycles":"—","health":null,"profile":"","profile_available":false}'
+  "~/.config/eww/scripts/battery-state.sh")
+
+;; Backlight percentage — polled every 2s via brightnessctl.
+(defpoll brightness :interval "2s"
+  :initial "0"
+  "brightnessctl -m | cut -d, -f4 | tr -d '%'")
+
+(defpoll time :interval "30s" "date +'%H:%M'")
+(defpoll date-tooltip :interval "60s" "date +'%A, %B %-d %Y'")
+;; Compact date for the bar, shown behind the time when the
+;; "clock-show-date" preference is on (see the clock widget/popup).
+(defpoll date-short :interval "60s" "date +'%a %-d %b'")
+
+;; Calendar grid for the clock popup, rendered by cal.sh (which honors the
+;; clock-monday-first preference and a persisted month offset for prev/next
+;; navigation). Polled so the "today" highlight stays correct across
+;; midnight; the nav arrows, Today button and week-start toggle also push
+;; an immediate re-render via `eww update`.
+(defpoll cal-data :interval "300s"
+  :initial '{"heading":"","weekdays":["","","","","","",""],"weeks":[]}'
+  "~/.config/eww/scripts/cal.sh render")
+
+;; Active color scheme — "dark" or "light". Source of truth is
+;; ~/.cache/current-theme, written by ~/.local/bin/theme. Polled rather
+;; than listened to because the file only changes when `theme` is run.
+(defpoll current-theme :interval "2s" :initial "dark"
+  "cat ~/.cache/current-theme 2>/dev/null || echo dark")
+
+;; Name of the popup the user has currently opened (or "" when none).
+;; Maintained by popup-toggle.sh / popup-dismiss.sh so widgets can gate
+;; scroll-to-adjust behavior on "the user is actively looking at this
+;; control's popup" — prevents accidental volume/brightness changes
+;; from a stray scroll over the systray icons.
+(defvar open-popup "")
+
+;; True ("true"/"false" string) while the user is scroll-switching workspaces or
+;; windows on the tags / taskbar. Set and debounce-cleared by hypr-scroll.sh
+;; (~0.3s after scrolling stops). The tag/task widgets add a `no-hover` class
+;; while it's set so the hover glow doesn't flash back on every scroll step —
+;; during a switch only the moving active highlight shows.
+(defvar scroll-switching "false")
+
+;; Pending destructive start-menu action ("poweroff"/"reboot"/"suspend"/
+;; "logout"), or "" when none. Clicking one of those power buttons arms
+;; this instead of acting immediately; the inline confirm bar then runs
+;; the real command only on Confirm. popup-toggle.sh resets it to "" on
+;; every start-menu open so a stale armed state never carries over.
+(defvar start-confirm "")
+
+;; Categorized "Browse apps" data for the start-menu flyout, built by
+;; start-apps.sh (scans .desktop files → main freedesktop categories).
+;; popup-toggle.sh refreshes this on every start-menu open, so newly
+;; installed apps appear without an eww restart. Seeded empty so the
+;; flyout is inert until the first refresh lands.
+(defvar start-apps '{"categories":[],"apps":{}}')
+;; Whether the "Browse apps" flyout is expanded (the two-column category +
+;; app panel). popup-toggle.sh resets this to false on each menu open.
+(defvar start-apps-open false)
+;; Which category's apps the flyout's right pane shows — set by hovering
+;; (or clicking) a category in the left column.
+(defvar start-apps-cat "")

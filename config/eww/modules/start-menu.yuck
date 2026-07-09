@@ -1,0 +1,193 @@
+;; Start button — left-click toggles a Windows-style start menu
+;; (start-popup) with pinned apps, a "Browse apps" categorized flyout, a
+;; "Search apps" rofi fallback, and a power/session row. Highlights
+;; (.launcher.active) while its popup is
+;; open, matching the systray widgets that gate on `open-popup`.
+(defwidget launcher []
+  (button :class {open-popup == "start-popup" ? "launcher active" : "launcher"}
+          :onclick "~/.config/eww/scripts/popup-toggle.sh start-popup"
+          ""))
+
+;; One pinned-app row in the start menu: a Nerd Font glyph + label.
+;; `cmd` is launched detached (start-launch.sh dismisses the menu first).
+(defwidget start-item [icon label cmd]
+  (button :class "start-item"
+          :onclick "~/.config/eww/scripts/start-launch.sh ${cmd}"
+    (box :orientation "h" :space-evenly false :spacing 10
+      (label :class "start-item-icon" :text icon)
+      (label :class "start-item-label" :xalign 0 :hexpand true :text label))))
+
+;; --- "Browse apps" flyout ---------------------------------------------------
+;; A Windows-style flyout: the "Browse apps" row expands into a two-column
+;; panel — every installed app auto-bucketed into freedesktop categories
+;; (left), the hovered category's apps shown on the right. Data comes from
+;; start-apps.sh via the `start-apps` var (refreshed on each menu open).
+
+;; A category in the flyout's left column. Hovering it (or clicking) sets
+;; the active category so the right pane swaps to its apps; the current one
+;; is highlighted.
+(defwidget start-cat [name]
+  (eventbox :onhover "eww update start-apps-cat='${name}'"
+    (button :class {start-apps-cat == name ? "start-cat active" : "start-cat"}
+            :onclick "eww update start-apps-cat='${name}'"
+      (box :orientation "h" :space-evenly false :spacing 8
+        (label :class "start-cat-label" :xalign 0 :hexpand true :text name)
+        (label :class "start-cat-chevron" :text "")))))
+
+;; One app row in the flyout's right pane. Icon comes from the GTK theme by
+;; name (absolute Icon= paths use :path instead). Click dismisses the menu
+;; and launches the app's stripped Exec via `sh -c` — single quotes were
+;; pre-escaped by start-apps.sh so the value drops safely into the string.
+(defwidget start-app [app]
+  (button :class "start-app" :hexpand true
+          :onclick "~/.config/eww/scripts/popup-dismiss.sh start-popup; setsid -f sh -c '${app.cmd}' >/dev/null 2>&1"
+    (box :orientation "h" :space-evenly false :spacing 8 :hexpand true
+      (image :class "start-app-icon" :icon {app.icon} :image-width 20 :image-height 20
+             :visible {app.path == ""})
+      (image :class "start-app-icon" :path {app.path} :image-width 20 :image-height 20
+             :visible {app.path != ""})
+      (label :class "start-app-label" :xalign 0 :hexpand true :text {app.name}))))
+
+;; "Browse apps" / "Search apps" pair, grouped in one collapsed-border
+;; outline (like the pinned .start-item-list below). "Browse apps" hover-
+;; reveals the two-column pop-out to the right (just flips start-apps-open —
+;; no window map/unmap), but after a short hover-intent delay so a pointer
+;; passing over the row on its way elsewhere doesn't flash it open — see
+;; start-browse-hover.sh. A click still opens instantly. It stays revealed
+;; until a DIFFERENT menu row is hovered (those set start-apps-open=false),
+;; so the pointer can cross the gap into the pop-out without it collapsing.
+;; The trailing right-chevron
+;; signals the fly-out; click also reveals, so a tap works too. "Search
+;; apps" is the old fallback — it collapses the pop-out and opens rofi's
+;; drun search.
+(defwidget start-apps-rows []
+  (box :class "start-apps-rows" :orientation "v" :space-evenly false
+    (start-browse-apps-row)
+    (start-search-apps-row)))
+
+(defwidget start-browse-apps-row []
+  (eventbox :onhover "~/.config/eww/scripts/start-browse-hover.sh arm"
+            :onhoverlost "~/.config/eww/scripts/start-browse-hover.sh cancel"
+    (button :class {start-apps-open ? "start-item start-browse-toggle active" : "start-item start-browse-toggle"}
+            :onclick "eww update start-apps-open=true"
+      (box :orientation "h" :space-evenly false :spacing 10
+        (label :class "start-item-icon" :text "")
+        (label :class "start-item-label" :xalign 0 :hexpand true :text "Browse apps")
+        (label :class "start-browse-chevron" :text "")))))
+
+(defwidget start-search-apps-row []
+  (eventbox :onhover "eww update start-apps-open=false"
+    (button :class "start-item"
+            :onclick "~/.config/eww/scripts/start-launch.sh rofi -show drun"
+      (box :orientation "h" :space-evenly false :spacing 10
+        (label :class "start-item-icon" :text "")
+        (label :class "start-item-label" :xalign 0 :hexpand true :text "Search apps")))))
+
+;; The pop-out apps panel: flies out to the RIGHT of the menu when "All
+;; apps" is hovered. Two columns — categories (left) and the hovered
+;; category's apps (right, scrollable). Its own card chrome (.start-flyout)
+;; so it reads as a separate popup attached to the menu.
+;;
+;; Until the first scan lands (start-apps.categories still empty — the empty
+;; seed on the very first open, or a slow rebuild after an app dir changed)
+;; a "Loading apps…" line stands in for the two-column grid, so the flyout
+;; never reveals as a blank card. start-apps.sh runs DETACHED from the menu
+;; open (see popup-toggle.sh), so the flyout can be revealed before its data
+;; arrives; this fills that gap. Once categories is non-empty the real grid
+;; replaces it, and a later background refresh swaps app data in silently
+;; without flashing back to "Loading". On the common cached path the scan
+;; returns in milliseconds — well inside the Browse-apps hover-intent delay —
+;; so the loading line is never actually seen then.
+(defwidget start-apps-panel []
+  (box :class "start-flyout" :orientation "v" :space-evenly false
+    (box :class "start-flyout-loading" :orientation "h" :space-evenly false
+         :halign "center" :valign "center"
+         :visible {arraylength(start-apps.categories) == 0}
+      (label :class "start-flyout-loading-label" :text "Loading apps…"))
+    (box :orientation "h" :space-evenly false :spacing 6
+         :visible {arraylength(start-apps.categories) > 0}
+      (box :class "start-flyout-cats" :orientation "v" :space-evenly false
+        (for c in {start-apps.categories}
+          (start-cat :name c)))
+      ;; :height caps the scrolled window (a busy category would else run the
+      ;; popup off the top of the screen). CSS max-height is rejected by eww
+      ;; 0.5's SCSS compiler — the height attr is the workaround, same as
+      ;; network-popup-scroll.
+      (scroll :class "start-flyout-apps" :hexpand true :vscroll true :hscroll false :height 340
+        (box :orientation "v" :space-evenly false :valign "start"
+          (for app in {start-apps.apps[start-apps-cat]}
+            (start-app :app app)))))))
+
+;; One icon button in the start menu's bottom power/session row. These
+;; Lock is harmless/reversible, so it acts immediately: dismiss the menu
+;; and run the command inline (lock detaches via setsid).
+(defwidget start-power [icon tooltip cmd]
+  (button :class "start-power-button" :tooltip tooltip
+          :onclick "~/.config/eww/scripts/popup-dismiss.sh start-popup; ${cmd}"
+    (label :text icon)))
+
+;; Destructive power button (suspend/reboot/poweroff/logout): clicking it
+;; doesn't act, it arms the inline confirm bar by setting `start-confirm`
+;; to its key. The real command runs only when the user clicks Confirm.
+(defwidget start-power-confirm [icon tooltip key]
+  (button :class "start-power-button" :tooltip tooltip
+          :onclick "eww update start-confirm=${key}"
+    (label :text icon)))
+
+;; Inline confirmation shown in place of the power row when a destructive
+;; action is armed. The label names the action; Confirm clears the armed
+;; state, dismisses the menu, and runs the command mapped from the key;
+;; Cancel just clears it. Hidden (and inert) while start-confirm is "".
+;; The ${...} on Confirm is interpolated at click time, so it resolves to
+;; the armed action's command before the `start-confirm=\'\'` reset runs.
+(defwidget start-confirm-bar []
+  (box :class "start-confirm" :orientation "v" :space-evenly false :spacing 6
+       :visible {start-confirm != ""}
+    (label :class "start-confirm-label" :xalign 0
+           :text {start-confirm == "poweroff" ? "Power off?" :
+                  start-confirm == "reboot"   ? "Reboot?"    :
+                  start-confirm == "suspend"  ? "Suspend?"   :
+                  start-confirm == "logout"   ? "Log out?"   : ""})
+    (box :class "start-confirm-actions" :orientation "h" :space-evenly true :spacing 6
+      (button :class "start-confirm-yes"
+              :onclick "eww update start-confirm=''; ~/.config/eww/scripts/popup-dismiss.sh start-popup; ${start-confirm == 'poweroff' ? 'systemctl poweroff' : start-confirm == 'reboot' ? 'systemctl reboot' : start-confirm == 'suspend' ? 'systemctl suspend' : 'hyprctl dispatch exit'}"
+        (box :orientation "h" :space-evenly false :spacing 6 :halign "center"
+          (label :text "") (label :text "Confirm")))
+      (button :class "start-confirm-no"
+              :onclick "eww update start-confirm=''"
+        (box :orientation "h" :space-evenly false :spacing 6 :halign "center"
+          (label :text "") (label :text "Cancel"))))))
+
+;; Start menu body. Pinned apps mirror the user's everyday set; the power
+;; row mirrors hypr-power-menu (lock/suspend/reboot/poweroff) plus log
+;; out. Hibernate is intentionally absent — this system has no resume
+;; config and swap < RAM, so it can't restore a session.
+(defwidget start-popup-content []
+  (box :class "start-popup" :orientation "v" :space-evenly false :spacing 2
+    ;; Hovering any non-"Browse apps" row collapses the pop-out (revealed by
+    ;; the Browse-apps row). That's how the submenu closes — no onhoverlost,
+    ;; no debounce, so crossing the gap into the pop-out never trips it.
+    (eventbox :onhover "eww update start-apps-open=false"
+     (box :class "start-power-row" :orientation "h" :space-evenly true :spacing 0
+         :visible {start-confirm == ""}
+      (start-power         :icon "" :tooltip "Lock   (Super+Escape)"   :cmd "setsid -f hyprlock >/dev/null 2>&1")
+      (start-power-confirm :icon "" :tooltip "Suspend"                 :key "suspend")
+      (start-power-confirm :icon "" :tooltip "Reboot"                  :key "reboot")
+      (start-power-confirm :icon "" :tooltip "Power off"               :key "poweroff")
+      (start-power-confirm :icon "" :tooltip "Log out   (Super+Alt+Q)" :key "logout"))
+    )
+    (start-confirm-bar)
+    (box :class "start-popup-divider")
+    (start-apps-rows)
+    (box :class "start-popup-divider")
+    ;; Default rows are "focus-or-launch": click focuses an already-open
+    ;; window (switching to its workspace) instead of spawning a second
+    ;; one — see start-launch.sh. Browser, terminal and files use --new
+    ;; because they legitimately want a fresh window every time.
+    (eventbox :onhover "eww update start-apps-open=false"
+     (box :class "start-item-list" :orientation "v" :space-evenly false
+      (start-item :icon "" :label "Thunderbird" :cmd "thunderbird")
+      (start-item :icon "" :label "Terminal"    :cmd "--new kitty")
+      (start-item :icon "" :label "Files"       :cmd "--new thunar ~")
+      ;; Browser is a per-machine choice — icon/label/cmd come from local.yuck.
+      (start-item :icon browser-icon :label browser-label :cmd browser-cmd)))))

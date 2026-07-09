@@ -1,0 +1,109 @@
+;; Left click:   toggle the audio popup. The toggle script also forks a
+;;               Hyprland-events listener that closes the popup the moment
+;;               another window gets focus (close-on-outside-click without
+;;               needing a fullscreen overlay).
+;; Middle click: toggle mute (fast shortcut without opening the popup).
+;; Scroll:       adjust default-sink volume by 1%.
+(defwidget audio []
+  ;; Scroll-to-adjust only fires while the audio popup is open. The
+  ;; gate + wpctl call live in audio-scroll.sh because eww's :onscroll
+  ;; `{}` substitution is `up`/`down`, but wpctl set-volume needs
+  ;; `+`/`-` — the script translates.
+  (eventbox :onscroll "~/.config/eww/scripts/audio-scroll.sh {}"
+            :onclick  "~/.config/eww/scripts/popup-toggle.sh audio-popup"
+            :onmiddleclick "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+    ;; Box-with-spacing instead of an "icon + hair-space + value" string so
+    ;; the gap is CSS-controllable and matches the battery widget's pattern.
+    (box :class {(audio.muted ? "audio muted" : "audio")
+                 + (open-popup == "popup-card" ? " active" : "")}
+         :orientation "h" :space-evenly false :spacing 6
+      (label :class "audio-icon"
+             :text {audio.muted          ? ""
+                  : audio.volume == 0    ? ""
+                  : audio.volume <  30   ? ""
+                  :                        ""})
+      ;; The text (percentage, or "mute" when muted) is hidden by the
+      ;; "Show volume percentage on bar" preference — the icon alone still
+      ;; encodes the muted/level state, so the bar can collapse to a glyph.
+      (label :text {audio.muted ? "mute" : "${audio.volume}%"}
+             :visible {audio-show-volume == "true"}))))
+
+;; Audio popup — per-category mute toggle + volume slider, then the device
+;; picker, for input then output. Clicking a device row sets it as default
+;; and closes the popup. Toggle via the audio widget's left click.
+;;
+;; `node` is the wpctl target (@DEFAULT_AUDIO_SINK@ / @DEFAULT_AUDIO_SOURCE@);
+;; glyph_active/glyph_muted swap the mute-button icon (speaker vs. mic).
+(defwidget audio-slider [node muted volume glyph_active glyph_muted kind]
+  (box :class "audio-volume" :orientation "h" :space-evenly false :spacing 8
+    (button :class {muted ? "audio-mute muted" : "audio-mute"}
+            :onclick "wpctl set-mute ${node} toggle"
+            :tooltip {muted ? "Unmute" : "Mute"}
+      (label :class "audio-mute-glyph audio-mute-glyph-${kind}-${muted ? "muted" : "on"}" :halign "center" :hexpand true
+             :text {muted ? glyph_muted : glyph_active}))
+    (scale :hexpand true
+           :value {volume}
+           :onchange "wpctl set-volume ${node} {}%"
+           :min 0 :max 101
+           :round-digits 0)
+    (label :class "audio-volume-value" :text "${volume}%")))
+
+;; One device row in an audio category's picker — reuses the shared
+;; device-row (● default / ○ available). Audio has no error/connecting
+;; states, so `state` is empty and no trailing icon is passed.
+(defwidget audio-popup-row [kind device]
+  (device-row :state "" :active {device.default} :name {device.description}
+              :onclick "~/.config/eww/scripts/audio-set-default.sh ${kind} '${device.name}'"
+              :trailing-icon "" :trailing-class "" :trailing-tooltip ""))
+
+;; One audio category: title, its volume slider, then its device picker. The
+;; bordered device-list stays visible across all three states so its rounded
+;; frame doesn't pop in — mirrors network-popup-list: a loading hint until the
+;; first poll lands (`loaded` false), then the rows, or a no-devices hint.
+(defwidget audio-popup-category [title kind devices loaded node muted volume glyph_active glyph_muted]
+  (box :orientation "v" :space-evenly false :spacing 6
+    (label :class "popup-title" :xalign 0 :text title)
+    (audio-slider :node node :muted muted :volume volume :kind kind
+                  :glyph_active glyph_active :glyph_muted glyph_muted)
+    (box :class "device-list" :orientation "v" :space-evenly false
+      (label :class "popup-hint" :xalign 0
+             :visible {!loaded}
+             :text "Loading devices…")
+      (label :class "popup-hint" :xalign 0
+             :visible {loaded && arraylength(devices) == 0}
+             :text "No devices found")
+      (for d in {devices}
+        (audio-popup-row :kind kind :device d)))))
+
+;; Expansion flag for the audio popup's Options disclosure (rendered by
+;; the shared options-section widget). Ephemeral — resets on reload.
+(defvar audio-options-expanded false)
+
+;; Escape hatch up top — pavucontrol handles everything we don't surface
+;; here (per-app routing, profiles, port selection). Mirrors the network
+;; popup's nm-connection-editor link and the bluetooth popup's blueman one.
+(defwidget audio-popup-settings []
+  (button :class "full-button"
+          :onclick "pavucontrol &"
+    (label :text "Open Audio Settings")))
+
+(defwidget audio-popup-content []
+  ;; Input on top, output below: output is the common control so it anchors
+  ;; the bottom nearest the systray icon, input rides above it.
+  (box :class "popup-card" :orientation "v" :space-evenly false :spacing 18
+    (audio-popup-settings)
+    (options-section :expanded audio-options-expanded :var "audio-options-expanded"
+      (pref-toggle :name "audio-show-volume" :value audio-show-volume
+                   :label "Show volume percentage on bar"))
+    (audio-popup-category :title "Input" :kind "source"
+                          :devices {audio-devices.sources}
+                          :loaded {audio-devices.loaded}
+                          :node "@DEFAULT_AUDIO_SOURCE@"
+                          :muted {audio.in_muted} :volume {audio.in_volume}
+                          :glyph_active "" :glyph_muted "")
+    (audio-popup-category :title "Output" :kind "sink"
+                          :devices {audio-devices.sinks}
+                          :loaded {audio-devices.loaded}
+                          :node "@DEFAULT_AUDIO_SINK@"
+                          :muted {audio.muted} :volume {audio.volume}
+                          :glyph_active "" :glyph_muted "")))

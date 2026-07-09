@@ -1,0 +1,52 @@
+;; Tags 1-12 — Hyprland workspaces. Hidden if the workspace is empty and
+;; not focused (matches Hyprland's default workspaces module).
+(defwidget tag [n]
+  (button :visible {hypr.tag_visible[n - 1]}
+          :class {(hypr.tag_focused[n - 1] ? "tag active" : "tag")
+                  + (scroll-switching == "true" ? " no-hover" : "")}
+          :onclick "hyprctl dispatch workspace ${n}"
+          :onrightclick "hyprctl dispatch movetoworkspace ${n}"
+          (label :text "${n}")))
+
+;; Scroll-wheel on the tags area cycles the focused workspace through
+;; the existing (non-empty) workspaces — matches what the tag widget
+;; shows, since empty unfocused tags are hidden.
+(defwidget tags []
+  (eventbox :onscroll "~/.config/eww/scripts/hypr-scroll.sh workspace {}"
+    (box :class "tags" :orientation "h" :space-evenly false :spacing 0
+      (tag :n 1)  (tag :n 2)  (tag :n 3)  (tag :n 4)
+      (tag :n 5)  (tag :n 6)  (tag :n 7)  (tag :n 8)
+      (tag :n 9)  (tag :n 10) (tag :n 11) (tag :n 12))))
+
+;; Per-tag taskbar — windows on the focused workspace, in creation order
+;; (from hypr-window-order). Click focuses the window. App icon comes from
+;; the GTK icon theme using app_id as the icon name; the title text is
+;; shown next to it, truncated.
+;;
+;; Scroll-wheel cycles focus through windows on the active workspace
+;; (Hyprland's `cyclenext`), so scrolling the taskbar walks the same
+;; ordering the buttons show.
+(defwidget taskbar []
+  ;; :hexpand on the eventbox/box/button chain so the taskbar fills the slack
+  ;; the left-side hands it: each visible window button shares the free width
+  ;; equally, so the row always reaches the status group on the right (hidden
+  ;; :visible=false buttons for off-tag windows take no space, so only the
+  ;; focused tag's windows split the room). Side benefit: wider buttons let
+  ;; more of each title show before the limit-width 25 truncation kicks in.
+  (eventbox :hexpand true :onscroll "~/.config/eww/scripts/hypr-scroll.sh window {}"
+    (box :class "taskbar" :orientation "h" :space-evenly false :spacing 0 :hexpand true
+      (for w in {hypr.windows}
+        (button :visible {w.on_focused_tag}
+                :hexpand true
+                :class {(w.focused ? "task active" : "task")
+                        + (scroll-switching == "true" ? " no-hover" : "")}
+                :tooltip "${w.title}"
+                :onclick "hyprctl dispatch focuswindow address:${w.id}"
+          (box :orientation "h" :space-evenly false :spacing 6
+            (image :icon "${w.icon}" :image-width 16 :image-height 16)
+            ;; No :limit-width — that capped the label at a fixed char count,
+            ;; so a wide button still ellipsized early. :truncate alone lets
+            ;; GTK ellipsize against the button's actual allocated width, so
+            ;; each window shows as much of its title as physically fits.
+            (label :text "${w.title}"
+                   :truncate true)))))))

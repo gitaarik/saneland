@@ -1,0 +1,129 @@
+;; Network systray icon. Same single-glyph approach as bluetooth — one
+;; wifi glyph, color/class encodes state (connected via wifi or
+;; ethernet → accent, idle → default, wifi-off → dim). Click toggles
+;; the popup. Reuses .audio's padding via the shared selector list in
+;; _eww-common.scss.
+(defwidget network []
+  (eventbox :onclick "~/.config/eww/scripts/popup-toggle.sh network-popup"
+    (box :class {(network.kind == "ethernet"  ? "network ethernet"
+              : network.kind == "wifi"        ? "network wifi"
+              : network.wifi_enabled          ? "network idle"
+              :                                  "network off")
+                 + (open-popup == "network-popup" ? " active" : "")}
+         :orientation "h" :space-evenly false
+      (label :class "network-icon" :text "")
+      ;; Truncated SSID next to the glyph. Only for wifi — ethernet has
+      ;; no meaningful name to surface, and an empty connected_ssid (e.g.
+      ;; mid-connect) collapses the label so the icon sits alone.
+      (label :class "network-ssid"
+             :text {network.connected_ssid}
+             :limit-width 10
+             :visible {network-show-ssid == "true"
+                       && network.kind == "wifi"
+                       && network.connected_ssid != ""}))))
+
+;; Network popup — escape hatch up top (nm-connection-editor handles
+;; enterprise wifi / VPN / ethernet profile editing — everything we
+;; don't try to surface here), a scrollable list of available wifi
+;; networks in the middle, and the wifi on/off toggle at the bottom.
+;; Order chosen to match the bluetooth popup.
+;;
+;; Class reuse: .popup-card card chrome, .popup-title section
+;; headers, .popup-row picker rows, .full-button for the full-width
+;; buttons (toggle + escape hatch).
+(defwidget network-popup-settings []
+  (button :class "full-button"
+          :onclick "nm-connection-editor &"
+    (label :text "Open Network Settings")))
+
+;; Shared clickable row for the network + bluetooth device lists. The
+;; leading state glyph sits in a fixed-width column (.row-state-icon) so
+;; the labels line up; `state` selects the colour class + glyph (error /
+;; connecting / disconnecting / else) and `active` picks ● vs ○ for the
+;; connected/selected row. `trailing-*` is an optional right-aligned icon
+;; (the network list passes a lock glyph; bluetooth passes empty strings).
+;; NB: a (children) slot does NOT work here — eww 0.5 doesn't propagate
+;; children into a widget instantiated inside a (for) loop — so the
+;; trailing icon is passed explicitly instead.
+(defwidget device-row [state active name onclick trailing-icon trailing-class trailing-tooltip]
+  (button :class {state == "error"            ? "popup-row error"
+                : state == "connecting"
+                  || state == "disconnecting" ? "popup-row connecting"
+                : active                      ? "popup-row active"
+                :                               "popup-row"}
+          :onclick {onclick}
+    (box :orientation "horizontal" :space-evenly false
+      (label :class "row-state-icon" :xalign 0
+             :text {state == "error"            ? ""
+                  : state == "connecting"
+                    || state == "disconnecting" ? ""
+                  : active                      ? "●"
+                  :                               "○"})
+      (label :hexpand true :xalign 0 :text {name})
+      (label :class {trailing-class} :tooltip {trailing-tooltip}
+             :visible {trailing-icon != ""} :text {trailing-icon}))))
+
+;; Wraps device-row with the wifi-specific bits: SSID as the label, the
+;; connect action, and the trailing padlock (closed = secured, open = not).
+(defwidget network-popup-network [net]
+  (device-row :state {net.state} :active {net.active} :name {net.ssid}
+              :onclick "~/.config/eww/scripts/network-connect.sh '${net.ssid}'"
+              :trailing-icon {net.secured ? "" : ""}
+              :trailing-class {net.secured ? "network-lock" : "network-lock open"}
+              :trailing-tooltip {net.secured ? "Password protected" : "Open network"}))
+
+(defwidget network-popup-list []
+  (box :orientation "v" :space-evenly false :spacing 1
+       :visible {network.wifi_enabled}
+    (label :class "popup-title" :xalign 0 :text "Wifi networks")
+    ;; Three display states: while the first scan after opening hasn't
+    ;; landed (networks_loaded false — the state script only builds the
+    ;; list once the popup-open flag is seen, so eww still holds the
+    ;; closed/empty value until that emit completes) show a loading row;
+    ;; once loaded show the list, or a "none found" hint if it's empty.
+    (label :class "popup-hint" :xalign 0
+           :visible {!network.networks_loaded}
+           :text "Searching for networks…")
+    (label :class "popup-hint" :xalign 0
+           :visible {network.networks_loaded && arraylength(network.networks) == 0}
+           :text "No networks found")
+    ;; :height caps the scrolled window so a busy area doesn't push the
+    ;; toggle off the bottom of the popup. CSS max-height equivalents
+    ;; (max-height, min/max-content-height) are rejected by eww 0.5's
+    ;; SCSS compiler — the height attr is the workaround.
+    (scroll :class "network-popup-scroll device-list"
+            :visible {network.networks_loaded && arraylength(network.networks) > 0}
+            :vscroll true :hscroll false :height 240
+      (box :orientation "v" :space-evenly false
+        (for n in {network.networks}
+          (network-popup-network :net n))))))
+
+(defwidget network-popup-toggle []
+  (box :orientation "v" :space-evenly false :spacing 4
+    (label :class "popup-title" :xalign 0 :text "Wifi")
+    (button :class "full-button"
+            :onclick "~/.config/eww/scripts/network-toggle-wifi.sh"
+      (box :orientation "h" :space-evenly false :spacing 8 :halign "center"
+        (label :class {(network.wifi_transitioning || network.wifi_enabled)
+                       ? "full-button-icon network-toggle-icon"
+                       : "full-button-icon off network-toggle-icon"}
+               :text {network.wifi_transitioning ? "" : ""})
+        (label :text {network.wifi_transitioning
+                       ? (network.wifi_target == "on" ? "Turning on..." : "Turning off...")
+                    : !network.wifi_enabled ? "Off"
+                    : network.connected_ssid != ""
+                       ? "On · ${network.connected_ssid}"
+                    : "On"})))))
+
+;; Expansion flag for the network popup's Options disclosure (rendered by
+;; the shared options-section widget). Ephemeral — resets on reload.
+(defvar network-options-expanded false)
+
+(defwidget network-popup-content []
+  (box :class "popup-card" :orientation "v" :space-evenly false :spacing 18
+    (network-popup-settings)
+    (options-section :expanded network-options-expanded :var "network-options-expanded"
+      (pref-toggle :name "network-show-ssid" :value network-show-ssid
+                   :label "Show network name on bar"))
+    (network-popup-list)
+    (network-popup-toggle)))

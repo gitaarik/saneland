@@ -1,0 +1,98 @@
+;; Bluetooth systray icon. Click toggles the bluetooth-popup. State
+;; class drives color: off = dim, on-with-connection = accent, on-idle
+;; = default. No text — too binary for a count to matter, popup has
+;; the details. Reuses .audio's padding via the shared selector list
+;; in _eww-common.scss.
+(defwidget bluetooth []
+  (eventbox :onclick "~/.config/eww/scripts/popup-toggle.sh bluetooth-popup"
+    (box :class {(bluetooth.transitioning ? "bluetooth transitioning"
+              : !bluetooth.powered ? "bluetooth off"
+              : bluetooth.connected_count > 0 ? "bluetooth connected"
+              : "bluetooth")
+                 + (open-popup == "bluetooth-popup" ? " active" : "")}
+         :orientation "h" :space-evenly false :spacing 6
+      ;; Swap to a sync glyph while bluez is mid-flip (off-enabling /
+      ;; on-disabling) so the user sees something is happening without
+      ;; opening the popup.
+      (label :class "bluetooth-icon" :text {bluetooth.transitioning ? "" : ""})
+      ;; Truncated connected-device name next to the glyph, gated on the
+      ;; "Show device name on bar" preference. Same 10-char cap as the
+      ;; network widget's SSID label; collapses to the icon alone when
+      ;; nothing is connected.
+      (label :class "bluetooth-device"
+             :text {bluetooth.connected_name}
+             :limit-width 10
+             :visible {bluetooth-show-device == "true"
+                       && bluetooth.connected_count > 0
+                       && bluetooth.connected_name != ""}))))
+
+;; Bluetooth popup — power toggle + paired device list + escape hatch
+;; to blueman for pairing. Device list hides when adapter is off (no
+;; point listing things you can't connect to).
+;;
+;; Class reuse:
+;;   .popup-card       — card chrome (matches the other popups)
+;;   .popup-title      — section headers
+;;   .popup-row        — device rows (same picker pattern as audio output)
+;;   .full-button      — full-width buttons (power toggle + blueman link)
+;;   .full-button-icon — accent-colored icon inside a toggle button
+(defwidget bluetooth-popup-toggle []
+  (box :orientation "v" :space-evenly false :spacing 4
+    (label :class "popup-title" :xalign 0 :text "Bluetooth")
+    (button :class "full-button"
+            :onclick "~/.config/eww/scripts/bluetooth-toggle.sh"
+      (box :orientation "h" :space-evenly false :spacing 8 :halign "center"
+        (label :class {(bluetooth.transitioning || bluetooth.powered)
+                       ? "full-button-icon"
+                       : "full-button-icon off"}
+               :text {bluetooth.transitioning ? "" : ""})
+        ;; Direction comes from `target` (the user's intent), NOT from
+        ;; `powered` — bluez often flips Powered to the target value
+        ;; well before our 500ms transitioning hold expires, so using
+        ;; `powered` here would briefly show the *opposite* direction
+        ;; mid-transition (e.g. "Turning off..." right after clicking
+        ;; "On").
+        (label :text {bluetooth.transitioning
+                       ? (bluetooth.target == "on" ? "Turning on..." : "Turning off...")
+                    : !bluetooth.powered ? "Off"
+                    : bluetooth.connected_count > 0
+                       ? "On · ${bluetooth.connected_count} connected"
+                    : "On"})))))
+
+;; Per-device row. Icon at the head of the label encodes state:
+;;   ● connected (.popup-row.active, accent color)
+;;   ○ idle (.popup-row, default)
+;;    connecting / disconnecting (.popup-row.connecting, accent + sync glyph)
+;;    error (.popup-row.error, critical color + warning glyph)
+;; Wraps device-row with the bluetooth-specific bits: device name as the
+;; label and the connect/disconnect action. No trailing icon.
+(defwidget bluetooth-popup-device [device]
+  (device-row :state {device.state} :active {device.connected} :name {device.name}
+              :onclick "~/.config/eww/scripts/bluetooth-device.sh ${device.mac}"
+              :trailing-icon "" :trailing-class "" :trailing-tooltip ""))
+
+(defwidget bluetooth-popup-devices []
+  (box :orientation "v" :space-evenly false :spacing 1
+       :visible {bluetooth.powered}
+    (label :class "popup-title" :xalign 0 :text "Paired")
+    (box :class "device-list" :orientation "v" :space-evenly false
+      (for d in {bluetooth.devices}
+        (bluetooth-popup-device :device d)))))
+
+(defwidget bluetooth-popup-blueman []
+  (button :class "full-button"
+          :onclick "blueman-manager &"
+    (label :text "Open Bluetooth Manager")))
+
+;; Expansion flag for the bluetooth popup's Options disclosure (rendered
+;; by the shared options-section widget). Ephemeral — resets on reload.
+(defvar bluetooth-options-expanded false)
+
+(defwidget bluetooth-popup-content []
+  (box :class "popup-card" :orientation "v" :space-evenly false :spacing 18
+    (bluetooth-popup-blueman)
+    (options-section :expanded bluetooth-options-expanded :var "bluetooth-options-expanded"
+      (pref-toggle :name "bluetooth-show-device" :value bluetooth-show-device
+                   :label "Show device name on bar"))
+    (bluetooth-popup-devices)
+    (bluetooth-popup-toggle)))

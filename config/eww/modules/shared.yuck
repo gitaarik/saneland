@@ -1,0 +1,67 @@
+;; -----------------------------------------------------------------------------
+;; Widgets
+;; -----------------------------------------------------------------------------
+
+;; Shared popup building blocks for the systray "Options" disclosures.
+;; Every popup (audio/network/battery/bluetooth) hangs a collapsible
+;; Options section holding one-or-more preference checkboxes, all driven
+;; by the same generic pref scripts — so the widgets are parameterized
+;; once here instead of copied per popup.
+
+;; A single preference checkbox row: a stripped GTK check whose glyph
+;; dims (off) / accents (on), plus a clickable label that flips it.
+;; `name` is the pref key (eww var + state file), `value` the current
+;; "true"/"false" string, `label` the row text. onchecked/onunchecked
+;; pass the explicit target so the state file and checkbox can't drift.
+(defwidget pref-toggle [name value label]
+  ;; The whole row is one clickable eventbox (so it takes a hover wash like
+  ;; the other popup items). Clicking anywhere but the checkbox flips the
+  ;; pref via this handler; clicking the checkbox itself is consumed by the
+  ;; checkbox (which returns the event handled, so this onclick won't also
+  ;; fire) and flips via its own onchecked/onunchecked — never a double toggle.
+  (eventbox :class "pref-row" :cursor "pointer"
+            :onclick "~/.config/eww/scripts/eww-pref-toggle.sh ${name} ${value == 'true' ? 'false' : 'true'}"
+    ;; The padding + hover fill live on this inner box, not the eventbox: a
+    ;; GtkEventBox doesn't paint its background over its own padding, so the
+    ;; wash would stop short of the padded edges. A GtkBox does, so the fill
+    ;; covers the whole padded row.
+    (box :class "pref-row-inner" :orientation "h" :space-evenly false :spacing 8
+      (checkbox :class "pref-check"
+                :checked {value == "true"}
+                :onchecked "~/.config/eww/scripts/eww-pref-toggle.sh ${name} true"
+                :onunchecked "~/.config/eww/scripts/eww-pref-toggle.sh ${name} false")
+      (label :xalign 0 :hexpand true :text label))))
+
+;; Like pref-toggle, but for the clock-popup's week-start preference: after
+;; flipping "clock-monday-first" it also re-renders the calendar (cal.sh
+;; refresh) so the grid's columns update in the same click rather than on
+;; the next poll. Kept separate from the generic pref-toggle so that widget
+;; stays a pure state flip with no side effects.
+(defwidget week-start-toggle [value]
+  (eventbox :class "pref-row" :cursor "pointer"
+            :onclick "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first ${value == 'true' ? 'false' : 'true'}; ~/.config/eww/scripts/cal.sh refresh"
+    (box :class "pref-row-inner" :orientation "h" :space-evenly false :spacing 8
+      (checkbox :class "pref-check"
+                :checked {value == "true"}
+                :onchecked   "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first true; ~/.config/eww/scripts/cal.sh refresh"
+                :onunchecked "~/.config/eww/scripts/eww-pref-toggle.sh clock-monday-first false; ~/.config/eww/scripts/cal.sh refresh")
+      (label :xalign 0 :hexpand true :text "Start week on Monday"))))
+
+;; Collapsible "Options" disclosure: a flat clickable header (heading +
+;; flipping chevron) over a revealer holding the passed children. The
+;; expansion flag lives in the caller's own defvar so each popup stays
+;; independent; `expanded` is its value and `var` its name (the onclick
+;; toggles it by name via `eww update`). Filled, rounded container styled
+;; by the shared .options-* classes.
+(defwidget options-section [expanded var]
+  (box :class "options-section" :orientation "v" :space-evenly false :spacing 0
+    (button :class {expanded ? "options-row open" : "options-row"}
+            :onclick "eww update ${var}=${!expanded}"
+      (box :orientation "h" :space-evenly false
+        (label :class "options-heading" :xalign 0 :hexpand true :text "Options")
+        (label :class "options-chevron"
+               :text {expanded ? "" : ""})))
+    (revealer :transition "slidedown" :duration "150ms"
+              :reveal expanded
+      (box :class "options-body" :orientation "v" :space-evenly false :spacing 0
+        (children)))))
