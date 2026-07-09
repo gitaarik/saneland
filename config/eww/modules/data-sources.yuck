@@ -37,6 +37,15 @@
   :initial "0"
   "while true; do cat /sys/class/power_supply/A*/online 2>/dev/null | head -1; sleep 2; done")
 
+;; Battery charge tier — the shared class suffix (critical/warning/low/high,
+;; or "" for the normal range) that the systray cell and the popup icon /
+;; percent / charge bar all colour by. One source for the <=10/<=20/<=30/
+;; (on-AC & >80) thresholds instead of the four inline copies this replaced.
+;; See scripts/battery-tier.sh.
+(deflisten battery-tier
+  :initial ""
+  "~/.config/eww/scripts/battery-tier.sh")
+
 ;; Network (NetworkManager): connection kind (wifi / ethernet / none),
 ;; wifi radio state, current SSID, and available wifi networks. Same
 ;; reactivity pattern as bluetooth (gdbus monitor + adaptive poller).

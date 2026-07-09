@@ -7,11 +7,8 @@
                        ? "~/.local/bin/brightness-step {}"
                        : "true"}
             :onclick "~/.config/eww/scripts/popup-toggle.sh battery-popup"
-    (box :class {(battery-capacity <= 10 ? "battery critical"
-              : battery-capacity <= 20 ? "battery warning"
-              : battery-capacity <= 30 ? "battery low"
-              : (ac-online == "1" && battery-capacity > 80) ? "battery high"
-              : "battery")
+    (box :class {"battery"
+                 + (battery-tier != "" ? " ${battery-tier}" : "")
                  + (open-popup == "battery-popup" ? " active" : "")}
          ;; ~4–5px glyph→% gap at 13px font.
          :orientation "h" :space-evenly false :spacing 5
@@ -49,13 +46,10 @@
       ;; cramped bar), the popup shows the glyph horizontally so it
       ;; baselines naturally with the percent text — rotated GtkLabels
       ;; render their glyph offset from the box center in a way CSS
-      ;; can't correct. Tier classes mirror the percent label so the
-      ;; two read as one unit (default / low / warning / critical).
-      (label :class {battery-info.percent <= 10 ? "battery-popup-icon critical"
-                  : battery-info.percent <= 20 ? "battery-popup-icon warning"
-                  : battery-info.percent <= 30 ? "battery-popup-icon low"
-                  : (ac-online == "1" && battery-info.percent > 80) ? "battery-popup-icon high"
-                  : "battery-popup-icon"}
+      ;; can't correct. Tier colour comes from the shared `battery-tier`
+      ;; var (same source as the systray cell) so icon, percent, and charge
+      ;; bar read as one unit (default / low / warning / critical).
+      (label :class {"battery-popup-icon" + (battery-tier != "" ? " ${battery-tier}" : "")}
              :valign "center"
              :text {ac-online == "1" ? ""
                   : battery-info.percent > 75 ? ""
@@ -63,11 +57,7 @@
                   : battery-info.percent > 30 ? ""
                   : battery-info.percent > 10 ? ""
                   :                             ""})
-      (label :class {battery-info.percent <= 10 ? "battery-popup-percent critical"
-                  : battery-info.percent <= 20 ? "battery-popup-percent warning"
-                  : battery-info.percent <= 30 ? "battery-popup-percent low"
-                  : (ac-online == "1" && battery-info.percent > 80) ? "battery-popup-percent high"
-                  : "battery-popup-percent"}
+      (label :class {"battery-popup-percent" + (battery-tier != "" ? " ${battery-tier}" : "")}
              :xalign 0 :valign "center" :text "${battery-info.percent}%")
       ;; Warning triangle on battery + <=10%; sits to the right of the
       ;; percent so the icon→percent pairing stays visually tight.
@@ -75,11 +65,7 @@
              :visible {ac-online != "1" && battery-info.percent <= 10}
              :valign "center" :text ""))
     ;; Charge bar colored by tier — visually echoes the percent above.
-    (box :class {battery-info.percent <= 10 ? "battery-popup-charge critical"
-              : battery-info.percent <= 20 ? "battery-popup-charge warning"
-              : battery-info.percent <= 30 ? "battery-popup-charge low"
-              : (ac-online == "1" && battery-info.percent > 80) ? "battery-popup-charge high"
-              : "battery-popup-charge"}
+    (box :class {"battery-popup-charge" + (battery-tier != "" ? " ${battery-tier}" : "")}
       (progress :hexpand true :orientation "h" :value {battery-info.percent}))
     (label :class "battery-popup-time" :xalign 0
            :text {battery-info.time != ""
