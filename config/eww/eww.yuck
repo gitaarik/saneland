@@ -321,12 +321,12 @@
 (defwidget start-browse-apps-row []
   (eventbox :onhover "~/.config/eww/scripts/start-browse-hover.sh arm"
             :onhoverlost "~/.config/eww/scripts/start-browse-hover.sh cancel"
-    (button :class {start-apps-open ? "start-item start-all-toggle active" : "start-item start-all-toggle"}
+    (button :class {start-apps-open ? "start-item start-browse-toggle active" : "start-item start-browse-toggle"}
             :onclick "eww update start-apps-open=true"
       (box :orientation "h" :space-evenly false :spacing 10
         (label :class "start-item-icon" :text "")
         (label :class "start-item-label" :xalign 0 :hexpand true :text "Browse apps")
-        (label :class "start-all-chevron" :text "")))))
+        (label :class "start-browse-chevron" :text "")))))
 
 (defwidget start-search-apps-row []
   (eventbox :onhover "eww update start-apps-open=false"
@@ -515,7 +515,7 @@
     ;; Box-with-spacing instead of an "icon + hair-space + value" string so
     ;; the gap is CSS-controllable and matches the battery widget's pattern.
     (box :class {(audio.muted ? "audio muted" : "audio")
-                 + (open-popup == "audio-popup" ? " active" : "")}
+                 + (open-popup == "popup-card" ? " active" : "")}
          :orientation "h" :space-evenly false :spacing 6
       (label :class "audio-icon"
              :text {audio.muted          ? ""
@@ -562,7 +562,7 @@
 ;; first poll lands (`loaded` false), then the rows, or a no-devices hint.
 (defwidget audio-popup-category [title kind devices loaded node muted volume glyph_active glyph_muted]
   (box :orientation "v" :space-evenly false :spacing 6
-    (label :class "audio-popup-title" :xalign 0 :text title)
+    (label :class "popup-title" :xalign 0 :text title)
     (audio-slider :node node :muted muted :volume volume :kind kind
                   :glyph_active glyph_active :glyph_muted glyph_muted)
     (box :class "device-list" :orientation "v" :space-evenly false
@@ -583,14 +583,14 @@
 ;; here (per-app routing, profiles, port selection). Mirrors the network
 ;; popup's nm-connection-editor link and the bluetooth popup's blueman one.
 (defwidget audio-popup-settings []
-  (button :class "theme-toggle"
+  (button :class "full-button"
           :onclick "pavucontrol &"
     (label :text "Open Audio Settings")))
 
 (defwidget audio-popup-content []
   ;; Input on top, output below: output is the common control so it anchors
   ;; the bottom nearest the systray icon, input rides above it.
-  (box :class "audio-popup" :orientation "v" :space-evenly false :spacing 18
+  (box :class "popup-card" :orientation "v" :space-evenly false :spacing 18
     (audio-popup-settings)
     (options-section :expanded audio-options-expanded :var "audio-options-expanded"
       (pref-toggle :name "audio-show-volume" :value audio-show-volume
@@ -638,11 +638,11 @@
 ;; networks in the middle, and the wifi on/off toggle at the bottom.
 ;; Order chosen to match the bluetooth popup.
 ;;
-;; Class reuse: .audio-popup card chrome, .audio-popup-title section
-;; headers, .audio-row picker rows, .theme-toggle for the full-width
+;; Class reuse: .popup-card card chrome, .popup-title section
+;; headers, .popup-row picker rows, .full-button for the full-width
 ;; buttons (toggle + escape hatch).
 (defwidget network-popup-settings []
-  (button :class "theme-toggle"
+  (button :class "full-button"
           :onclick "nm-connection-editor &"
     (label :text "Open Network Settings")))
 
@@ -656,11 +656,11 @@
 ;; children into a widget instantiated inside a (for) loop — so the
 ;; trailing icon is passed explicitly instead.
 (defwidget device-row [state active name onclick trailing-icon trailing-class trailing-tooltip]
-  (button :class {state == "error"            ? "audio-row error"
+  (button :class {state == "error"            ? "popup-row error"
                 : state == "connecting"
-                  || state == "disconnecting" ? "audio-row connecting"
-                : active                      ? "audio-row active"
-                :                               "audio-row"}
+                  || state == "disconnecting" ? "popup-row connecting"
+                : active                      ? "popup-row active"
+                :                               "popup-row"}
           :onclick {onclick}
     (box :orientation "horizontal" :space-evenly false
       (label :class "row-state-icon" :xalign 0
@@ -685,7 +685,7 @@
 (defwidget network-popup-list []
   (box :orientation "v" :space-evenly false :spacing 1
        :visible {network.wifi_enabled}
-    (label :class "audio-popup-title" :xalign 0 :text "Wifi networks")
+    (label :class "popup-title" :xalign 0 :text "Wifi networks")
     ;; Three display states: while the first scan after opening hasn't
     ;; landed (networks_loaded false — the state script only builds the
     ;; list once the popup-open flag is seen, so eww still holds the
@@ -710,13 +710,13 @@
 
 (defwidget network-popup-toggle []
   (box :orientation "v" :space-evenly false :spacing 4
-    (label :class "audio-popup-title" :xalign 0 :text "Wifi")
-    (button :class "theme-toggle"
+    (label :class "popup-title" :xalign 0 :text "Wifi")
+    (button :class "full-button"
             :onclick "~/.config/eww/scripts/network-toggle-wifi.sh"
       (box :orientation "h" :space-evenly false :spacing 8 :halign "center"
         (label :class {(network.wifi_transitioning || network.wifi_enabled)
-                       ? "theme-toggle-icon network-toggle-icon"
-                       : "theme-toggle-icon off network-toggle-icon"}
+                       ? "full-button-icon network-toggle-icon"
+                       : "full-button-icon off network-toggle-icon"}
                :text {network.wifi_transitioning ? "" : ""})
         (label :text {network.wifi_transitioning
                        ? (network.wifi_target == "on" ? "Turning on..." : "Turning off...")
@@ -730,7 +730,7 @@
 (defvar network-options-expanded false)
 
 (defwidget network-popup-content []
-  (box :class "audio-popup" :orientation "v" :space-evenly false :spacing 18
+  (box :class "popup-card" :orientation "v" :space-evenly false :spacing 18
     (network-popup-settings)
     (options-section :expanded network-options-expanded :var "network-options-expanded"
       (pref-toggle :name "network-show-ssid" :value network-show-ssid
@@ -771,20 +771,20 @@
 ;; point listing things you can't connect to).
 ;;
 ;; Class reuse:
-;;   .audio-popup       — card chrome (matches the other popups)
-;;   .audio-popup-title — section headers
-;;   .audio-row         — device rows (same picker pattern as audio output)
-;;   .theme-toggle      — full-width buttons (power toggle + blueman link)
-;;   .theme-toggle-icon — accent-colored icon inside a toggle button
+;;   .popup-card       — card chrome (matches the other popups)
+;;   .popup-title      — section headers
+;;   .popup-row        — device rows (same picker pattern as audio output)
+;;   .full-button      — full-width buttons (power toggle + blueman link)
+;;   .full-button-icon — accent-colored icon inside a toggle button
 (defwidget bluetooth-popup-toggle []
   (box :orientation "v" :space-evenly false :spacing 4
-    (label :class "audio-popup-title" :xalign 0 :text "Bluetooth")
-    (button :class "theme-toggle"
+    (label :class "popup-title" :xalign 0 :text "Bluetooth")
+    (button :class "full-button"
             :onclick "~/.config/eww/scripts/bluetooth-toggle.sh"
       (box :orientation "h" :space-evenly false :spacing 8 :halign "center"
         (label :class {(bluetooth.transitioning || bluetooth.powered)
-                       ? "theme-toggle-icon"
-                       : "theme-toggle-icon off"}
+                       ? "full-button-icon"
+                       : "full-button-icon off"}
                :text {bluetooth.transitioning ? "" : ""})
         ;; Direction comes from `target` (the user's intent), NOT from
         ;; `powered` — bluez often flips Powered to the target value
@@ -800,10 +800,10 @@
                     : "On"})))))
 
 ;; Per-device row. Icon at the head of the label encodes state:
-;;   ● connected (.audio-row.active, accent color)
-;;   ○ idle (.audio-row, default)
-;;    connecting / disconnecting (.audio-row.connecting, accent + sync glyph)
-;;    error (.audio-row.error, critical color + warning glyph)
+;;   ● connected (.popup-row.active, accent color)
+;;   ○ idle (.popup-row, default)
+;;    connecting / disconnecting (.popup-row.connecting, accent + sync glyph)
+;;    error (.popup-row.error, critical color + warning glyph)
 ;; Wraps device-row with the bluetooth-specific bits: device name as the
 ;; label and the connect/disconnect action. No trailing icon.
 (defwidget bluetooth-popup-device [device]
@@ -814,13 +814,13 @@
 (defwidget bluetooth-popup-devices []
   (box :orientation "v" :space-evenly false :spacing 1
        :visible {bluetooth.powered}
-    (label :class "audio-popup-title" :xalign 0 :text "Paired")
+    (label :class "popup-title" :xalign 0 :text "Paired")
     (box :class "device-list" :orientation "v" :space-evenly false
       (for d in {bluetooth.devices}
         (bluetooth-popup-device :device d)))))
 
 (defwidget bluetooth-popup-blueman []
-  (button :class "theme-toggle"
+  (button :class "full-button"
           :onclick "blueman-manager &"
     (label :text "Open Bluetooth Manager")))
 
@@ -829,7 +829,7 @@
 (defvar bluetooth-options-expanded false)
 
 (defwidget bluetooth-popup-content []
-  (box :class "audio-popup" :orientation "v" :space-evenly false :spacing 18
+  (box :class "popup-card" :orientation "v" :space-evenly false :spacing 18
     (bluetooth-popup-blueman)
     (options-section :expanded bluetooth-options-expanded :var "bluetooth-options-expanded"
       (pref-toggle :name "bluetooth-show-device" :value bluetooth-show-device
@@ -933,7 +933,7 @@
 (defwidget battery-popup-profile []
   (box :class "power-profile-section" :orientation "v" :space-evenly false :spacing 4
        :visible {battery-info.profile_available}
-    (label :class "audio-popup-title" :xalign 0 :text "Power profile")
+    (label :class "popup-title" :xalign 0 :text "Power profile")
     (box :class "power-profile-row" :orientation "h" :space-evenly true :spacing 6
       (battery-popup-profile-button :profile "power-saver"
                                     :current {battery-info.profile} :label "Save")
@@ -944,14 +944,14 @@
 
 (defwidget battery-popup-theme []
   (box :class "theme-section" :orientation "v" :space-evenly false :spacing 4
-    (label :class "audio-popup-title" :xalign 0 :text "Theme")
+    (label :class "popup-title" :xalign 0 :text "Theme")
     ;; Icon + label both describe the TARGET, not the current state, so
     ;; the action is unambiguous: currently dark → sun icon + "Switch to
     ;; light", currently light → moon icon + "Switch to dark".
-    (button :class "theme-toggle"
+    (button :class "full-button"
             :onclick "~/.local/bin/theme toggle"
       (box :orientation "h" :space-evenly false :spacing 8 :halign "center"
-        (label :class "theme-toggle-icon"
+        (label :class "full-button-icon"
                :text {current-theme == "dark" ? "" : ""})
         (label :text {current-theme == "dark" ? "Switch to light" : "Switch to dark"})))))
 

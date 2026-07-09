@@ -404,7 +404,7 @@ $radius-group: 6px !default;
 
 // Audio device picker popup (left-click the audio widget). Small layer-shell
 // window anchored above the bar — the entire surface is the card, no overlay.
-.audio-popup {
+.popup-card {
     background-color: $cell-bg;
     color: $fg;
     border: 2px solid $popup-border;
@@ -412,34 +412,34 @@ $radius-group: 6px !default;
     padding: 12px;
     min-width: 320px;
 }
-.audio-popup-title {
+.popup-title {
     color: $fg;
     font-weight: bold;
     // No left padding: section headers sit flush with the content-left edge
     // where the device lists, buttons and icon boxes below them all align.
     padding: 2px 0;
 }
-.audio-row {
+.popup-row {
     background: transparent;
     border: none;
     border-radius: $radius-control;
     padding: 4px 8px;
     color: $fg;
 }
-.audio-row:hover {
+.popup-row:hover {
     background: $row-hover;
     color: $fg;
 }
-.audio-row.active {
+.popup-row.active {
     color: $ui-select;
 }
-// Bluetooth device-row in-flight states (also reuses .audio-row). The
+// Bluetooth device-row in-flight states (also reuses .popup-row). The
 // row label is prefixed with a sync glyph for connecting / disconnecting
 // and a warning triangle for error; the color cues are here.
-.audio-row.connecting {
+.popup-row.connecting {
     color: $accent;
 }
-.audio-row.error {
+.popup-row.error {
     color: $critical;
 }
 
@@ -487,12 +487,12 @@ $radius-group: 6px !default;
     }
 }
 
-// Bluetooth + network device lists. Rows are .audio-row buttons; the mixin
+// Bluetooth + network device lists. Rows are .popup-row buttons; the mixin
 // drops their per-item radius/shadow and adds the collapsing hairlines.
 .device-list {
     @include grouped-list("button");
 }
-// The shared .audio-row:hover fills with $bg-secondary — invisible now the
+// The shared .popup-row:hover fills with $bg-secondary — invisible now the
 // list itself is $bg-secondary. Wash the hovered row with the shared
 // $row-hover so hover reads consistently (the same whiter highlight) across
 // the popups.
@@ -690,22 +690,22 @@ $radius-group: 6px !default;
 // Theme toggle: single full-width button showing the active scheme.
 // Click to flip via `theme toggle`. No active-state highlight — the
 // icon + label *is* the state indicator.
-.theme-toggle {
+.full-button {
     background: $bg-secondary;
     border: 2px solid $divider;
     border-radius: $radius-control;
     padding: 6px 8px;
     color: $fg;
 }
-.theme-toggle:hover {
+.full-button:hover {
     background: $row-hover;
 }
-.theme-toggle-icon {
+.full-button-icon {
     color: $ui-select;
 }
-// .off modifier for tinted icons inside a theme-toggle-style button
+// .off modifier for tinted icons inside a full-button-style button
 // (e.g. the bluetooth power toggle when the adapter is off).
-.theme-toggle-icon.off {
+.full-button-icon.off {
     color: $fg-dim;
 }
 // The fa-wifi glyph (U+F1EB) is wide and its ink overhangs its advance
@@ -881,7 +881,7 @@ revealer { background-color: transparent; }
     padding: 2px 0 4px 0;
 }
 // Pinned-app rows plus the "Browse apps"/"Search apps" rows: glyph + label,
-// hover-highlighted. Reuses the .audio-row interaction feel for consistency
+// hover-highlighted. Reuses the .popup-row interaction feel for consistency
 // across popups.
 .start-item {
     background: $bg-secondary;
@@ -910,7 +910,7 @@ revealer { background-color: transparent; }
 // treatment). Each row is wrapped in an eventbox (for hover-to-expand /
 // hover-to-collapse), so a bare .start-item:first-child would match the
 // button in BOTH wrappers — round via the first/last wrapper slot instead.
-// "Browse apps" is a .start-all-toggle; its trailing chevron signals the
+// "Browse apps" is a .start-browse-toggle; its trailing chevron signals the
 // fly-out. The revealed panel is two columns: a category list (left) and the
 // hovered category's apps in a scroller (right).
 .start-apps-rows {
@@ -918,12 +918,12 @@ revealer { background-color: transparent; }
         $first: "> *:first-child .start-item",
         $last:  "> *:last-child .start-item");
 }
-.start-all-chevron {
+.start-browse-chevron {
     color: $fg-dim;
     font-size: 11px;
     min-width: 16px;
 }
-.start-all-toggle.active {
+.start-browse-toggle.active {
     background: $row-hover;
     color: $fg;
 }
@@ -1226,7 +1226,7 @@ window#start-apps-popup {
 
 // Unify the menu buttons: flat (drop the GTK bevel/raised shadow) $divider-
 // outlined surfaces like the bluetooth/network device-list, with one font.
-.power-profile-button, .theme-toggle,
+.power-profile-button, .full-button,
 .start-item, .start-power-button,
 .clock-popup-today, .clock-popup-tool,
 .start-confirm-yes, .start-confirm-no,
@@ -1238,7 +1238,7 @@ window#start-apps-popup {
 }
 // Plain black ($fg) label text on all of them — except the poweroff-confirm
 // "Yes", which keeps its $critical red as a danger cue.
-.power-profile-button, .theme-toggle,
+.power-profile-button, .full-button,
 .start-item, .start-power-button,
 .clock-popup-today, .clock-popup-tool,
 .start-confirm-no {
