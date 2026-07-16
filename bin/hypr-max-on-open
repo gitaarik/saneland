@@ -117,8 +117,17 @@ class_to_filename() {
     printf '%s' "$1" | tr '/' '_'
 }
 
+# Saved-geometry schema version. v1 stored x/y as GLOBAL coordinates, which
+# only worked on a single monitor at 0x0: a window closed on a second output
+# saved an x beyond the laptop's width and, once undocked, was restored
+# off-screen where it couldn't be reached. v2 stores x/y RELATIVE to the work
+# area of the monitor the window was on, so the geometry means the same thing
+# on any output. v1 files are discarded (fall back to maximize) and rewritten
+# as v2 on the next close — no migration needed.
+geom_schema_version=2
+
 # Try to apply previously saved geometry for the given class. Returns
-# 0 on success, 1 if there's no saved file (or class is denied).
+# 0 on success, 1 if there's no usable saved file (or class is denied).
 apply_saved_geometry() {
     local class=$1 addr=$2
     [[ $class =~ $policy_skip_class_re ]] && return 1
@@ -127,7 +136,10 @@ apply_saved_geometry() {
     local saved=$state_dir/"$(class_to_filename "$class")".json
     [[ -f $saved ]] || return 1
 
-    local w h x y
+    local v w h x y
+    v=$(jq -r '.v // 0' "$saved" 2>/dev/null)
+    [[ $v == "$geom_schema_version" ]] || return 1
+
     w=$(jq -r '.width  // empty' "$saved" 2>/dev/null)
     h=$(jq -r '.height // empty' "$saved" 2>/dev/null)
     x=$(jq -r '.x      // empty' "$saved" 2>/dev/null)
@@ -135,18 +147,40 @@ apply_saved_geometry() {
 
     [[ -z $w || -z $h || -z $x || -z $y ]] && return 1
 
+    # Re-anchor the relative geometry onto whichever monitor the window
+    # actually opened on, and clamp it to fit: a window saved maximized on the
+    # 4K output would otherwise come back 3840px wide on a 1440px-wide laptop.
+    hypr_work_area_for "$addr" || return 1
+    (( w > WORK_W )) && w=$WORK_W
+    (( h > WORK_H )) && h=$WORK_H
+    (( x < 0 )) && x=0
+    (( y < 0 )) && y=0
+    (( x + w > WORK_W )) && x=$(( WORK_W - w ))
+    (( y + h > WORK_H )) && y=$(( WORK_H - h ))
+
     # hypr_apply_geom picks the border to match the restored size: a
     # window saved at work-area size (a main window like a browser, which
     # is saved maximized) comes back borderless, instead of wearing a
     # stray active-border around an otherwise-maximized frame.
-    hypr_apply_geom "$addr" "$w" "$h" "$x" "$y"
+    hypr_apply_geom "$addr" "$w" "$h" "$(( WORK_X + x ))" "$(( WORK_Y + y ))"
 }
 
+# x/y arrive as global coordinates (straight off `hyprctl clients`.at) and are
+# stored relative to mon_id's work-area origin — see geom_schema_version.
 save_geometry() {
-    local class=$1 w=$2 h=$3 x=$4 y=$5
+    local class=$1 w=$2 h=$3 x=$4 y=$5 mon_id=$6
     local saved=$state_dir/"$(class_to_filename "$class")".json
-    jq -n --argjson w "$w" --argjson h "$h" --argjson x "$x" --argjson y "$y" \
-        '{width: $w, height: $h, x: $x, y: $y}' \
+
+    if [[ $mon_id =~ ^[0-9]+$ ]]; then
+        hypr_work_area "$mon_id" || return 1
+    else
+        hypr_work_area || return 1
+    fi
+
+    jq -n --argjson v "$geom_schema_version" \
+          --argjson w "$w" --argjson h "$h" \
+          --argjson x "$(( x - WORK_X ))" --argjson y "$(( y - WORK_Y ))" \
+        '{v: $v, width: $w, height: $h, x: $x, y: $y}' \
         > "$saved.tmp" && mv "$saved.tmp" "$saved"
 }
 
@@ -332,8 +366,9 @@ ncat -U "$sock" | while IFS= read -r line; do
             h=$(echo "$client" | jq -r '.size[1]')
             x=$(echo "$client" | jq -r '.at[0]')
             y=$(echo "$client" | jq -r '.at[1]')
+            mon_id=$(echo "$client" | jq -r '.monitor')
 
-            save_geometry "$class" "$w" "$h" "$x" "$y"
+            save_geometry "$class" "$w" "$h" "$x" "$y" "$mon_id"
             ;;
     esac
 done

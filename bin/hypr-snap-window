@@ -13,16 +13,18 @@ source "${HOME}/.local/bin/hypr-window-lib.sh"
 
 side=${1:?Usage: $0 left|right|top|bottom}
 
-hypr_work_area || exit 1
-work_w=$WORK_W work_h=$WORK_H res_top=$RES_TOP
+target=$(hyprctl -j activewindow | jq -r '.address')
+[[ -z $target || $target = "null" ]] && exit 0
+
+# Snap within the window's OWN monitor, not the focused one — with a second
+# output those differ whenever the cursor is elsewhere (see hypr_work_area).
+hypr_work_area_for "$target" || exit 1
+work_w=$WORK_W work_h=$WORK_H org_x=$WORK_X org_y=$WORK_Y
 
 # Border size: visible borders take pixels on each side, so inset position +
 # shrink size accordingly. Otherwise borders on edges that touch the screen
 # boundary render outside the visible area.
 bw=3
-
-target=$(hyprctl -j activewindow | jq -r '.address')
-[[ -z $target || $target = "null" ]] && exit 0
 
 # Quarter snap: if the previous snap on this same window was a perpendicular
 # half (within 1.5s), combine into the matching corner. Otherwise apply a
@@ -51,27 +53,29 @@ fi
 half_w=$(( work_w / 2 ))
 half_h=$(( work_h / 2 ))
 
+# All x/y below are offset from the work area's global origin (org_x/org_y),
+# so a snap lands on the window's own monitor rather than the leftmost one.
 if [[ -n $horiz && -n $vert ]]; then
     # Quarter
     w=$(( half_w - bw - bw ))
     h=$(( half_h - bw - bw ))
-    [[ $horiz = left  ]] && x=$bw || x=$(( half_w + bw ))
-    [[ $vert  = top   ]] && y=$(( res_top + bw )) || y=$(( res_top + half_h + bw ))
+    [[ $horiz = left  ]] && x=$(( org_x + bw )) || x=$(( org_x + half_w + bw ))
+    [[ $vert  = top   ]] && y=$(( org_y + bw )) || y=$(( org_y + half_h + bw ))
     # Clear state so the next snap starts a new combo.
     : > "$state_file"
 else
     case "$side" in
         left)
-            x=$bw  y=$(( res_top + bw ))
+            x=$(( org_x + bw ))  y=$(( org_y + bw ))
             w=$(( half_w - bw - bw ))  h=$(( work_h - bw - bw )) ;;
         right)
-            x=$(( half_w + bw ))  y=$(( res_top + bw ))
+            x=$(( org_x + half_w + bw ))  y=$(( org_y + bw ))
             w=$(( half_w - bw - bw ))  h=$(( work_h - bw - bw )) ;;
         top)
-            x=$bw  y=$(( res_top + bw ))
+            x=$(( org_x + bw ))  y=$(( org_y + bw ))
             w=$(( work_w - bw - bw ))  h=$(( half_h - bw - bw )) ;;
         bottom)
-            x=$bw  y=$(( res_top + half_h + bw ))
+            x=$(( org_x + bw ))  y=$(( org_y + half_h + bw ))
             w=$(( work_w - bw - bw ))  h=$(( half_h - bw - bw )) ;;
         *) echo "Usage: $0 left|right|top|bottom" >&2; exit 1 ;;
     esac

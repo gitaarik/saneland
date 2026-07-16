@@ -21,7 +21,11 @@ cur_h=$(jq -r '.size[1]' <<<"$active")
 cur_x=$(jq -r '.at[0]'   <<<"$active")
 cur_y=$(jq -r '.at[1]'   <<<"$active")
 
-hypr_work_area
+# Measure against the window's OWN monitor: the is_max test below compares
+# against work-area size, so resolving the focused monitor instead would make
+# mod+m on a second output compare to the wrong screen's dimensions and
+# mis-decide whether to maximize or restore.
+hypr_work_area_for "$target" || exit 1
 
 # Tolerance for "is currently maximized" check (Hyprland may report sizes
 # off by a couple px due to scale rounding / borders).

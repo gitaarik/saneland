@@ -8,15 +8,29 @@
 # real file (not the .example).
 
 # --- Monitors --------------------------------------------------------------
-# `hyprctl monitors` lists connected outputs, their names and modes.
+# `hyprctl monitors` lists connected outputs, their names and modes;
+# `hyprctl monitors all | grep availableModes` shows every mode an output
+# supports.
 #   monitor = NAME, RESOLUTION@REFRESH, POSITION, SCALE
 # Examples:
 # monitor = eDP-1, 2256x1504@60, 0x0, 1.5666667      # HiDPI laptop panel
-# monitor = DP-1, 2560x1440@144, 2256x0, 1           # external, to the right
+# monitor = DP-1, 2560x1440@144, 1440x0, 1           # external, to the right
 #
 # Fractional-scale tip: use Hyprland's *exact* suggested scale from
 # `hyprctl monitors`, not a rounded value — a fresh session rejects e.g. 1.5
 # with "Invalid scale passed to monitor".
+#
+# POSITION is in LOGICAL pixels, not physical ones. To place a second output
+# flush to the right of the panel above, its x is the panel's logical width —
+# 2256 / 1.5666667 = 1440 — NOT its physical 2256. Get this wrong and you
+# either leave a dead gap the cursor crosses invisibly, or overlap the two.
+#
+# PIN THE REFRESH RATE. The base config's `monitor = , preferred, auto, 1`
+# wildcard takes each output's EDID-preferred mode, and plenty of 4K displays
+# (TVs especially) advertise 3840x2160@30 as preferred even though the link
+# does @60 fine. 30Hz reads as a laggy cursor and stuttery scrolling rather
+# than as an obvious misconfiguration, so it's worth checking availableModes
+# and stating @60 explicitly.
 
 # --- App choices -----------------------------------------------------------
 # Override the base defaults ($term = kitty, $browser = firefox, …):

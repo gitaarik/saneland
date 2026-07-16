@@ -16,15 +16,21 @@ source "${HOME}/.local/bin/hypr-window-lib.sh"
 
 pct=${1:-60}
 
-hypr_work_area
-
-new_w=$(( WORK_W * pct / 100 ))
-new_h=$(( WORK_H * pct / 100 ))
-
 target=$(hyprctl -j activewindow | jq -r '.address')
 [[ -z $target || $target = "null" ]] && exit 0
 
+# Center within the window's OWN monitor (see hypr_work_area's focused-monitor
+# caveat). The position is computed explicitly rather than via the
+# `centerwindow` dispatcher: that dispatcher centers on the focused monitor,
+# which flung the window to the other output whenever the cursor sat there.
+hypr_work_area_for "$target" || exit 1
+
+new_w=$(( WORK_W * pct / 100 ))
+new_h=$(( WORK_H * pct / 100 ))
+new_x=$(( WORK_X + (WORK_W - new_w) / 2 ))
+new_y=$(( WORK_Y + (WORK_H - new_h) / 2 ))
+
 hyprctl --batch \
     "dispatch resizewindowpixel exact ${new_w} ${new_h},address:${target}; \
-     $(hypr_chrome "$target" normal); \
-     dispatch centerwindow" >/dev/null
+     dispatch movewindowpixel exact ${new_x} ${new_y},address:${target}; \
+     $(hypr_chrome "$target" normal)" >/dev/null
