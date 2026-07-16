@@ -13,9 +13,11 @@
   "~/.config/eww/scripts/audio-state.sh")
 
 ;; `loaded` starts false so the popup shows a loading hint until the first
-;; poll lands, rather than a blank box (the initial sinks/sources are empty).
+;; poll lands, rather than a blank box (the initial outputs/sources are empty).
+;; `outputs`, not `sinks`: the list mixes live sinks with card profiles that
+;; would create one (that's how HDMI shows up) — see audio-devices.sh.
 (defpoll audio-devices :interval "2s"
-  :initial '{"sinks":[],"sources":[],"loaded":false}'
+  :initial '{"outputs":[],"sources":[],"loaded":false}'
   "~/.config/eww/scripts/audio-devices.sh")
 
 ;; Initial values matter because the widget compares battery-capacity

@@ -51,9 +51,15 @@
 ;; One device row in an audio category's picker — reuses the shared
 ;; device-row (● default / ○ available). Audio has no error/connecting
 ;; states, so `state` is empty and no trailing icon is passed.
-(defwidget audio-popup-row [kind device]
+;;
+;; The action comes from the DEVICE, not the category: an Output row may be a
+;; live sink (set it default) or a card profile that has no sink yet (switch
+;; the card to it — that's how an HDMI TV gets an output at all). Both live in
+;; the same list, so each entry carries its own `kind` and `card`. See
+;; audio-devices.sh.
+(defwidget audio-popup-row [device]
   (device-row :state "" :active {device.default} :name {device.description}
-              :onclick "~/.config/eww/scripts/audio-set-default.sh ${kind} '${device.name}'"
+              :onclick "~/.config/eww/scripts/audio-set-default.sh ${device.kind} '${device.name}' '${device.card}'"
               :trailing-icon "" :trailing-class "" :trailing-tooltip ""))
 
 ;; One audio category: title, its volume slider, then its device picker. The
@@ -73,15 +79,24 @@
              :visible {loaded && arraylength(devices) == 0}
              :text "No devices found")
       (for d in {devices}
-        (audio-popup-row :kind kind :device d)))))
+        (audio-popup-row :device d)))))
 
 ;; Expansion flag for the audio popup's Options disclosure (rendered by
 ;; the shared options-section widget). Ephemeral — resets on reload.
 (defvar audio-options-expanded false)
 
 ;; Escape hatch up top — pavucontrol handles everything we don't surface
-;; here (per-app routing, profiles, port selection). Mirrors the network
-;; popup's nm-connection-editor link and the bluetooth popup's blueman one.
+;; here (per-app routing, port selection, and the profile variants the Output
+;; list deliberately filters out — surround modes on a card whose stereo
+;; profile is already listed, other cards' inputs, pro-audio). Mirrors the
+;; network popup's nm-connection-editor link and the bluetooth popup's blueman
+;; one.
+;;
+;; Card *profiles* used to be entirely pavucontrol's job, but that made an
+;; HDMI display's audio unreachable from the bar: it isn't a sink until its
+;; profile is active, so a sink-only picker couldn't show it and the TV looked
+;; like it had no audio support at all. The Output list now includes the
+;; profiles that would add an output — see audio-devices.sh.
 (defwidget audio-popup-settings []
   (button :class "full-button"
           :onclick "pavucontrol &"
@@ -102,7 +117,7 @@
                           :muted {audio.in_muted} :volume {audio.in_volume}
                           :glyph_active "" :glyph_muted "")
     (audio-popup-category :title "Output" :kind "sink"
-                          :devices {audio-devices.sinks}
+                          :devices {audio-devices.outputs}
                           :loaded {audio-devices.loaded}
                           :node "@DEFAULT_AUDIO_SINK@"
                           :muted {audio.muted} :volume {audio.volume}
