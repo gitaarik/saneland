@@ -53,7 +53,29 @@ while IFS= read -r other; do
   [[ -n $other && $other != "$window" ]] && "$dismiss" "$other"
 done < <(eww active-windows 2>/dev/null | cut -d: -f1 | grep -- '-popup$' | grep -vx 'start-apps-popup')
 
-eww open "$window"
+# Open the popup on the monitor the cursor is on, so clicking any screen's bar
+# pops up on THAT screen. eww's --screen is a GDK monitor index = the monitor's
+# position when Hyprland's outputs are sorted by id (matches GDK's order). We
+# find the cursor's monitor by its logical bounds: .x/.y are already logical,
+# .width/.height are physical so divide by .scale. Falls back to 0 on any
+# failure — which is also the only valid index on a single monitor, so this is
+# a no-op there and needs no guarding.
+read -r _cx _cy <<< "$(hyprctl cursorpos 2>/dev/null | tr -d ',')"
+screen=$(hyprctl monitors -j | python3 -c '
+import json, sys
+try:
+    cx, cy = int(sys.argv[1]), int(sys.argv[2])
+except (IndexError, ValueError):
+    print(0); sys.exit(0)
+for idx, m in enumerate(sorted(json.load(sys.stdin), key=lambda m: m["id"])):
+    w, h = m["width"] / m["scale"], m["height"] / m["scale"]
+    if m["x"] <= cx < m["x"] + w and m["y"] <= cy < m["y"] + h:
+        print(idx); sys.exit(0)
+print(0)
+' "$_cx" "$_cy" 2>/dev/null)
+screen=${screen:-0}
+
+eww open "$window" --screen "$screen"
 # Surface the open popup as a reactive eww var so widgets can gate
 # scroll-to-adjust behavior on "this control's popup is open".
 eww update open-popup="$window" 2>/dev/null || true
@@ -163,6 +185,6 @@ disown
 # the script finish arming those binds and return — eww then processes the
 # open once its onclick handler is free.
 if [[ $window == start-popup ]]; then
-    eww open start-apps-popup >/dev/null 2>&1 &
+    eww open start-apps-popup --screen "$screen" >/dev/null 2>&1 &
     disown
 fi
