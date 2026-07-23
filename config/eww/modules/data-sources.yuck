@@ -2,9 +2,17 @@
 ;; Data sources
 ;; -----------------------------------------------------------------------------
 
+;; Per-MONITOR Hyprland state, keyed by connector name — each bar reads its own
+;; slice as hypr.monitors[mon] (mon = the bar's --arg). See hypr-state.sh for
+;; the shape and the per-screen workspace-block model.
 (deflisten hypr
-  :initial '{"focused_workspace":0,"tag_focused":[false,false,false,false,false,false,false,false,false,false,false,false],"tag_visible":[false,false,false,false,false,false,false,false,false,false,false,false],"windows":[]}'
+  :initial '{"monitors":{}}'
   "~/.config/eww/scripts/hypr-state.sh")
+
+;; A valid EMPTY monitor slice. The bar resolves `hypr.monitors[mon] ?: empty-mon`
+;; once and passes it down, so tag/taskbar never dereference a null slice during
+;; the brief window before hypr-state.sh's first emit (initial is {"monitors":{}}).
+(defvar empty-mon '{"offset":0,"active":0,"tag_focused":[false,false,false,false,false,false,false,false,false,false,false,false],"tag_visible":[false,false,false,false,false,false,false,false,false,false,false,false],"windows":[]}')
 
 ;; Volume + mute state. Driven by `pactl subscribe` so the bar updates the
 ;; instant audio changes, not on a 1-second poll tick.

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#
+# hypr-workspace — switch to, or move the active window to, a PER-SCREEN
+# workspace. Bound to mod+1..12 (switch) and mod+shift+1..12 (move).
+#
+# Each monitor owns a block of 12 workspaces: the monitor with the lowest
+# Hyprland id (the internal panel) gets global workspaces 1-12, the next gets
+# 13-24, and so on — offset = monitor_rank * 12. A "local" tag 1..12 on a
+# screen maps to the global workspace `offset + tag`. The static
+# `workspace = N, monitor:…` bindings in local.conf must follow the same
+# rank order so the two agree; see local.conf.example.
+#
+# The number keys act on the screen holding the FOCUSED WINDOW (not the one
+# under the cursor), falling back to the focused monitor when no window is
+# focused (e.g. an empty workspace).
+#
+# Usage: hypr-workspace switch|move <1..12>
+#
+# On a single monitor the rank is always 0, so offset is 0 and this reduces to
+# plain `workspace N` / `movetoworkspacesilent N` — i.e. unchanged behaviour.
+
+set -uo pipefail
+
+action=${1:?Usage: hypr-workspace switch|move <1..12>}
+n=${2:?Usage: hypr-workspace switch|move <1..12>}
+
+# Target screen = the focused window's monitor; if nothing is focused, the
+# focused (cursor) monitor. `.monitor` on activewindow is the monitor id.
+mon=$(hyprctl -j activewindow 2>/dev/null | jq -r '.monitor // empty')
+if [[ -z $mon || $mon == null ]]; then
+    mon=$(hyprctl -j monitors 2>/dev/null | jq -r 'map(select(.focused))[0].id // 0')
+fi
+
+# offset = rank of that monitor among all monitors sorted by id, times 12.
+offset=$(hyprctl -j monitors 2>/dev/null \
+    | jq -r --argjson m "${mon:-0}" '([.[].id] | sort | index($m) // 0) * 12')
+ws=$(( ${offset:-0} + n ))
+
+case $action in
+    switch) hyprctl dispatch workspace "$ws" ;;
+    move)   hyprctl dispatch movetoworkspacesilent "$ws" ;;
+    *) echo "Usage: hypr-workspace switch|move <1..12>" >&2; exit 1 ;;
+esac

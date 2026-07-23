@@ -17,8 +17,10 @@
 # a specific monitor — that mapping lives in popup-toggle.sh.)
 #
 # Each bar is opened with a distinct `--id bar-<index>` so the instances don't
-# collide; they all render the same `(bar)` widget tree (eww 0.5.0 has no
-# per-window args, and for an identical bar-per-screen none are needed).
+# collide, and `--arg mon=<connector>` so it renders only ITS screen's tags +
+# windows (the `(bar)` widget reads hypr.monitors[mon]). The name for index i is
+# the i-th monitor sorted by Hyprland id — matching the GDK --screen order and
+# hypr-state.sh's per-monitor keys.
 
 set -uo pipefail
 
@@ -29,15 +31,19 @@ set -uo pipefail
 export LC_TIME=en_GB.UTF-8
 
 sync_bars() {
-  local n i idx open
-  n=$(hyprctl monitors -j | jq 'length') || return
-  [[ ${n:-0} -gt 0 ]] || return
+  local n i idx open names
+  # Connector names sorted by Hyprland id; index i (the GDK --screen index) is
+  # the i-th of these. The COUNT drives coverage; the NAME is passed to the bar.
+  mapfile -t names < <(hyprctl monitors -j | jq -r 'sort_by(.id) | .[].name')
+  n=${#names[@]}
+  [[ $n -gt 0 ]] || return
 
   open=$(eww active-windows 2>/dev/null | cut -d: -f1)
 
-  # Open a bar on every monitor index that doesn't already have one.
+  # Open a bar on every monitor index that doesn't already have one, telling it
+  # which screen it's on via --arg mon=<connector>.
   for (( i = 0; i < n; i++ )); do
-    grep -qx "bar-$i" <<<"$open" || eww open bar --id "bar-$i" --screen "$i"
+    grep -qx "bar-$i" <<<"$open" || eww open bar --id "bar-$i" --screen "$i" --arg "mon=${names[i]}"
   done
 
   # Close bars with no monitor behind them: the legacy single-instance `bar`

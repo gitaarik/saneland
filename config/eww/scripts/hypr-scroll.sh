@@ -7,9 +7,10 @@
 #                                      # active workspace
 #
 # Wired from eww :onscroll, which substitutes `{}` with `up` / `down`.
-# `workspace e±1` (vs plain `±1`) skips empty workspaces — matches the
-# fact that the tag widget hides empty/unfocused tags anyway, so the
-# scroll stays in sync with what the user can see.
+# Workspace scrolling cycles ONLY within the focused screen's own 12-workspace
+# block (laptop 1-12, external 13-24), through its non-empty workspaces — so it
+# matches the tags that screen shows and never jumps to another monitor's
+# range. (A global `workspace e±1` would wrap into the other screen's block.)
 #
 # Debounce: high-resolution / hyper-scroll mice emit many sub-events
 # per physical detent, and eww fires :onscroll on every one — without
@@ -58,10 +59,34 @@ fi
 # mod+Shift+Tab), which walks the workspace's windows in the taskbar's
 # order. Hyprland's built-in `cyclenext` follows z-order, which the
 # raise-focused daemon keeps shuffling — unpredictable with 3+ windows.
-case "$target:$direction" in
-  workspace:up)   hyprctl dispatch workspace e-1 ;;
-  workspace:down) hyprctl dispatch workspace e+1 ;;
-  window:up)      ~/.local/bin/hypr-cycle-maximize prev ;;
-  window:down)    ~/.local/bin/hypr-cycle-maximize next ;;
-  *) echo "hypr-scroll: unknown '$target/$direction'" >&2; exit 1 ;;
+case "$target" in
+  workspace)
+    # The focused (cursor) monitor's offset and current workspace. offset =
+    # rank among monitors sorted by id, times 12 — same mapping as the bar and
+    # hypr-workspace.
+    read -r off cur < <(hyprctl -j monitors | jq -r '
+        sort_by(.id) as $s
+        | ($s | map(select(.focused))[0]) as $m
+        | "\(([$s[].id] | index($m.id)) * 12) \($m.activeWorkspace.id)"')
+    # Ring = this block's non-empty workspaces (+ the current one), sorted. Cycle
+    # within it; up = previous, down = next, with wrap.
+    mapfile -t ring < <(hyprctl -j workspaces | jq -r --argjson off "${off:-0}" --argjson cur "${cur:-0}" '
+        ([ .[] | select(.id > $off and .id <= ($off + 12) and .windows > 0) | .id ] + [$cur])
+        | unique | .[]')
+    (( ${#ring[@]} > 1 )) || exit 0
+    idx=0; for i in "${!ring[@]}"; do [[ ${ring[i]} == "$cur" ]] && idx=$i; done
+    if [[ $direction == up ]]; then
+        hyprctl dispatch workspace "${ring[$(( (idx - 1 + ${#ring[@]}) % ${#ring[@]} ))]}"
+    else
+        hyprctl dispatch workspace "${ring[$(( (idx + 1) % ${#ring[@]} ))]}"
+    fi
+    ;;
+  window)
+    case "$direction" in
+      up)   ~/.local/bin/hypr-cycle-maximize prev ;;
+      down) ~/.local/bin/hypr-cycle-maximize next ;;
+      *) echo "hypr-scroll: unknown direction '$direction'" >&2; exit 1 ;;
+    esac
+    ;;
+  *) echo "hypr-scroll: unknown target '$target'" >&2; exit 1 ;;
 esac

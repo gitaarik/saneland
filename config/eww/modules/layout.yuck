@@ -1,13 +1,13 @@
 ;; :hexpand so the left group claims all the room the (fixed-width) right group
 ;; doesn't need; the taskbar inside it (also :hexpand) soaks up that slack,
 ;; pushing the window buttons out to the status group on the right.
-(defwidget left-side []
+(defwidget left-side [m]
   (box :orientation "h" :space-evenly false :spacing 0 :hexpand true
     (launcher)
     (box :class "cat-sep")
-    (tags)
+    (tags :m m)
     (box :class "cat-sep")
-    (taskbar)))
+    (taskbar :m m)))
 
 ;; :spacing 0 in both boxes so adjacent items literally touch — the SCSS
 ;; then drops the left border on every non-first item so the previous
@@ -28,7 +28,10 @@
 ;; Plain box, not centerbox: left-side is :hexpand so it eats the middle and
 ;; pushes right-side flush to the edge (the taskbar inside left-side fills that
 ;; slack). centerbox would instead reserve a centred slot and fight the fill.
-(defwidget bar []
+;; Resolve this bar's monitor slice ONCE (falling back to an empty slice before
+;; the first hypr-state.sh emit), then hand it down — so tag/taskbar operate on
+;; a guaranteed-valid object, never a null hypr.monitors[mon].
+(defwidget bar [mon]
   (box :orientation "h" :space-evenly false :spacing 0
-    (left-side)
+    (left-side :m {hypr.monitors[mon] ?: empty-mon})
     (right-side)))
