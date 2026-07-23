@@ -8,13 +8,27 @@
 # real file (not the .example).
 
 # --- Monitors --------------------------------------------------------------
-# `hyprctl monitors` lists connected outputs, their names and modes;
+# You usually DON'T need anything here. The base config's
+# `monitor = , preferred, auto, 1` wildcard auto-detects any new output at its
+# native mode and places it to the right — plug a monitor in and it just works.
+# Add a line below ONLY for a monitor with a quirk the wildcard gets wrong
+# (wrong refresh rate, wrong scale, a specific arrangement you want).
+#
+#   monitor = MATCH, RESOLUTION@REFRESH, POSITION, SCALE
+#
+# MATCH BY `desc:`, NOT BY CONNECTOR NAME. A connector like DP-2 is just a
+# physical port: unplug the TV, plug in a different monitor, and it lands on
+# the SAME DP-2 — inheriting the TV's line and, say, being forced into a 4K
+# mode it can't display (blank screen). `desc:` matches the actual monitor by
+# its EDID, so the rule only ever touches the monitor it was written for, and
+# anything else falls through to the auto wildcard. Find the string with
+# `hyprctl monitors | grep description` (drop the trailing serial for a rule
+# that matches any unit of that model):
+# monitor = eDP-1, 2256x1504@60, 0x0, 1.5666667                 # laptop panel (by connector is fine — it's soldered in)
+# monitor = desc:Dell Inc. DELL U2312HM, 1920x1080@60, 1440x0, 1 # a specific external
+#
 # `hyprctl monitors all | grep availableModes` shows every mode an output
 # supports.
-#   monitor = NAME, RESOLUTION@REFRESH, POSITION, SCALE
-# Examples:
-# monitor = eDP-1, 2256x1504@60, 0x0, 1.5666667      # HiDPI laptop panel
-# monitor = DP-1, 2560x1440@144, 1440x0, 1           # external, to the right
 #
 # Fractional-scale tip: use Hyprland's *exact* suggested scale from
 # `hyprctl monitors`, not a rounded value — a fresh session rejects e.g. 1.5
@@ -25,12 +39,10 @@
 # 2256 / 1.5666667 = 1440 — NOT its physical 2256. Get this wrong and you
 # either leave a dead gap the cursor crosses invisibly, or overlap the two.
 #
-# PIN THE REFRESH RATE. The base config's `monitor = , preferred, auto, 1`
-# wildcard takes each output's EDID-preferred mode, and plenty of 4K displays
-# (TVs especially) advertise 3840x2160@30 as preferred even though the link
-# does @60 fine. 30Hz reads as a laggy cursor and stuttery scrolling rather
-# than as an obvious misconfiguration, so it's worth checking availableModes
-# and stating @60 explicitly.
+# PIN THE REFRESH RATE for displays that advertise a slow preferred mode. Many
+# 4K TVs report 3840x2160@30 as preferred even though the link does @60 fine,
+# so the wildcard runs them at 30Hz — a laggy cursor and stuttery scrolling
+# rather than an obvious error. Check availableModes and state @60 explicitly.
 
 # --- App choices -----------------------------------------------------------
 # Override the base defaults ($term = kitty, $browser = firefox, …):
