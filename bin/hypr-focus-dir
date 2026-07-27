@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+#
+# Directional focus that treats the next screen as one more step in the same
+# direction: focus the neighbouring window on this screen if there genuinely
+# is one, otherwise hop to the monitor that way. Bound to mod+h/j/k/l.
+#
+# This replaces the plain `movefocus` dispatcher, which gets two things wrong
+# on a multi-monitor setup driven the way this one is:
+#
+#   * Stacked windows swallow the keypress. Nearly every window here is
+#     maximized to the full work area (hypr-max-on-open, mod+m), so a
+#     workspace holding three of them holds three windows at the SAME x/y.
+#     Hyprland counts those as "a window in direction l", so mod+h cycles the
+#     pile instead of ever reaching the other screen.
+#   * `movefocus` needs a window to land on. When the neighbouring monitor's
+#     active workspace is empty it does nothing at all, leaving an empty
+#     second screen unreachable from the keyboard. `focusmonitor` gets there
+#     (verified: it focuses the monitor with no window at all focused, so the
+#     next mod+<number> or mod+Return acts on that screen).
+#
+# So the "is there a window that way?" test is made here rather than left to
+# Hyprland: window CENTRES, compared with a deadzone, plus an overlap check on
+# the perpendicular axis. Two maximized windows share a centre, so neither is
+# "left of" the other and the keypress falls through to the monitor — while a
+# real side-by-side split (mod+Ctrl+h/l snaps) is hundreds of px apart and
+# still focuses within the screen. On a single monitor nothing is ever in the
+# fall-through direction, so this degrades to ordinary directional focus.
+#
+# The target window is picked here and focused by address rather than handed
+# back to `movefocus <dir>` — Hyprland's own pick sometimes crosses to the
+# other monitor even when a local window qualifies, which would undo the whole
+# point of the test above.
+
+set -uo pipefail
+
+case ${1:-} in
+    l|left)  dir=l ;;
+    r|right) dir=r ;;
+    u|up)    dir=u ;;
+    d|down)  dir=d ;;
+    *) echo "Usage: $0 l|r|u|d" >&2; exit 1 ;;
+esac
+
+# Centres closer together than this on the direction axis count as "the same
+# place", not as a neighbour. Generous on purpose: a genuine half-screen snap
+# is half the work area away, while stacked maximized windows are 0 apart.
+DEADZONE=32
+
+clients=$(hyprctl -j clients 2>/dev/null) || exit 1
+
+# Deliberately NOT `clients | focusHistoryID == 0`, tempting as that is for
+# saving a round trip: focus history keeps naming the last window even when
+# nothing is focused at all, which is exactly the state this script creates
+# when it steps onto an empty screen. Steering by that stale entry sent the
+# next keypress off the monitor the user was actually on, so the empty screen
+# became a one-way trip. `activewindow` reports an honest `{}` there.
+active=$(hyprctl -j activewindow 2>/dev/null | jq -c 'select(.address?) // empty')
+
+# --- Step 1: a real neighbour on this screen? -------------------------------
+if [[ -n $active ]]; then
+    target=$(jq -r --arg dir "$dir" --argjson dz "$DEADZONE" --argjson act "$active" '
+        ($act.at[0] + $act.size[0] / 2) as $ax |
+        ($act.at[1] + $act.size[1] / 2) as $ay |
+        [ .[]
+          | select(.address != $act.address)
+          | select(.monitor == $act.monitor)
+          | select(.workspace.id == $act.workspace.id)
+          | select(.mapped and (.hidden | not))
+          | {address, cx: (.at[0] + .size[0] / 2), cy: (.at[1] + .size[1] / 2),
+             x: .at[0], y: .at[1], w: .size[0], h: .size[1]}
+          # Offset past the deadzone on the direction axis AND overlapping on
+          # the other one, so a window stacked far off to the side of a tall
+          # neighbour is not treated as being "above" it.
+          | select(
+              if   $dir == "l" then .cx <= $ax - $dz and .y < $act.at[1] + $act.size[1] and .y + .h > $act.at[1]
+              elif $dir == "r" then .cx >= $ax + $dz and .y < $act.at[1] + $act.size[1] and .y + .h > $act.at[1]
+              elif $dir == "u" then .cy <= $ay - $dz and .x < $act.at[0] + $act.size[0] and .x + .w > $act.at[0]
+              else                  .cy >= $ay + $dz and .x < $act.at[0] + $act.size[0] and .x + .w > $act.at[0]
+              end)
+        ]
+        | sort_by(if $dir == "l" or $dir == "r" then (($ax - .cx) | fabs)
+                                                else (($ay - .cy) | fabs) end)
+        | .[0].address // empty
+    ' <<<"$clients")
+
+    if [[ -n $target ]]; then
+        hyprctl dispatch focuswindow "address:$target" >/dev/null
+        exit 0
+    fi
+fi
+
+# --- Step 2: fall through to the monitor that way ---------------------------
+# Direction is resolved by geometry here instead of with `focusmonitor <dir>`,
+# which is relative to the FOCUSED monitor — and that one is cursor-driven
+# (follow_mouse=2 plus no_warps, see hyprland.conf), so it routinely disagrees
+# with the focused window's monitor. Same trap hypr_work_area documents. Steer
+# by the active window's monitor, falling back to the focused one when nothing
+# is focused.
+monitors=$(hyprctl -j monitors 2>/dev/null) || exit 1
+cur_id=$(jq -r '.monitor // empty' <<<"${active:-null}")
+[[ -n $cur_id ]] || cur_id=$(jq -r 'map(select(.focused))[0].id // empty' <<<"$monitors")
+[[ -n $cur_id ]] || exit 0
+
+# .x/.y are logical px but .width/.height are physical, so the logical extent
+# of a monitor is width/scale — mixing the two puts the 1.57-scaled laptop
+# panel 800px wider than it really is and breaks the adjacency test.
+next=$(jq -r --arg dir "$dir" --argjson id "$cur_id" '
+    map(. + {lw: (.width / .scale), lh: (.height / .scale)}) as $mons |
+    ($mons | map(select(.id == $id))[0]) as $cur |
+    if $cur == null then empty else
+      [ $mons[]
+        | select(.id != $cur.id)
+        | select(
+            if   $dir == "l" then .x + .lw <= $cur.x + 1  and .y < $cur.y + $cur.lh and .y + .lh > $cur.y
+            elif $dir == "r" then .x >= $cur.x + $cur.lw - 1 and .y < $cur.y + $cur.lh and .y + .lh > $cur.y
+            elif $dir == "u" then .y + .lh <= $cur.y + 1  and .x < $cur.x + $cur.lw and .x + .lw > $cur.x
+            else                  .y >= $cur.y + $cur.lh - 1 and .x < $cur.x + $cur.lw and .x + .lw > $cur.x
+            end)
+      ]
+      | sort_by(if $dir == "l" or $dir == "r" then (($cur.x - .x) | fabs)
+                                              else (($cur.y - .y) | fabs) end)
+      | .[0].name // empty
+    end
+' <<<"$monitors")
+
+# Nothing that way — outermost screen, edge of the desktop. Deliberately inert.
+[[ -n $next ]] || exit 0
+
+# Land on the window you last used over there, rather than dispatching
+# `focusmonitor` and hoping. `focusmonitor` early-returns when Hyprland
+# already considers the target focused — and because "focused monitor" tracks
+# the CURSOR, that happens constantly: leave the pointer on the laptop, focus
+# a window on the external via the taskbar, and Hyprland thinks the laptop is
+# focused while the focused window is on the external. mod+l back toward the
+# laptop then hit that early return and did nothing at all. focuswindow has no
+# such shortcut. Lowest focusHistoryID = most recently focused.
+next_win=$(jq -r --arg mon "$next" --argjson mons "$monitors" '
+    ($mons | map(select(.name == $mon))[0].activeWorkspace.id) as $ws |
+    [ .[] | select(.workspace.id == $ws) | select(.mapped and (.hidden | not)) ]
+    | sort_by(.focusHistoryID) | .[0].address // empty
+' <<<"$clients")
+
+if [[ -n $next_win ]]; then
+    hyprctl dispatch focuswindow "address:$next_win" >/dev/null
+    exit 0
+fi
+
+# Empty workspace over there — no window to land on, so the monitor itself has
+# to take focus. Redirect to the current monitor first so the dispatch can't
+# hit the already-focused early return described above.
+cur_name=$(jq -r --argjson id "$cur_id" 'map(select(.id == $id))[0].name // empty' <<<"$monitors")
+hyprctl --batch "dispatch focusmonitor ${cur_name:-$next}; dispatch focusmonitor $next" >/dev/null
