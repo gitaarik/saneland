@@ -41,10 +41,13 @@ fi
 # colors stick. A full daemon restart is the only reliable way to apply a
 # theme switch to a running bar. setsid -f detaches the kill+respawn so that
 # when `theme` is called from an eww onclick, `eww kill` doesn't SIGHUP this
-# script before the respawn lands.
+# script before the respawn lands. Respawn via eww-bars.sh — the bar is now a
+# per-monitor window (`defwindow bar [mon]`, one instance per screen), so a bare
+# `eww open bar` no longer works: it lacks the required `mon` arg and would open
+# on only one monitor.
 if [[ -d ~/.config/eww ]] && pgrep -x eww >/dev/null; then
     (cd ~/.config/eww/ && ln -sf "eww-$COLOR_SCHEME.scss" eww.scss)
-    setsid -f bash -c 'eww kill &>/dev/null; sleep 0.2; eww open bar &>/dev/null' &>/dev/null
+    setsid -f bash -c 'eww kill &>/dev/null; sleep 0.2; ~/.config/eww/scripts/eww-bars.sh &>/dev/null' &>/dev/null
 fi
 
 # --- Hyprland — flip the theme-aware border palette symlink, then reload ---
