@@ -100,6 +100,47 @@ eval "$(hyprsig -x)"                                  # fix the current shell
 HYPRLAND_INSTANCE_SIGNATURE=$(hyprsig) hyprctl …      # one-off
 ```
 
+## Killable event loops
+
+Several daemons here follow Hyprland's event socket. The obvious shape is
+wrong:
+
+```bash
+ncat -U "$sock" | while IFS= read -r line; do …; done   # DON'T
+```
+
+`kill <daemon>` then does one of two bad things. With no trap installed the
+main shell dies immediately but `ncat` and the loop subshell are orphaned and
+**keep running** — measured: a test daemon in this shape went on appending
+output after its main pid was gone, so a "stopped" `hypr-raise-focused` would
+still be dispatching `alterzorder` on every focus change. With a trap installed
+it is worse: bash defers a trapped signal until the current foreground command
+finishes, and a pipeline of external commands never gets interrupted, so the
+signal is swallowed outright and only `kill -9` (or killing the whole process
+group, so `ncat` gets it too and the pipeline ends on its own) works.
+
+Read from a fd instead:
+
+```bash
+exec 3< <(ncat -U "$sock")
+ncat_pid=$!                       # bash ≥5.1 sets $! for a process substitution
+trap 'kill $ncat_pid 2>/dev/null' EXIT
+trap 'exit' INT TERM              # a signal trap that does not exit just resumes
+while IFS= read -r line <&3; do … done
+```
+
+The shell now blocks in the `read` **builtin**, which a signal does interrupt,
+and the loop runs in the main shell rather than a subshell — one process fewer
+and any state it keeps lives where the rest of the script can see it. Used by
+`hypr-max-on-open`, `hypr-window-order`, `hypr-raise-focused`, `hypr-state.sh`
+and `eww-bars.sh --watch`.
+
+`popup-toggle.sh` deliberately keeps the pipeline form: its listener is a
+one-shot that exits from inside the loop on the first `activewindow`, and the
+comment there explains why the close action has to be inline. It installs no
+trap, so a `kill` of the backgrounded subshell works; the orphaned `ncat` reaps
+itself on its next write.
+
 ## Theme system
 
 `theme dark|light` switches the desktop-shell apps at once with a

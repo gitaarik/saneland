@@ -30,7 +30,16 @@ hyprctl -j clients | jq -r '.[] | "\(.workspace.id)\t\(.address)"' > "$state_fil
 last_focused=""
 current_focused=$(hyprctl -j activewindow 2>/dev/null | jq -r '.address // ""')
 
-ncat -U "$sock" | while IFS= read -r line; do
+# Read the event stream over a fd rather than piping it into `while`, so the
+# daemon can actually be stopped — see the "killable event loops" note in
+# docs/ARCHITECTURE.md. It also puts the loop in THIS shell, which is where
+# last_focused/current_focused above want to live anyway.
+exec 3< <(ncat -U "$sock")
+ncat_pid=$!
+trap 'kill $ncat_pid 2>/dev/null' EXIT
+trap 'exit' INT TERM
+
+while IFS= read -r line <&3; do
     case "$line" in
         activewindow*)
             new_focus=$(hyprctl -j activewindow 2>/dev/null | jq -r '.address // ""')

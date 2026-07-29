@@ -22,7 +22,16 @@ if [[ ! -S $sock ]]; then
     exit 1
 fi
 
-ncat -U "$sock" | while IFS= read -r line; do
+# Read the event stream over a fd rather than piping it into `while`, so the
+# daemon can actually be stopped — see the "killable event loops" note in
+# docs/ARCHITECTURE.md. Killing the pipeline form left ncat and the loop
+# subshell orphaned and still dispatching alterzorder on every focus change.
+exec 3< <(ncat -U "$sock")
+ncat_pid=$!
+trap 'kill $ncat_pid 2>/dev/null' EXIT
+trap 'exit' INT TERM
+
+while IFS= read -r line <&3; do
     case "$line" in
         activewindow*) hyprctl dispatch alterzorder top >/dev/null ;;
     esac

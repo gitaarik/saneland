@@ -129,8 +129,18 @@ emit() {
 # Initial emit
 emit
 
-# Listen for events that change the state
-ncat -U "$sock" | while IFS= read -r line; do
+# Listen for events that change the state.
+#
+# Read over a fd rather than piping into `while`, so the daemon can actually be
+# stopped — see the "killable event loops" note in docs/ARCHITECTURE.md. This
+# one matters most of the four: an orphaned copy keeps writing the same eww
+# variables as its replacement, and the bars flicker between two writers.
+exec 3< <(ncat -U "$sock")
+ncat_pid=$!
+trap 'kill $ncat_pid 2>/dev/null' EXIT
+trap 'exit' INT TERM
+
+while IFS= read -r line <&3; do
     case "$line" in
         openwindow*|closewindow*|movewindow*|activewindow*|workspace*|moveworkspace*|focusedmon*|renameworkspace*|windowtitle*) emit ;;
     esac

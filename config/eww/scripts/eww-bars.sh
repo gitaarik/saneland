@@ -139,8 +139,18 @@ if [[ ${1:-} == --watch ]]; then
   # Re-sync whenever Hyprland reports a monitor change. Same socket2 + ncat
   # pattern as popup-toggle.sh's dismiss listener. The short sleep lets GDK
   # register the new output before we ask eww to target its index.
+  #
+  # Read over a fd rather than piping into `while`, so the watcher can actually
+  # be stopped — see the "killable event loops" note in docs/ARCHITECTURE.md.
+  # Killing the pipeline form left the loop orphaned and still re-syncing bars,
+  # which fights a replacement watcher over the same eww windows.
   sock=${XDG_RUNTIME_DIR:-/run/user/$UID}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock
-  ncat -U "$sock" 2>/dev/null | while IFS= read -r line; do
+  exec 3< <(ncat -U "$sock" 2>/dev/null)
+  ncat_pid=$!
+  trap 'kill $ncat_pid 2>/dev/null' EXIT
+  trap 'exit' INT TERM
+
+  while IFS= read -r line <&3; do
     case "$line" in
       monitoradded*|monitorremoved*)
         sleep 0.5
