@@ -87,6 +87,41 @@ Empty workspaces are part of the MRU too: switching to an empty desktop pushes a
 `ws:<id>` sentinel, so Alt-Tab toggles between an empty desktop and the last
 window like it toggles two windows.
 
+## Closing the last window on a screen
+
+Hyprland picks what to focus after an unmap by looking at the **cursor**, not at
+the keyboard. With `cursor:no_warps = true` the pointer sits wherever it was last
+left, so closing the last window on the second screen throws focus back to
+whichever monitor the mouse happens to be parked over — and the next mod+Return
+opens a terminal *there* instead of on the empty screen you're looking at.
+
+`misc:mouse_move_focuses_monitor = false` does **not** cover this. That stops a
+mouse *move* from taking the focused monitor; this refocus is Hyprland's own and
+runs whether or not the mouse moved at all.
+
+`bin/hypr-keep-screen-focus` puts it back. Only the *last* window of a screen is
+affected — close one of several and Hyprland focuses a sibling on the same
+monitor — so the fix keys off a two-event signature rather than a state query:
+
+```
+closewindow>>ADDR         the window is gone
+focusedmon>>NAME,WS       ...and focus left the screen entirely
+```
+
+Nothing else emits that pair back to back, so seeing it *is* the detection: the
+daemon dispatches `focusmonitor` at the screen it was tracking before the close.
+That leaves the monitor focused with **no window focused**, which Hyprland
+handles fine — `hypr-focus-dir` already depends on that state when mod+h/l steps
+onto an empty second screen.
+
+Two guards, both about hot-plug: the target connector must still exist, and the
+workspace it is *currently showing* must really be empty (the screen may still
+hold windows on another tag, and that must not block the restore).
+
+It's a daemon rather than a wrapper around the `killactive` bind because windows
+also close via the hyprbars close button and from inside the app (Ctrl+W,
+File→Quit), and all of those should behave the same.
+
 ## `hyprctl` from a stale shell
 
 `hyprctl` targets a compositor via `$HYPRLAND_INSTANCE_SIGNATURE`, captured at
@@ -132,8 +167,8 @@ while IFS= read -r line <&3; do … done
 The shell now blocks in the `read` **builtin**, which a signal does interrupt,
 and the loop runs in the main shell rather than a subshell — one process fewer
 and any state it keeps lives where the rest of the script can see it. Used by
-`hypr-max-on-open`, `hypr-window-order`, `hypr-raise-focused`, `hypr-state.sh`
-and `eww-bars.sh --watch`.
+`hypr-max-on-open`, `hypr-window-order`, `hypr-raise-focused`,
+`hypr-keep-screen-focus`, `hypr-state.sh` and `eww-bars.sh --watch`.
 
 `popup-toggle.sh` deliberately keeps the pipeline form: its listener is a
 one-shot that exits from inside the loop on the first `activewindow`, and the

@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#
+# Stay on the screen whose last window you just closed.
+#
+# Hyprland picks what to focus after an unmap by looking at the CURSOR, not at
+# the keyboard. With cursor:no_warps the pointer stays wherever it was last
+# left, so emptying the second screen hands focus straight back to whatever the
+# mouse happens to be parked over — and the next mod+Return then opens a
+# terminal on THAT screen instead of on the empty one you are looking at.
+#
+# misc:mouse_move_focuses_monitor = false does not cover this. It stops a mouse
+# MOVE from taking the focused monitor; this refocus is Hyprland's own and runs
+# whether or not the mouse moved at all.
+#
+# Only the LAST window of a screen is affected: close one of several and
+# Hyprland focuses a sibling on the same monitor (verified), so there is
+# nothing to fix there. That makes this a two-event signature rather than a
+# state query — Hyprland emits, back to back and in this order:
+#
+#     closewindow>>ADDR         the window is gone
+#     focusedmon>>NAME,WS       ...and focus left the screen entirely
+#
+# Nothing else emits that pair, so seeing it is the whole detection: send focus
+# back to the monitor we were on. It ends up focused with no window focused,
+# which is a state Hyprland handles fine — hypr-focus-dir already relies on it
+# when mod+h/l steps onto an empty second screen.
+#
+# Deliberately NOT a wrapper around the killactive bind: windows also close via
+# the hyprbars close button and from inside the app (Ctrl+W, File->Quit), and
+# all of those should behave the same.
+
+set -uo pipefail
+
+sock=${XDG_RUNTIME_DIR:-/run/user/$UID}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock
+
+if [[ ! -S $sock ]]; then
+    echo "hypr-keep-screen-focus: Hyprland event socket not found: $sock" >&2
+    exit 1
+fi
+
+# Is $1 still connected, and is the workspace it currently shows empty?
+#
+# The event pair above all but implies this, but an unplug also closes windows
+# and moves focus, and dispatching at a connector that is gone is just an
+# error. Two round trips, on a path that only runs when a screen empties.
+#
+# It has to be the monitor's ACTIVE workspace, not the monitor: the screen may
+# still hold windows on another tag, and that must not block the restore.
+screen_is_empty() {
+    local ws
+    ws=$(hyprctl -j monitors 2>/dev/null \
+         | jq -r --arg m "$1" 'map(select(.name == $m))[0].activeWorkspace.id // empty')
+    [[ -n $ws ]] || return 1          # monitor is gone (unplugged mid-close)
+    hyprctl -j workspaces 2>/dev/null \
+        | jq -e --argjson ws "$ws" 'any(.[]; .id == $ws and .windows > 0) | not' >/dev/null
+}
+
+# The monitor we believe the keyboard is on, kept current from the event
+# stream. Read once up front so a close in the first moments still works.
+cur_mon=$(hyprctl -j monitors 2>/dev/null | jq -r 'map(select(.focused))[0].name // ""')
+just_closed=0
+
+# Read the event stream over a fd rather than piping it into `while`, so the
+# daemon can actually be stopped — see the "killable event loops" note in
+# docs/ARCHITECTURE.md.
+exec 3< <(ncat -U "$sock")
+ncat_pid=$!
+trap 'kill $ncat_pid 2>/dev/null' EXIT
+trap 'exit' INT TERM
+
+# Patterns match `>>` explicitly so focusedmonv2 (which repeats every
+# focusedmon) falls through to the reset arm instead of firing a second time.
+while IFS= read -r line <&3; do
+    case "$line" in
+        closewindow'>>'*)
+            just_closed=1
+            ;;
+        focusedmon'>>'*)
+            mon=${line#focusedmon>>}
+            mon=${mon%%,*}
+            if (( just_closed )) && [[ -n $cur_mon && $mon != "$cur_mon" ]] \
+               && screen_is_empty "$cur_mon"; then
+                # cur_mon deliberately left alone — the dispatch echoes its own
+                # focusedmon, which takes the else arm and re-affirms it.
+                hyprctl dispatch focusmonitor "$cur_mon" >/dev/null
+            else
+                cur_mon=$mon
+            fi
+            just_closed=0
+            ;;
+        *)
+            # Anything between the two events means this was not a screen
+            # emptying, so the signature has to be contiguous to count.
+            just_closed=0
+            ;;
+    esac
+done
