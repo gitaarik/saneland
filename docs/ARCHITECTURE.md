@@ -209,6 +209,16 @@ Two self-corrections keep the list small:
   detector: a new geometry is written once it has held still for two ticks.
   A window you never touch is never written from there — it still goes through
   the close-time path, which only saves the last window of a class.
+- **…except while the monitors are settling.** Unplug an output and Hyprland
+  moves every workspace on it to a surviving screen, resizing the windows to
+  fit. To the poller that is indistinguishable from you resizing them, so a
+  dock cycle used to overwrite the remembered geometry of everything that got
+  shuffled — measured: kitty and Telegram lost their half-screen snaps on the
+  second monitor and came back remembered as full-screen on the laptop. A
+  `monitoradded`/`monitorremoved` event now touches a marker file, and for the
+  next 5s the poller *adopts* each new geometry as its baseline instead of
+  writing it (so nothing is written when the window closes either), and the
+  close-time save is skipped as well.
 
 ## hyprbars
 

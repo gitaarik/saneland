@@ -24,7 +24,9 @@
 #   - On resize: persist the new geometry once it has held still for two
 #     poll ticks, so a mod+c or a drag-resize sticks immediately instead of
 #     only at close time. Hyprland's event socket has no resize event, so
-#     the clients poll below doubles as the change detector.
+#     the clients poll below doubles as the change detector. Changes in the
+#     first few seconds after a monitor is added or removed are adopted
+#     silently instead — that is Hyprland reshuffling outputs, not you.
 #
 #   - On close: save the window's geometry to a per-class file at
 #     ~/.cache/hypr-window-state/<class>.json, using classify_by_title
@@ -69,6 +71,25 @@ mkdir -p "$state_dir"
 # itself as it opened" (already owned by the openwindow branch — leave it).
 grace_dir=$state_dir/opening
 mkdir -p "$grace_dir"
+
+# Touched by the monitoradded/monitorremoved handler. Unplug an output and
+# Hyprland moves every workspace on it to a surviving screen, resizing the
+# windows to fit — none of which is a choice you made, but all of which looks
+# exactly like a resize to the poller below. Left alone it overwrites the
+# remembered geometry of every window that got shuffled: measured on a dock
+# cycle, kitty and Telegram lost their half-screen snaps on the second monitor
+# and came back remembered as full-screen on the laptop.
+settle_file=$state_dir/monitors-settling
+monitor_settle_secs=5
+
+# True while Hyprland is still rearranging after a monitor came or went.
+monitors_settling() {
+    local now mtime
+    [[ -e $settle_file ]] || return 1
+    mtime=$(stat -c %Y "$settle_file" 2>/dev/null) || return 1
+    now=${EPOCHSECONDS:-$(date +%s)}
+    (( now - mtime < monitor_settle_secs ))
+}
 
 # Which classes may be maximized is data, not code: hypr_policy_for (in
 # hypr-window-lib.sh) reads ~/.config/hypr/window-policy{,.local}.conf and
@@ -347,19 +368,29 @@ persist_geometry() {
 # (~4s), so a drag in progress or a quick mod+m there-and-back isn't recorded.
 # The first sighting of a window is its baseline, so a window you never touch
 # is never written from here — it still goes through the close-time path with
-# its last-of-class gate. Addresses are pruned every tick; a long uptime would
-# otherwise accumulate an entry per window ever opened.
+# its last-of-class gate. Changes while the monitors are settling are adopted
+# as the new baseline without being written, so a hotplug can't launder
+# Hyprland's reshuffling into a preference of yours. Addresses are pruned every
+# tick; a long uptime would otherwise accumulate an entry per window ever
+# opened.
 (
     declare -A base pend cur
     while sleep 2; do
         snap=$(hyprctl -j clients 2>/dev/null) || continue
         printf '%s' "$snap" > "$cache_file.tmp" && mv "$cache_file.tmp" "$cache_file"
 
+        settling=0
+        monitors_settling && settling=1        # once per tick, not per window
+
         cur=()
         while IFS=$'\t' read -r a cls ttl geom mon count; do
             [[ -z $a ]] && continue
             cur[$a]=1
             if [[ -z ${base[$a]:-} ]]; then base[$a]=$geom; continue; fi
+            # Adopt silently: whatever Hyprland just did to this window becomes
+            # the baseline, so nothing is written now AND nothing is written
+            # once the settle window closes either.
+            if (( settling )); then base[$a]=$geom; unset 'pend[$a]'; continue; fi
             if [[ $geom == "${base[$a]}" ]]; then unset 'pend[$a]'; continue; fi
             if [[ ${pend[$a]:-} != "$geom" ]]; then pend[$a]=$geom; continue; fi
             base[$a]=$geom
@@ -511,6 +542,14 @@ ncat -U "$sock" | while IFS= read -r line; do
             ) &
             ;;
 
+        monitoradded*|monitorremoved*)
+            # Prefix match, so the v2 spellings are covered too. Hyprland is
+            # about to move workspaces between outputs and resize everything on
+            # them; arm the settle window so none of that is mistaken for a
+            # decision of yours. See settle_file.
+            touch "$settle_file"
+            ;;
+
         closewindow*)
             # Format: closewindow>>ADDRESS
             addr=${line#closewindow>>}
@@ -535,6 +574,12 @@ ncat -U "$sock" | while IFS= read -r line; do
             title=$(echo "$client" | jq -r '.title')
 
             [[ $(hypr_policy_for "$class") == never ]] && continue
+
+            # A window closing seconds after a monitor event was very likely
+            # just relocated and resized by Hyprland, so its geometry says
+            # nothing about where you wanted it. Keeping what was already
+            # remembered is the safer answer.
+            monitors_settling && continue
 
             classify_by_title "$class" "$title"
             verdict=$?
