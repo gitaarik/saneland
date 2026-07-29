@@ -128,6 +128,56 @@ Per-theme image pools live in `~/.config/hypr/wallpapers/{dark,light}/`.
 > auto-loads the image). So `hyprpaper.conf` only turns IPC on; everything else
 > goes through the helper scripts.
 
+## Auto-maximizing new windows
+
+`bin/hypr-max-on-open` listens on Hyprland's event socket and decides how big a
+new window should be. In order:
+
+1. **`never`** in the policy (below) — don't touch it, don't remember it.
+2. **A known popup title** for that class (`classify_by_title`) — browser
+   Picture-in-Picture, Firefox's Library — left alone.
+3. **Remembered geometry** for the class, from
+   `~/.cache/hypr-window-state/<class>.json`. This always wins: it is a
+   decision you already made about this exact app.
+4. **`always`** in the policy — maximize to the work area of the monitor the
+   window opened on. For a second-or-later window of the same class it must
+   *also* have opened at ≥60% of the work area, which is what keeps a
+   Thunderbird event-details popup from being treated like the mail window.
+5. Otherwise the window keeps the size it asked for.
+
+The policy is data, not code: `config/hypr/window-policy.conf` (tracked,
+generic app families) and `window-policy.local.conf` (git-ignored, this
+machine). `mod+Alt+m` flips the focused window's class between `always` and
+`leave`; `hypr-window-policy show|list|forget` covers the rest.
+
+**Why a list and not a heuristic.** There is no way to ask a Wayland client
+whether it is a dialog. `hyprctl clients` exposes no parent window, no window
+type and no size hints; `xdgTag` and `contentType` are in the JSON but
+`match:xdgTag` is rejected as an invalid windowrule field (0.55.4); and the X11
+answers (`_NET_WM_WINDOW_TYPE`, `WM_TRANSIENT_FOR`, `WM_NORMAL_HINTS`) only
+exist for XWayland windows. This config used to maximize the first window of
+every class, which is why password prompts and file choosers came up
+full-screen.
+
+**Why a daemon and not a windowrule.** `size 100% 100%` parses but does nothing
+in 0.55.4, and percentages are relative to the *monitor*, so they would ignore
+the 30px eww bar; absolute pixels can't serve two outputs of different sizes,
+and rules can't match on which monitor a window opened on. The cost is a
+one-frame flash on apps that would otherwise be sized before first paint.
+
+Two self-corrections keep the list small:
+
+- **Refused maximizes are learned.** A client with fixed size constraints
+  (`resizable=false`, so `min_size == max_size`) silently keeps its own size —
+  Hyprland then reports the client's real geometry, not the box it was handed.
+  When that happens the class is demoted to `leave` in the local file so it
+  never flashes again. It won't overwrite a rule you wrote yourself.
+- **Geometry is persisted on resize, not just on close.** Hyprland's event
+  socket has no resize event, so the 2s clients poll doubles as the change
+  detector: a new geometry is written once it has held still for two ticks.
+  A window you never touch is never written from there — it still goes through
+  the close-time path, which only saves the last window of a class.
+
 ## hyprbars
 
 Hyprland draws no title bars by default. The `plugin { hyprbars { … } }` block

@@ -12,6 +12,7 @@
 # Per-machine overrides — seeded from *.example by install.sh, then yours to
 # edit. Keeps the tracked base config byte-identical for everyone.
 /config/hypr/local.conf
+/config/hypr/window-policy.local.conf
 /config/eww/local.yuck
 /config/saneland/theme.local.sh
 

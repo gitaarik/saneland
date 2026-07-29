@@ -11,6 +11,63 @@
 #
 # Not executable on its own — it only defines functions.
 
+# ---------------------------------------------------------------------------
+# Auto-maximize policy
+# ---------------------------------------------------------------------------
+# Which classes hypr-max-on-open is allowed to maximize when a window opens.
+# Read from two files, local first so a machine-specific rule always beats a
+# shipped default:
+#
+#   ~/.config/hypr/window-policy.local.conf   (git-ignored, yours)
+#   ~/.config/hypr/window-policy.conf         (tracked defaults)
+#
+# Line format is `<verdict> <class-regex>`; see window-policy.conf for the
+# full explanation of the three verdicts and why "not listed" means leave the
+# window alone.
+HYPR_POLICY_LOCAL=${XDG_CONFIG_HOME:-$HOME/.config}/hypr/window-policy.local.conf
+HYPR_POLICY_BASE=${XDG_CONFIG_HOME:-$HOME/.config}/hypr/window-policy.conf
+
+# Print the verdict for a class: always | leave | never. Unlisted -> leave.
+# With any second argument, print `<verdict>\t<regex>\t<file>` instead, so
+# `hypr-window-policy show` can say WHICH line decided.
+hypr_policy_for() {
+    local class=$1 verbose=${2:-} file line verdict re
+    for file in "$HYPR_POLICY_LOCAL" "$HYPR_POLICY_BASE"; do
+        [[ -r $file ]] || continue
+        while IFS= read -r line || [[ -n $line ]]; do
+            # Drop a trailing ` # comment` (a leading-# line then fails the
+            # match below and is skipped), then split off the first word.
+            # Splitting on whitespace with `read` would break `^Tor Browser$`.
+            line=${line%%[[:space:]]#*}
+            [[ $line =~ ^[[:space:]]*([a-z]+)[[:space:]]+(.*[^[:space:]])[[:space:]]*$ ]] || continue
+            verdict=${BASH_REMATCH[1]}
+            re=${BASH_REMATCH[2]}
+            case $verdict in always|leave|never) ;; *) continue ;; esac
+            [[ $class =~ $re ]] || continue
+            if [[ -n $verbose ]]; then
+                printf '%s\t%s\t%s\n' "$verdict" "$re" "$file"
+            else
+                printf '%s\n' "$verdict"
+            fi
+            return 0
+        done < "$file"
+    done
+    if [[ -n $verbose ]]; then
+        printf 'leave\t(unlisted)\t(default)\n'
+    else
+        printf 'leave\n'
+    fi
+}
+
+# Turn a literal class into an anchored regex for a policy line, escaping the
+# characters that are common in app-ids (`.` in org.gnome.Software, `+` in
+# things like gtk+3-demo) and would otherwise match too much.
+hypr_policy_regex() {
+    local esc
+    esc=$(printf '%s' "$1" | sed 's/[][\.^$*+?(){}|\\\/]/\\&/g')
+    printf '^%s$\n' "$esc"
+}
+
 # Compute a monitor's usable work area. With no arg it uses the focused
 # monitor; pass a numeric monitor id to target a specific one.
 #

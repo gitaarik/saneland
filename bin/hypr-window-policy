@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+#
+# hypr-window-policy — read and edit the auto-maximize policy that
+# hypr-max-on-open applies to new windows.
+#
+#   hypr-window-policy                    # what will happen to the focused window
+#   hypr-window-policy show [CLASS]
+#   hypr-window-policy list               # the whole effective table
+#   hypr-window-policy always [CLASS]     # maximize this class on open
+#   hypr-window-policy leave  [CLASS]     # never auto-maximize it
+#   hypr-window-policy never  [CLASS]     # don't touch it, don't remember it
+#   hypr-window-policy toggle [CLASS]     # always <-> leave  (bound to mod+Alt+m)
+#   hypr-window-policy forget [CLASS]     # drop its rule AND its remembered size
+#
+# CLASS defaults to the focused window's class. Rules are written to
+# ~/.config/hypr/window-policy.local.conf (git-ignored); the tracked
+# window-policy.conf holds the shipped defaults and is never modified here.
+#
+# A written rule is inserted ABOVE the existing ones, because the policy is
+# first-match-wins: the decision you just made should beat the family pattern
+# you're overriding, whichever order the file happens to be in.
+#
+# Output goes to the terminal when run from one, and to a notification when
+# run from a keybind (where nobody would see stdout).
+
+set -uo pipefail
+source "${HOME}/.local/bin/hypr-window-lib.sh"
+
+usage() { sed -n '3,20p' "$0" | sed 's/^#\s\?//'; }
+
+# Talk to whoever is listening: stdout on a terminal, swaync otherwise.
+say() {
+    if [[ -t 1 ]]; then
+        printf '%s\n' "$*"
+    else
+        notify-send -a saneland -t 4000 "Window policy" "$*" 2>/dev/null
+    fi
+}
+
+die() { printf 'hypr-window-policy: %s\n' "$*" >&2; exit 1; }
+
+# The class to act on: the argument if given, else the focused window's.
+resolve_class() {
+    local class=${1:-}
+    if [[ -z $class ]]; then
+        class=$(hyprctl -j activewindow 2>/dev/null | jq -r '.class // empty')
+        [[ -z $class ]] && die "no window focused, and no class given"
+    fi
+    printf '%s\n' "$class"
+}
+
+ensure_local() {
+    [[ -f $HYPR_POLICY_LOCAL ]] && return 0
+    mkdir -p "$(dirname "$HYPR_POLICY_LOCAL")"
+    cat > "$HYPR_POLICY_LOCAL" <<'EOF'
+# saneland — auto-maximize policy for this machine. Git-ignored.
+# Read before the tracked window-policy.conf; first match wins.
+# Written by hypr-window-policy / mod+Alt+m; safe to edit by hand.
+EOF
+}
+
+# Drop every rule for this exact class regex, then (unless verdict is empty)
+# insert the new one above the first surviving rule. awk does both in one
+# pass so a half-written file can't survive a crash between two edits.
+write_rule() {
+    local verdict=$1 re=$2 note=${3:-}
+    ensure_local
+    local tmp=$HYPR_POLICY_LOCAL.tmp
+    awk -v re="$re" -v verdict="$verdict" -v note="$note" '
+        function is_rule(l) { return l ~ /^[[:space:]]*(always|leave|never)[[:space:]]/ }
+        {
+            line = $0
+            stripped = line
+            sub(/[[:space:]]#.*$/, "", stripped)
+            if (is_rule(stripped)) {
+                # Same class? Drop the old rule, whatever its verdict was.
+                rest = stripped
+                sub(/^[[:space:]]*[a-z]+[[:space:]]+/, "", rest)
+                sub(/[[:space:]]+$/, "", rest)
+                if (rest == re) next
+                if (!inserted && verdict != "") {
+                    printf "%-7s %s%s\n", verdict, re, note
+                    inserted = 1
+                }
+            }
+            print line
+        }
+        END {
+            if (!inserted && verdict != "")
+                printf "%-7s %s%s\n", verdict, re, note
+        }
+    ' "$HYPR_POLICY_LOCAL" > "$tmp" && mv "$tmp" "$HYPR_POLICY_LOCAL"
+}
+
+set_verdict() {
+    local verdict=$1 class re
+    class=$(resolve_class "${2:-}") || exit 1
+    re=$(hypr_policy_regex "$class")
+    write_rule "$verdict" "$re"
+    case $verdict in
+        always) say "$class → maximize on open" ;;
+        leave)  say "$class → opens at its own size" ;;
+        never)  say "$class → left alone, size not remembered" ;;
+    esac
+}
+
+cmd=${1:-show}
+case $cmd in
+    show)
+        class=$(resolve_class "${2:-}") || exit 1
+        IFS=$'\t' read -r verdict re file < <(hypr_policy_for "$class" verbose)
+        printf 'class    %s\n' "$class"
+        printf 'verdict  %s\n' "$verdict"
+        printf 'rule     %s\n' "$re"
+        printf 'from     %s\n' "$file"
+        geom=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-state/$(printf '%s' "$class" | tr '/' '_').json
+        if [[ -f $geom ]]; then
+            printf 'remembered %s\n' "$(jq -c '{width, height, x, y}' "$geom" 2>/dev/null)"
+            printf '         (a remembered size wins over the verdict above)\n'
+        else
+            printf 'remembered  nothing yet\n'
+        fi
+        ;;
+    list)
+        for f in "$HYPR_POLICY_LOCAL" "$HYPR_POLICY_BASE"; do
+            [[ -r $f ]] || continue
+            printf '\n== %s\n' "$f"
+            grep -nE '^[[:space:]]*(always|leave|never)[[:space:]]' "$f"
+        done
+        printf '\n== anything unmatched: leave (opens at the size it asks for)\n'
+        ;;
+    always|leave|never) set_verdict "$cmd" "${2:-}" ;;
+    toggle)
+        class=$(resolve_class "${2:-}") || exit 1
+        cur=$(hypr_policy_for "$class")
+        [[ $cur == always ]] && set_verdict leave "$class" || set_verdict always "$class"
+        ;;
+    forget)
+        class=$(resolve_class "${2:-}") || exit 1
+        write_rule "" "$(hypr_policy_regex "$class")"
+        geom=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-state/$(printf '%s' "$class" | tr '/' '_').json
+        rm -f "$geom"
+        say "$class → forgotten (rule and remembered size)"
+        ;;
+    -h|--help|help) usage ;;
+    *) die "unknown command '$cmd' (try --help)" ;;
+esac

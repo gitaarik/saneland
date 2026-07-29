@@ -1,0 +1,31 @@
+# saneland — auto-maximize policy for THIS machine. Git-ignored.
+#
+# Read before the tracked window-policy.conf, and first match wins, so
+# anything here overrides a shipped default. Same format:
+#
+#     always   maximize on open      leave   keep the size it asked for
+#     never    don't touch it at all, and never remember its geometry
+#
+# You rarely need to edit this by hand. Focus a window and press mod+Alt+m to
+# flip its class between `always` and `leave`; `hypr-window-policy always`,
+# `... leave`, `... never` and `... forget` do the same from a shell, and
+# `hypr-window-policy list` prints the effective table.
+#
+# Two things worth knowing before you add rules:
+#
+#   * You may not need one. Sizes are remembered per class — resize a window
+#     once and it comes back that way. A rule is for the FIRST launch, before
+#     there is anything to remember.
+#   * Overriding a family works: the tracked file maximizes browsers as a
+#     group, and `leave ^chromium$` here exempts one of them.
+
+# Example — a file manager you want full-screen, and one app from a family
+# you'd rather keep small:
+#
+# always  ^org\.gnome\.Nautilus$
+# leave   ^vlc$
+
+# Lines the daemon writes itself land under this heading: when a maximize is
+# refused by the client (a fixed-size dialog silently keeps its own size),
+# the class is demoted to `leave` so it stops trying. It will not overwrite a
+# rule you wrote — an explicit choice of yours always stands.

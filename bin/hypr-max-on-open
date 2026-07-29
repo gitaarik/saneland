@@ -3,13 +3,25 @@
 # Listen for Hyprland window events and:
 #
 #   - On open: restore the window's last saved geometry for its class
-#     (KWin-style "remember window size/position"). If there's no
-#     saved geometry, fall back to the existing daemon policy:
-#       1. policy_skip_class_re  — never touch (e.g. Tor Browser)
-#       2. no_size_hint_class_re — sized via windowrule, skip here
-#       3. classify_by_title     — per-app "is this a main window?"
-#       4. first-of-class        — only window of its class -> maximize
-#       5. size heuristic        — both axes >= 60% work area -> main
+#     (KWin-style "remember window size/position"). With nothing remembered
+#     yet, the window is maximized only if the auto-maximize policy says
+#     `always` for its class:
+#       1. policy `never`    -> don't touch it at all
+#       2. classify_by_title -> per-app "is this a main window?"; a known
+#                               popup title is left alone even for an
+#                               `always` class (browser PiP, Library, …)
+#       3. remembered geometry, if any — it always wins over the policy
+#       4. policy `always`   -> maximize. For a second-or-later window of
+#                               the class, only if it also opened large
+#                               (>= 60% of the work area on both axes)
+#     Anything else keeps the size it asked for. The policy lives in
+#     ~/.config/hypr/window-policy.conf (+ .local.conf); read the header
+#     there for why "unlisted" means leave alone rather than guess.
+#
+#   - On resize: persist the new geometry once it has held still for two
+#     poll ticks, so a mod+c or a drag-resize sticks immediately instead of
+#     only at close time. Hyprland's event socket has no resize event, so
+#     the clients poll below doubles as the change detector.
 #
 #   - On close: save the window's geometry to a per-class file at
 #     ~/.cache/hypr-window-state/<class>.json, using classify_by_title
@@ -55,20 +67,17 @@ mkdir -p "$state_dir"
 grace_dir=$state_dir/opening
 mkdir -p "$grace_dir"
 
-# Policy skip: never maximize, never persist. Tor Browser specifically
-# because window dimensions feed fingerprinting.
-policy_skip_class_re='^(Tor Browser)$'
-
-# Apps that ship no size signal on open — initial commit is wrong, so
-# the size heuristic can't be trusted. They get explicit sizes via
-# `windowrule = size W H` in hyprland.conf and we skip here so we
-# don't override that.
-no_size_hint_class_re='^([Bb]lueman-manager|pavucontrol)$'
-
+# Which classes may be maximized is data, not code: hypr_policy_for (in
+# hypr-window-lib.sh) reads ~/.config/hypr/window-policy{,.local}.conf and
+# answers always | leave | never. The two regexes that used to live here are
+# rules in those files now — `never ^Tor Browser$`, and `leave` for the
+# blueman/pavucontrol dialogs that hyprland.conf sizes with a windowrule.
+#
 # Fraction of the work area each axis must reach for a window to count
-# as "main" in the open-time size heuristic. NOT used at close time —
-# saving is gated by classify_by_title + last-of-class instead, so
-# snapped windows (50% on one axis) are still saved.
+# as "main" in the open-time size heuristic. Only consulted for a second-
+# or-later window of an `always` class — a first window is taken at its
+# word. NOT used at close time: saving is gated by classify_by_title +
+# last-of-class instead, so snapped windows (50% on one axis) are saved.
 main_threshold=0.6
 
 # Per-class title classifier. Returns:
@@ -130,9 +139,6 @@ geom_schema_version=2
 # 0 on success, 1 if there's no usable saved file (or class is denied).
 apply_saved_geometry() {
     local class=$1 addr=$2
-    [[ $class =~ $policy_skip_class_re ]] && return 1
-    [[ $class =~ $no_size_hint_class_re ]] && return 1
-
     local saved=$state_dir/"$(class_to_filename "$class")".json
     [[ -f $saved ]] || return 1
 
@@ -184,19 +190,112 @@ save_geometry() {
         > "$saved.tmp" && mv "$saved.tmp" "$saved"
 }
 
-# Restore saved geometry or maximize as fallback.
-apply_or_maximize() {
-    local class=$1 addr=$2
-    apply_saved_geometry "$class" "$addr" || hypr_set_max "$addr"
+# Maximize, then check that it actually took.
+#
+# A window with fixed size constraints — a GTK dialog built with
+# resizable=false, so min_size == max_size — silently keeps its own size, and
+# Hyprland reports the client's real geometry rather than the box we asked
+# for. (Measured: a zenity dialog stays 300x226 through a full work-area
+# resize.) The window ends up right either way, but it flashes on the way,
+# and there is no point repeating that on every single open. So record the
+# class as `leave` and stop trying.
+#
+# It will not overwrite a rule you wrote yourself — see policy_learn.
+maximize_checked() {
+    local class=$1 addr=$2 w h
+    hypr_set_max "$addr" || return 1
+    sleep 0.25
+    read -r w h < <(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr" \
+        '.[] | select(.address == $a) | "\(.size[0]) \(.size[1])"')
+    [[ -z ${w:-} || $w == null ]] && return 0        # closed again already
+    hypr_work_area_for "$addr" || return 0
+    if (( w * 10 < WORK_W * 9 || h * 10 < WORK_H * 9 )); then
+        policy_learn "$class" "kept ${w}x${h} of ${WORK_W}x${WORK_H}"
+    fi
 }
 
-# Background poller: refresh the clients cache every 2s so closewindow
-# has something to look up after the window is gone from Hyprland.
+# Demote a class to `leave` in the local policy file. Only ever writes when
+# the class has no rule of its own there: an explicit choice of yours — set by
+# hand or with mod+Alt+m — outranks anything the daemon infers, even when that
+# means it keeps trying and failing. Family patterns in the tracked file are
+# fair game, which is the case this exists for: one app inside `always
+# ^(signal|element|discord|…)$` that can't be resized.
+policy_learn() {
+    local class=$1 why=$2 re
+    re=$(hypr_policy_regex "$class")
+    # Compare rule text literally — the rule IS a regex, so grepping for it
+    # would match on its own metacharacters rather than on the class.
+    if [[ -r $HYPR_POLICY_LOCAL ]] && awk -v re="$re" '
+            { l = $0; sub(/[[:space:]]#.*$/, "", l) }
+            l ~ /^[[:space:]]*(always|leave|never)[[:space:]]/ {
+                sub(/^[[:space:]]*[a-z]+[[:space:]]+/, "", l)
+                sub(/[[:space:]]+$/, "", l)
+                if (l == re) { found = 1; exit }
+            }
+            END { exit !found }
+        ' "$HYPR_POLICY_LOCAL"; then
+        return 0
+    fi
+    mkdir -p "$(dirname "$HYPR_POLICY_LOCAL")"
+    printf 'leave   %-40s # learned: refused maximize, %s\n' "$re" "$why" \
+        >> "$HYPR_POLICY_LOCAL"
+}
+
+# Persist a geometry observed by the poller below. Same gates as the
+# close-time save, so a Thunderbird event-details popup still can't overwrite
+# the main mail window's size just by being dragged around.
+persist_geometry() {
+    local class=$1 title=$2 geom=$3 mon=$4 count=$5
+    [[ $(hypr_policy_for "$class") == never ]] && return 0
+    classify_by_title "$class" "$title"
+    case $? in
+        1) return 0 ;;                        # popup -> never remembered
+        2) (( count <= 1 )) || return 0 ;;     # ambiguous -> only when it's alone
+    esac
+    local wh=${geom%%+*} xy=${geom#*+}         # WxH+X+Y, X may be negative
+    save_geometry "$class" "${wh%%x*}" "${wh##*x}" "${xy%%+*}" "${xy##*+}" "$mon"
+}
+
+# Background poller. Two jobs:
+#
+#   1. Refresh the clients cache every 2s, so the closewindow handler has
+#      something to look up after Hyprland has already dropped the window.
+#
+#   2. Notice geometry changes and persist them, so a mod+c or a drag-resize
+#      sticks straight away instead of only when the window closes. Hyprland's
+#      event socket has no resize event — polling is the only way to see one.
+#
+# A change is written only after it has held still for two consecutive ticks
+# (~4s), so a drag in progress or a quick mod+m there-and-back isn't recorded.
+# The first sighting of a window is its baseline, so a window you never touch
+# is never written from here — it still goes through the close-time path with
+# its last-of-class gate. Addresses are pruned every tick; a long uptime would
+# otherwise accumulate an entry per window ever opened.
 (
+    declare -A base pend cur
     while sleep 2; do
-        if hyprctl -j clients > "$cache_file.tmp" 2>/dev/null; then
-            mv "$cache_file.tmp" "$cache_file"
-        fi
+        snap=$(hyprctl -j clients 2>/dev/null) || continue
+        printf '%s' "$snap" > "$cache_file.tmp" && mv "$cache_file.tmp" "$cache_file"
+
+        cur=()
+        while IFS=$'\t' read -r a cls ttl geom mon count; do
+            [[ -z $a ]] && continue
+            cur[$a]=1
+            if [[ -z ${base[$a]:-} ]]; then base[$a]=$geom; continue; fi
+            if [[ $geom == "${base[$a]}" ]]; then unset 'pend[$a]'; continue; fi
+            if [[ ${pend[$a]:-} != "$geom" ]]; then pend[$a]=$geom; continue; fi
+            base[$a]=$geom
+            unset 'pend[$a]'
+            persist_geometry "$cls" "$ttl" "$geom" "$mon" "$count"
+        done < <(jq -r '
+            (map(.class) | group_by(.) | map({key: .[0], value: length}) | from_entries) as $n
+            | .[] | [ .address, .class, .title,
+                      "\(.size[0])x\(.size[1])+\(.at[0])+\(.at[1])",
+                      .monitor, $n[.class] ] | @tsv' <<<"$snap")
+
+        for a in "${!base[@]}"; do
+            [[ -n ${cur[$a]:-} ]] || unset 'base[$a]' 'pend[$a]'
+        done
     done
 ) &
 poller_pid=$!
@@ -221,20 +320,31 @@ ncat -U "$sock" | while IFS= read -r line; do
             touch "$grace_dir/$addr_full"
             ( sleep 2; rm -f "$grace_dir/$addr_full" ) &
 
-            [[ $class =~ $policy_skip_class_re  ]] && continue
-            [[ $class =~ $no_size_hint_class_re ]] && continue
+            verdict=$(hypr_policy_for "$class")
+            [[ $verdict == never ]] && continue
 
             classify_by_title "$class" "$title"
             case $? in
-                0)  # main: restore saved geom, else maximize
+                0)  # main window: remembered geometry, else the policy
                     (sleep 0.05
-                     apply_or_maximize "$class" "$addr_full") &
+                     apply_saved_geometry "$class" "$addr_full" && exit 0
+                     [[ $verdict == always ]] && maximize_checked "$class" "$addr_full") &
                     continue ;;
                 1)  continue ;;
             esac
 
             (
                 sleep 0.05
+
+                # A remembered size beats the policy either way — it is a
+                # decision you already made about this exact class.
+                apply_saved_geometry "$class" "$addr_full" && exit 0
+
+                # Nothing remembered and no `always` rule: leave it at the
+                # size it asked for. This is the common case for an app being
+                # opened for the first time, and it is why a file chooser or a
+                # password prompt no longer comes up filling the screen.
+                [[ $verdict == always ]] || exit 0
 
                 # First-of-class: count windows currently sharing this
                 # class. The new window is already in the list, so
@@ -243,7 +353,7 @@ ncat -U "$sock" | while IFS= read -r line; do
                     '[.[] | select(.class == $c)] | length')
 
                 if (( count <= 1 )); then
-                    apply_or_maximize "$class" "$addr_full"
+                    maximize_checked "$class" "$addr_full"
                     exit 0
                 fi
 
@@ -281,7 +391,7 @@ ncat -U "$sock" | while IFS= read -r line; do
 
                 [[ $is_main == 0 ]] && exit 0
 
-                apply_or_maximize "$class" "$addr_full"
+                maximize_checked "$class" "$addr_full"
             ) &
             ;;
 
@@ -346,8 +456,7 @@ ncat -U "$sock" | while IFS= read -r line; do
             class=$(echo "$client" | jq -r '.class')
             title=$(echo "$client" | jq -r '.title')
 
-            [[ $class =~ $policy_skip_class_re  ]] && continue
-            [[ $class =~ $no_size_hint_class_re ]] && continue
+            [[ $(hypr_policy_for "$class") == never ]] && continue
 
             classify_by_title "$class" "$title"
             verdict=$?
