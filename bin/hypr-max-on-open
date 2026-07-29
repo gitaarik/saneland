@@ -2,15 +2,19 @@
 #
 # Listen for Hyprland window events and:
 #
-#   - On open: restore the window's last saved geometry for its class
-#     (KWin-style "remember window size/position"). With nothing remembered
-#     yet, the window is maximized only if the auto-maximize policy says
+#   - On open: restore the window's last saved geometry for its class ON THE
+#     SCREEN IT OPENED ON (KWin-style "remember window size/position", per
+#     monitor). With nothing remembered yet, the window is maximized only if
+#     the auto-maximize policy says
 #     `always` for its class:
 #       1. policy `never`    -> don't touch it at all
 #       2. classify_by_title -> per-app "is this a main window?"; a known
 #                               popup title is left alone even for an
 #                               `always` class (browser PiP, Library, …)
-#       3. remembered geometry, if any — it always wins over the policy
+#       3. remembered geometry, if any — it always wins over the policy.
+#                               This screen's entry if there is one, else the
+#                               newest entry from any screen, re-read for this
+#                               one by reanchor_axis
 #       4. policy `always`   -> maximize. For a second-or-later window of
 #                               the class, only if it also opened large
 #                               (>= 60% of the work area on both axes)
@@ -29,8 +33,9 @@
 #     silently instead — that is Hyprland reshuffling outputs, not you.
 #
 #   - On close: save the window's geometry to a per-class file at
-#     ~/.cache/hypr-window-state/<class>.json, using classify_by_title
-#     to decide:
+#     ~/.cache/hypr-window-state/<class>.json — under the name of the monitor
+#     it was on, leaving the other screens' entries untouched — using
+#     classify_by_title to decide:
 #       0 (main)    -> save unconditionally
 #       1 (popup)   -> don't save
 #       2 (default) -> save only if it was the last window of its class
@@ -162,18 +167,86 @@ class_to_filename() {
     printf '%s' "$1" | tr '/' '_'
 }
 
-# Saved-geometry schema version. v1 stored x/y as GLOBAL coordinates, which
-# only worked on a single monitor at 0x0: a window closed on a second output
-# saved an x beyond the laptop's width and, once undocked, was restored
-# off-screen where it couldn't be reached. v2 stores x/y RELATIVE to the work
-# area of the monitor the window was on, so the geometry means the same thing
-# on any output. v1 files are discarded (fall back to maximize) and rewritten
-# as v2 on the next close — no migration needed.
-geom_schema_version=2
+# Saved-geometry schema version.
+#
+#   v1  x/y as GLOBAL coordinates. Only ever worked on a single monitor at 0x0:
+#       a window closed on a second output saved an x beyond the laptop's
+#       width and, once undocked, came back off-screen where it couldn't be
+#       reached.
+#   v2  x/y RELATIVE to the work area of the monitor the window was on, so a
+#       position means the same thing on any output. The SIZE was still one
+#       number for the whole class, which two screens of different sizes
+#       cannot share: a browser closed maximized on the laptop reopened
+#       1440x930 on the 1920-wide Dell, and maximizing it there made every
+#       later laptop window 1920 wide (clamped back to 1440, which then
+#       overwrote the Dell's size again on the next close — a permanent
+#       ping-pong where neither screen ended up right).
+#   v3  one entry PER MONITOR, keyed by connector name, plus the work area it
+#       was measured against:
+#         {v:3, last:"eDP-1", mons:{"eDP-1":{width,height,x,y,aw,ah}, …}}
+#       A window opening on a screen it has been on before gets that screen's
+#       own geometry. On a screen it has never been on, the most recently
+#       saved entry is REINTERPRETED for this one via reanchor_axis — aw/ah is
+#       what makes that possible, because it turns "1440 px wide" back into
+#       "as wide as the screen".
+#
+# v1 is discarded (fall back to maximize). v2 is still read — as a single
+# monitor-less entry, restored exactly as it was before, so an existing cache
+# keeps working — and upgraded to v3 the next time the window is saved.
+geom_schema_version=3
 
 # How close a window has to land to count as "the geometry took" (px). A few
 # px of slack absorbs fractional-scale rounding.
 geom_tolerance=4
+
+# How close an edge has to be to a work-area boundary or midline to count as
+# sitting ON it, when re-reading a geometry for a different-sized screen.
+# Bigger than geom_tolerance because hypr-snap-window insets a snap by its 3px
+# border on every side: a half is work_w/2 - 6 wide and a snapped full height
+# is work_h - 6, both of which still mean "half" and "full".
+edge_tolerance=8
+
+# Re-express one axis of a saved geometry (extent $1 at offset $2, measured in
+# a work area of $3) for a work area of $4. Prints "<extent> <offset>".
+#
+# The saved numbers are pixels, but what they MEANT is a relationship to the
+# screen — filling it, half of it, centred in it. Pixels don't survive the trip
+# to another monitor; the relationship does. So each edge is matched against
+# the boundaries and the midline, and when both edges land on one the geometry
+# is rebuilt from the new screen's equivalents, keeping whatever inset it had
+# (which is what reproduces hypr-snap-window's 3px border exactly).
+#
+# An edge that matches nothing means a size you dialled in by hand, and that IS
+# meant literally — a window you shrank to 900px wants to be 900px wide on the
+# 4K screen too, not 60% of it. Only the position is remapped, proportionally
+# to the free space around it, so a centred window stays centred and one parked
+# against an edge stays there.
+reanchor_axis() {
+    awk -v s="$1" -v p="$2" -v A="$3" -v B="$4" -v tol="$edge_tolerance" '
+        # Map an old coordinate onto the new work area, or set ok=0 if it is
+        # not on a boundary/midline. Returns the new coordinate.
+        function edge(v,   d) {
+            ok = 1
+            if (v <= tol) return v                                  # start
+            d = A - v;     if (d <= tol && d >= -tol) return B - d   # end
+            d = v - A / 2; if (d <= tol && d >= -tol) return B / 2 + d
+            ok = 0
+            return 0
+        }
+        BEGIN {
+            a = edge(p);     oka = ok
+            b = edge(p + s); okb = ok
+            if (oka && okb && b - a >= 1) {
+                np = a; ns = b - a
+            } else {
+                ns = (s < B ? s : B)
+                np = (A - s > 0) ? p * (B - ns) / (A - s) : 0
+            }
+            if (np < 0) np = 0
+            if (np + ns > B) np = B - ns
+            printf "%d %d\n", int(ns + 0.5), int(np + 0.5)
+        }'
+}
 
 # When to re-check after applying a geometry, in seconds. Cumulative ~2.4s
 # worst case, but the loop stops at the first check that matches — a client
@@ -226,21 +299,34 @@ apply_saved_geometry() {
     local saved=$state_dir/"$(class_to_filename "$class")".json
     [[ -f $saved ]] || return 1
 
-    local v w h x y
-    v=$(jq -r '.v // 0' "$saved" 2>/dev/null)
-    [[ $v == "$geom_schema_version" ]] || return 1
-
-    w=$(jq -r '.width  // empty' "$saved" 2>/dev/null)
-    h=$(jq -r '.height // empty' "$saved" 2>/dev/null)
-    x=$(jq -r '.x      // empty' "$saved" 2>/dev/null)
-    y=$(jq -r '.y      // empty' "$saved" 2>/dev/null)
-
-    [[ -z $w || -z $h || -z $x || -z $y ]] && return 1
-
-    # Re-anchor the relative geometry onto whichever monitor the window
-    # actually opened on, and clamp it to fit: a window saved maximized on the
-    # 4K output would otherwise come back 3840px wide on a 1440px-wide laptop.
+    # The monitor comes first now: which entry we want depends on which screen
+    # the window opened on. (WORK_MON is set by hypr_work_area.)
     hypr_work_area_for "$addr" || return 1
+
+    # This screen's own entry, else the one saved most recently on any screen,
+    # else a v2 file's single geometry. aw/ah default to 0, meaning "no idea
+    # what screen this came from" — take it literally, as v2 always did.
+    local entry w h x y aw ah
+    entry=$(jq -r --arg mon "$WORK_MON" '
+        (if   (.v? // 0) == 3 then (.mons[$mon] // .mons[.last // ""] // empty)
+         elif (.v? // 0) == 2 then {width, height, x, y}
+         else empty end)
+        | select((.width | type) == "number" and (.height | type) == "number"
+                 and (.x | type) == "number" and (.y | type) == "number")
+        | [.width, .height, .x, .y, (.aw // 0), (.ah // 0)] | @tsv' \
+        "$saved" 2>/dev/null)
+    [[ -z $entry ]] && return 1
+    IFS=$'\t' read -r w h x y aw ah <<<"$entry"
+
+    # Saved on a screen of a different size — read it as what it meant there
+    # (filled it, half of it, centred in it) rather than as raw pixels.
+    if (( aw > 0 && ah > 0 )) && (( aw != WORK_W || ah != WORK_H )); then
+        read -r w x < <(reanchor_axis "$w" "$x" "$aw" "$WORK_W")
+        read -r h y < <(reanchor_axis "$h" "$y" "$ah" "$WORK_H")
+    fi
+
+    # Clamp to fit: a v2 geometry saved maximized on the 4K output would
+    # otherwise come back 3840px wide on a 1440px-wide laptop.
     (( w > WORK_W )) && w=$WORK_W
     (( h > WORK_H )) && h=$WORK_H
     (( x < 0 )) && x=0
@@ -264,6 +350,11 @@ apply_saved_geometry() {
 
 # x/y arrive as global coordinates (straight off `hyprctl clients`.at) and are
 # stored relative to mon_id's work-area origin — see geom_schema_version.
+#
+# Writes only THIS monitor's entry and leaves the other screens' alone, so
+# maximizing a browser on the Dell can't shrink it on the laptop. The work area
+# it was measured in is stored alongside, which is what lets the entry be
+# re-read for a screen it has never been on.
 save_geometry() {
     local class=$1 w=$2 h=$3 x=$4 y=$5 mon_id=$6
     local saved=$state_dir/"$(class_to_filename "$class")".json
@@ -274,10 +365,23 @@ save_geometry() {
         hypr_work_area || return 1
     fi
 
-    jq -n --argjson v "$geom_schema_version" \
+    # Carry over the other monitors' entries. Anything older than v3 is
+    # dropped rather than migrated: there is no record of which screen it came
+    # from, and guessing "this one" would put the laptop's size under the
+    # Dell's name. It has already been restored from by then anyway.
+    local prev
+    prev=$(jq -c 'if (.v? // 0) == 3 then (.mons // {}) else {} end' "$saved" 2>/dev/null) \
+        || prev='{}'
+    [[ -z $prev || $prev == null ]] && prev='{}'
+
+    jq -n --argjson v "$geom_schema_version" --arg mon "$WORK_MON" \
+          --argjson prev "$prev" \
           --argjson w "$w" --argjson h "$h" \
           --argjson x "$(( x - WORK_X ))" --argjson y "$(( y - WORK_Y ))" \
-        '{v: $v, width: $w, height: $h, x: $x, y: $y}' \
+          --argjson aw "$WORK_W" --argjson ah "$WORK_H" \
+        '{v: $v, last: $mon,
+          mons: ($prev + {($mon): {width: $w, height: $h, x: $x, y: $y,
+                                   aw: $aw, ah: $ah}})}' \
         > "$saved.tmp" && mv "$saved.tmp" "$saved"
 }
 

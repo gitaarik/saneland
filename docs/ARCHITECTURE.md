@@ -154,9 +154,10 @@ new window should be. In order:
    non-browsing window of the same class overwrites the real window's geometry
    just by closing after it. A detached Bitwarden extension popup did exactly
    that, leaving every browser start at a centred 1152x744.
-3. **Remembered geometry** for the class, from
+3. **Remembered geometry** for the class *on the screen it opened on*, from
    `~/.cache/hypr-window-state/<class>.json`. This always wins: it is a
-   decision you already made about this exact app.
+   decision you already made about this exact app. See "one geometry per
+   screen" below.
 4. **`always`** in the policy — maximize to the work area of the monitor the
    window opened on. For a second-or-later window of the same class it must
    *also* have opened at ≥60% of the work area, which is what keeps a
@@ -219,6 +220,44 @@ Two self-corrections keep the list small:
   next 5s the poller *adopts* each new geometry as its baseline instead of
   writing it (so nothing is written when the window closes either), and the
   close-time save is skipped as well.
+
+**One remembered geometry per screen.** A size in pixels means different things
+on different monitors, so one number per class cannot serve two of them. With a
+single entry (schema v2), a browser closed maximized on the 1440-wide laptop
+reopened 1440 wide on the 1920-wide Dell; maximizing it there wrote 1920 back
+for every screen, which the laptop then clamped to 1440 on the next open and
+saved again — a permanent ping-pong in which neither screen was ever right.
+
+Schema v3 keys the geometry by connector name and records the work area it was
+measured in:
+
+```json
+{"v": 3, "last": "eDP-1", "mons": {
+  "eDP-1": {"width": 1440, "height": 930, "x": 0, "y": 0, "aw": 1440, "ah": 930},
+  "DP-2":  {"width": 954, "height": 1044, "x": 963, "y": 3, "aw": 1920, "ah": 1050}}}
+```
+
+A window opening on a screen it has been on before gets that screen's own
+geometry, and closing it there writes only that screen's entry. On a screen it
+has *never* been on, the most recent entry is reinterpreted for this one by
+`reanchor_axis`, which is what `aw`/`ah` are for: they turn "1440 px wide" back
+into "as wide as the screen". Per axis, each edge of the saved geometry is
+matched against the work-area boundaries and the midline; if both land on one,
+the geometry is rebuilt from this screen's equivalents, keeping whatever inset
+it had — which reproduces `hypr-snap-window`'s 3px border exactly, so a right
+half on the Dell reopens as a right half on the laptop. (That inset is also why
+the tolerance here is 8px and not `geom_tolerance`: a snapped half is
+`work_w/2 - 6` wide and still means "half".)
+
+An edge matching nothing is a size you dialled in by hand, and that is meant
+literally — a window you shrank to 900px wants to be 900px on the 4K screen
+too, not 60% of it. Only its position is remapped, proportionally to the free
+space around it, so a centred window stays centred and one parked against an
+edge stays there.
+
+v2 files are still read, as a single screen-less entry restored exactly as
+before, and are upgraded the next time the window is saved — no cache wipe.
+`hypr-window-policy show <class>` prints one line per screen.
 
 ## hyprbars
 

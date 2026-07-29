@@ -84,6 +84,9 @@ hypr_policy_regex() {
 #   WORK_X, WORK_Y  work-area origin in Hyprland's GLOBAL logical coordinate
 #                   space — the monitor's own position plus its reserved
 #                   left/top zones.
+#   WORK_MON        the monitor's connector name (eDP-1, DP-2, …), so callers
+#                   can key per-screen state off the same monitor they just
+#                   measured — see hypr-max-on-open's saved geometry.
 #
 # WORK_X/WORK_Y matter: Hyprland addresses every monitor in one global
 # coordinate space, so movewindowpixel's origin is NOT the current monitor's
@@ -133,6 +136,7 @@ hypr_work_area() {
 
     # .x/.y and .reserved[] are already logical px; only .width/.height are
     # physical and need the scale divide.
+    WORK_MON=$mon_name
     WORK_X=$(( mon_x + res_l ))
     WORK_Y=$(( mon_y + res_t ))
     WORK_W=$(awk -v w="$mw" -v s="$scale" -v l="$res_l" -v r="$res_r" \

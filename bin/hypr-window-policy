@@ -114,8 +114,14 @@ case $cmd in
         printf 'rule     %s\n' "$re"
         printf 'from     %s\n' "$file"
         geom=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-state/$(printf '%s' "$class" | tr '/' '_').json
+        # One entry per monitor since v3 — print them all, so it's obvious why
+        # the same app comes up at different sizes on different screens.
         if [[ -f $geom ]]; then
-            printf 'remembered %s\n' "$(jq -c '{width, height, x, y}' "$geom" 2>/dev/null)"
+            jq -r 'if (.v? // 0) == 3
+                   then (.mons // {}) | to_entries[]
+                        | "remembered \(.key)\t\(.value.width)x\(.value.height)+\(.value.x)+\(.value.y)"
+                   else "remembered (any screen)\t\(.width)x\(.height)+\(.x)+\(.y)"
+                   end' "$geom" 2>/dev/null | column -t -s $'\t'
             printf '         (a remembered size wins over the verdict above)\n'
         else
             printf 'remembered  nothing yet\n'
