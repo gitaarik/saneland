@@ -292,6 +292,34 @@ apply_and_settle() {
     return 1
 }
 
+# Guess the work area a v2 geometry was saved in, given its size. Prints
+# "<width> <height>", or "0 0" if nothing fits.
+#
+# A v2 entry records no monitor, so on its own it can only be taken literally —
+# and a class that is never re-saved stays that way forever. Saving is gated on
+# last-of-class for anything classify_by_title calls `default`, so a terminal or
+# a chat app you always keep one window of is never written again and never
+# upgrades: kitty sat at v2 1440x930 and kept opening laptop-sized on the Dell
+# long after the browser had sorted itself out.
+#
+# A geometry must have FIT on the screen it was saved on, so the smallest
+# connected work area it fits in is the best candidate — and for the case that
+# actually matters, something saved filling its screen, it is exact: a
+# maximized-on-the-Dell 1920x1050 doesn't fit the laptop at all. The guess can
+# be wrong for a window that merely happens to be laptop-sized on the Dell, and
+# that is fine: it is one-time legacy data, replaced by a real v3 entry the
+# first time the window is saved.
+infer_work_area() {
+    local w=$1 h=$2 id best_w=0 best_h=0
+    while read -r id; do
+        hypr_work_area "$id" || continue
+        (( WORK_W < w || WORK_H < h )) && continue
+        (( best_w == 0 || WORK_W * WORK_H < best_w * best_h )) \
+            && { best_w=$WORK_W; best_h=$WORK_H; }
+    done < <(hyprctl -j monitors 2>/dev/null | jq -r '.[].id')
+    printf '%d %d\n' "$best_w" "$best_h"
+}
+
 # Try to apply previously saved geometry for the given class. Returns
 # 0 on success, 1 if there's no usable saved file (or class is denied).
 apply_saved_geometry() {
@@ -317,6 +345,12 @@ apply_saved_geometry() {
         "$saved" 2>/dev/null)
     [[ -z $entry ]] && return 1
     IFS=$'\t' read -r w h x y aw ah <<<"$entry"
+
+    # aw/ah of 0 means a v2 entry: no screen recorded, so work out which one it
+    # must have been. (hypr_work_area clobbers WORK_*, hence the subshell.)
+    if (( aw == 0 || ah == 0 )); then
+        read -r aw ah < <(infer_work_area "$w" "$h")
+    fi
 
     # Saved on a screen of a different size — read it as what it meant there
     # (filled it, half of it, centred in it) rather than as raw pixels.
@@ -512,9 +546,25 @@ persist_geometry() {
     done
 ) &
 poller_pid=$!
-trap 'kill $poller_pid 2>/dev/null' EXIT INT TERM
 
-ncat -U "$sock" | while IFS= read -r line; do
+# Read the event stream over fd 3 instead of piping it into `while`. Bash defers
+# a signal trap until the current foreground command finishes, and a pipeline of
+# external commands never gets interrupted — so `kill <daemon>` did nothing at
+# all (it took kill -9, or killing the whole process group so that ncat got the
+# signal too and the pipeline ended on its own). Reading from a fd leaves the
+# shell blocked in the `read` BUILTIN, which a signal does interrupt. It also
+# runs the loop in this shell rather than a pipeline subshell, so there is one
+# process fewer to lose track of.
+exec 3< <(ncat -U "$sock")
+ncat_pid=$!
+
+# Two traps, not one on EXIT INT TERM: a signal trap that does not exit simply
+# resumes the script. `exit` here re-triggers the EXIT trap, which is the one
+# that reaps the children.
+trap 'kill $poller_pid $ncat_pid 2>/dev/null' EXIT
+trap 'exit' INT TERM
+
+while IFS= read -r line <&3; do
     case "$line" in
         openwindow*)
             # Format: openwindow>>ADDRESS,WORKSPACE,CLASS,TITLE

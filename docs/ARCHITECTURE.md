@@ -255,8 +255,18 @@ too, not 60% of it. Only its position is remapped, proportionally to the free
 space around it, so a centred window stays centred and one parked against an
 edge stays there.
 
-v2 files are still read, as a single screen-less entry restored exactly as
-before, and are upgraded the next time the window is saved — no cache wipe.
+v2 files are still read and are upgraded the next time the window is saved — no
+cache wipe. But "the next save" never comes for a class `classify_by_title`
+calls *default*, because those are only written when the last window of the
+class closes: a terminal or a chat app you always keep one window of stays v2
+forever, and kitty went on opening laptop-sized on the Dell long after the
+browser had sorted itself out. So a v2 entry's screen is inferred instead — a
+geometry must have *fit* on the monitor it was saved on, so the smallest
+connected work area it fits in is the candidate, which for the case that
+matters (something saved filling its screen) is exact. The guess can be wrong
+for a window that merely happens to be laptop-sized on the Dell, and that is
+fine: it is legacy data, replaced by a real v3 entry the first time it saves.
+
 `hypr-window-policy show <class>` prints one line per screen.
 
 ## hyprbars
