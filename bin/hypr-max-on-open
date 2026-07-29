@@ -17,6 +17,9 @@
 #     Anything else keeps the size it asked for. The policy lives in
 #     ~/.config/hypr/window-policy.conf (+ .local.conf); read the header
 #     there for why "unlisted" means leave alone rather than guess.
+#     Whatever geometry comes out of that is then RE-ASSERTED until the
+#     client actually holds it — see apply_and_settle; a window that is
+#     still sizing itself will otherwise pocket half of what we asked for.
 #
 #   - On resize: persist the new geometry once it has held still for two
 #     poll ticks, so a mod+c or a drag-resize sticks immediately instead of
@@ -94,8 +97,20 @@ classify_by_title() {
             # window of a browser class is a real browsing window and gets
             # maximized. Add your browser's window-class above if missing
             # (find it with `hyprctl clients | grep class`).
+            #
+            # "main" here means saved UNCONDITIONALLY, with no last-of-class
+            # gate — a browser's size must be remembered even while other
+            # browser windows are open. So anything in this class that ISN'T a
+            # browsing window has to be caught here, or it overwrites the real
+            # window's size just by closing after it. An extension popup
+            # detached into its own window (`Extension: (Bitwarden Password
+            # Manager) — Waterfox`) did exactly that: it left waterfox.json
+            # holding a centred 1152x744, and every browser start came back
+            # that size.
             [[ $title == "Library" \
             || $title == About* \
+            || $title == Extension:\ * \
+            || $title == *"Sharing Indicator" \
             || $title == "Picture-in-Picture" \
             || $title == "Picture in picture" ]] && return 1
             return 0
@@ -135,6 +150,54 @@ class_to_filename() {
 # as v2 on the next close — no migration needed.
 geom_schema_version=2
 
+# How close a window has to land to count as "the geometry took" (px). A few
+# px of slack absorbs fractional-scale rounding.
+geom_tolerance=4
+
+# When to re-check after applying a geometry, in seconds. Cumulative ~2.4s
+# worst case, but the loop stops at the first check that matches — a client
+# that simply obeys costs one extra `hyprctl clients` at 0.15s.
+geom_retry_delays=(0.15 0.35 0.7 1.2)
+
+# Apply a geometry and keep re-applying until it sticks. Returns 0 once the
+# window matches (or has closed), 1 if it never did.
+#
+# A window is still negotiating its own size for a moment after it maps, and
+# applying a geometry into the middle of that quietly loses. Under xdg-shell a
+# configure for a window that is neither maximized nor fullscreen is a
+# SUGGESTION — a client may commit whatever size it likes — so a browser that
+# is mid-startup just carries on to the size it had in mind. Firefox-family
+# browsers restore `sizemode=maximized` plus a stored size from their profile
+# and grow through several sizes in the first ~250ms:
+#
+#   openwindow                    (t+0)
+#    506x424 -> 756x424           the browser sizing itself
+#    asked for 1440x930           our apply lands mid-flight
+#   -> 1190x930                   height kept, width discarded. Final.
+#
+# The height survives because the client had finished with that axis; the width
+# is whatever the client was still heading for. That is the "comes back
+# maximized in height but not width" bug, and it's why one shot isn't enough.
+#
+# The retries double as the refusal test: a client that will NEVER comply (a
+# fixed-size dialog, min_size == max_size) still doesn't match after the last
+# attempt — that's the 1 that maximize_checked learns from. Waiting it out this
+# way is what keeps a slow-starting app from being mistaken for a fixed one.
+apply_and_settle() {
+    local addr=$1 w=$2 h=$3 x=$4 y=$5 d cw ch dw dh
+    hypr_apply_geom "$addr" "$w" "$h" "$x" "$y" || return 1
+    for d in "${geom_retry_delays[@]}"; do
+        sleep "$d"
+        read -r cw ch < <(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr" \
+            '.[] | select(.address == $a) | "\(.size[0]) \(.size[1])"')
+        [[ -z ${cw:-} || $cw == null ]] && return 0      # closed again already
+        dw=$(( cw - w )); dh=$(( ch - h ))
+        (( ${dw#-} <= geom_tolerance && ${dh#-} <= geom_tolerance )) && return 0
+        hypr_apply_geom "$addr" "$w" "$h" "$x" "$y"
+    done
+    return 1
+}
+
 # Try to apply previously saved geometry for the given class. Returns
 # 0 on success, 1 if there's no usable saved file (or class is denied).
 apply_saved_geometry() {
@@ -164,11 +227,18 @@ apply_saved_geometry() {
     (( x + w > WORK_W )) && x=$(( WORK_W - w ))
     (( y + h > WORK_H )) && y=$(( WORK_H - h ))
 
-    # hypr_apply_geom picks the border to match the restored size: a
-    # window saved at work-area size (a main window like a browser, which
-    # is saved maximized) comes back borderless, instead of wearing a
-    # stray active-border around an otherwise-maximized frame.
-    hypr_apply_geom "$addr" "$w" "$h" "$(( WORK_X + x ))" "$(( WORK_Y + y ))"
+    # hypr_apply_geom (inside apply_and_settle) picks the border to match the
+    # restored size: a window saved at work-area size (a main window like a
+    # browser, which is saved maximized) comes back borderless, instead of
+    # wearing a stray active-border around an otherwise-maximized frame.
+    #
+    # Always report success: the question this function answers is "was there a
+    # remembered geometry for this class", and there was. Whether the client
+    # could be talked all the way into it is a separate matter — returning 1
+    # here would send an `always` class on to maximize_checked and blow away the
+    # remembered size we just restored.
+    apply_and_settle "$addr" "$w" "$h" "$(( WORK_X + x ))" "$(( WORK_Y + y ))"
+    return 0
 }
 
 # x/y arrive as global coordinates (straight off `hyprctl clients`.at) and are
@@ -202,15 +272,23 @@ save_geometry() {
 #
 # It will not overwrite a rule you wrote yourself — see policy_learn.
 maximize_checked() {
-    local class=$1 addr=$2 w h
-    hypr_set_max "$addr" || return 1
-    sleep 0.25
+    local class=$1 addr=$2 w h aw ah ax ay
+    hypr_work_area_for "$addr" || return 1
+    aw=$WORK_W ah=$WORK_H ax=$WORK_X ay=$WORK_Y
+
+    # Same geometry and chrome hypr_set_max applies (hypr_apply_geom picks the
+    # `max` look at exactly work-area size), but re-asserted until it holds.
+    apply_and_settle "$addr" "$aw" "$ah" "$ax" "$ay" && return 0
+
+    # Every retry used up and it still isn't there. A client that was merely
+    # slow to start has long since caught up by now, so this one means it —
+    # but only treat a SUBSTANTIALLY smaller window as a refusal, or an app
+    # that lands a few px short would demote itself over nothing.
     read -r w h < <(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr" \
         '.[] | select(.address == $a) | "\(.size[0]) \(.size[1])"')
     [[ -z ${w:-} || $w == null ]] && return 0        # closed again already
-    hypr_work_area_for "$addr" || return 0
-    if (( w * 10 < WORK_W * 9 || h * 10 < WORK_H * 9 )); then
-        policy_learn "$class" "kept ${w}x${h} of ${WORK_W}x${WORK_H}"
+    if (( w * 10 < aw * 9 || h * 10 < ah * 9 )); then
+        policy_learn "$class" "kept ${w}x${h} of ${aw}x${ah}"
     fi
 }
 

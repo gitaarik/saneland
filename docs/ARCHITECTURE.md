@@ -13,10 +13,22 @@ from `gsettings`. Log into the "Hyprland (uwsm-managed)" session.
 
 ## The eww bar
 
-- Launched from `hyprland.conf` (`eww daemon` + `eww open bar`). Layout is
-  `eww.yuck`; shared styling in `_eww-common.scss`, per-theme palettes in
-  `eww-{dark,light}.scss` selected via the `eww.scss` symlink (flipped by
-  `theme`). Reload with `eww reload`.
+- Launched from `hyprland.conf` via `eww-bars.sh --watch`, which opens one bar
+  per monitor and re-syncs the set on hot-plug. Layout is `eww.yuck`; shared
+  styling in `_eww-common.scss`, per-theme palettes in `eww-{dark,light}.scss`
+  selected via the `eww.scss` symlink (flipped by `theme`). Reload with
+  `eww reload`.
+- **Exactly one eww daemon, brought up before any `eww open`.** eww auto-starts
+  a daemon for any command that finds no server, so opening N bars in a loop
+  from a cold start races N daemons into existence — the first hasn't bound the
+  socket by the time the second looks. Each ends up owning one bar, only the
+  last to bind is reachable, and `eww close` can never reach the others. Their
+  bars survive every sync, and when a monitor is unplugged gtk-layer-shell
+  simply moves the orphaned surface onto a remaining screen: two stacked bars,
+  `reserved` doubled to 60. `ensure_daemon` in `eww-bars.sh` starts the daemon
+  once and waits for `eww ping`, and kills a running-but-unreachable daemon
+  first (its surfaces are unreachable too, so nothing else ever cleans them
+  up). Check with `ss -xlp | grep eww` — more than one listener is this bug.
 - The workspace switcher (`tag`/`tags`) and per-workspace taskbar
   (`taskbar`/`task`) are both driven by `scripts/hypr-state.sh`, which reads
   the **`hypr-window-order` daemon's** state file. That daemon (started from
@@ -135,7 +147,13 @@ new window should be. In order:
 
 1. **`never`** in the policy (below) — don't touch it, don't remember it.
 2. **A known popup title** for that class (`classify_by_title`) — browser
-   Picture-in-Picture, Firefox's Library — left alone.
+   Picture-in-Picture, Firefox's Library, `Extension: …` windows, the sharing
+   indicator — left alone. This list also gates *saving*, and for browsers that
+   matters more than the sizing: a browser window is saved unconditionally (its
+   size must be remembered even while sibling windows are open), so any
+   non-browsing window of the same class overwrites the real window's geometry
+   just by closing after it. A detached Bitwarden extension popup did exactly
+   that, leaving every browser start at a centred 1152x744.
 3. **Remembered geometry** for the class, from
    `~/.cache/hypr-window-state/<class>.json`. This always wins: it is a
    decision you already made about this exact app.
@@ -165,13 +183,27 @@ the 30px eww bar; absolute pixels can't serve two outputs of different sizes,
 and rules can't match on which monitor a window opened on. The cost is a
 one-frame flash on apps that would otherwise be sized before first paint.
 
+**A geometry has to be re-asserted, not just applied.** Under xdg-shell a
+configure for a window that is neither maximized nor fullscreen is a
+*suggestion* — the client may commit whatever size it likes. A window that is
+still sizing itself when the geometry lands therefore keeps only the part it
+had already finished with. Firefox-family browsers restore `sizemode=maximized`
+plus a stored size from their profile and grow through several sizes in the
+first ~250ms, so a browser that was closed maximized came back **full height
+and short in width** (measured on Waterfox: asked 1440x930, got 1190x930 — the
+height taken, the width discarded). `apply_and_settle` re-checks and re-applies
+on a 0.15/0.35/0.7/1.2s schedule, stopping at the first check that matches, so
+a client that simply obeys costs one extra `hyprctl clients`. The same loop is
+what distinguishes a slow starter from a client that will never comply.
+
 Two self-corrections keep the list small:
 
 - **Refused maximizes are learned.** A client with fixed size constraints
   (`resizable=false`, so `min_size == max_size`) silently keeps its own size —
   Hyprland then reports the client's real geometry, not the box it was handed.
-  When that happens the class is demoted to `leave` in the local file so it
-  never flashes again. It won't overwrite a rule you wrote yourself.
+  When that happens (still under 90% of the work area after `apply_and_settle`
+  has used up every retry) the class is demoted to `leave` in the local file so
+  it never flashes again. It won't overwrite a rule you wrote yourself.
 - **Geometry is persisted on resize, not just on close.** Hyprland's event
   socket has no resize event, so the 2s clients poll doubles as the change
   detector: a new geometry is written once it has held still for two ticks.

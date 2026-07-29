@@ -24,14 +24,46 @@
 
 set -uo pipefail
 
-# The daemon is (auto-)started by the first `eww open` below and inherits this
-# env. GtkCalendar reads first-day-of-week from LC_TIME; en_GB gives a
-# Monday-first week with English names (see the autostart note in
-# hyprland.conf). A no-op for later syncs — the daemon is already up by then.
+# The daemon is started by ensure_daemon below and inherits this env.
+# GtkCalendar reads first-day-of-week from LC_TIME; en_GB gives a Monday-first
+# week with English names (see the autostart note in hyprland.conf). A no-op
+# for later syncs — the daemon is already up by then.
 export LC_TIME=en_GB.UTF-8
+
+# Bring up exactly ONE eww daemon, and don't return until it answers.
+#
+# This has to happen before the open loop, because eww auto-starts a daemon for
+# any command that finds no server. With nothing running yet, `eww open bar-0`
+# and `eww open bar-1` a moment later BOTH start their own daemon — the first
+# hasn't bound the socket by the time the second looks. Each daemon then owns
+# one bar, only the last one to bind is reachable, and `eww close` can never
+# reach the other. Its bar survives every sync forever, and when its monitor is
+# unplugged gtk-layer-shell just moves the surface onto a remaining screen:
+# that is the "two stacked bars after undocking" bug (each reserving 30px, so
+# the monitor comes back with reserved=60).
+#
+# If a daemon is running but unreachable — the state that bug leaves behind, or
+# a crash that took the socket with it — kill it first. Its bar surfaces are
+# unreachable too, so nothing else will ever clean them up. `pkill -x` matches
+# the process name exactly, so it can't hit this script. Short-lived eww
+# clients could be caught in the crossfire, but they were failing anyway: we
+# only get here when the daemon does not answer.
+ensure_daemon() {
+  local i
+  eww ping &>/dev/null && return 0
+  pkill -x eww && sleep 0.3
+  eww daemon &>/dev/null
+  for (( i = 0; i < 50; i++ )); do          # up to 5s
+    eww ping &>/dev/null && return 0
+    sleep 0.1
+  done
+  echo "eww-bars.sh: eww daemon did not come up" >&2
+  return 1
+}
 
 sync_bars() {
   local n i idx open names
+  ensure_daemon || return
   # Connector names sorted by Hyprland id; index i (the GDK --screen index) is
   # the i-th of these. The COUNT drives coverage; the NAME is passed to the bar.
   mapfile -t names < <(hyprctl monitors -j | jq -r 'sort_by(.id) | .[].name')
