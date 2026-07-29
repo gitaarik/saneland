@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
 #
-# Cycle focus across windows on the current workspace in hyprctl's stable
-# order (which is also the taskbar order). cyclenext follows z-order, which
-# the raise-focused daemon keeps shuffling — so cyclenext becomes
-# unpredictable with 3+ windows. This script walks the workspace's window
-# list manually for predictable next/prev behavior.
+# Cycle focus across windows on a workspace in hyprctl's stable order (which
+# is also the taskbar order). cyclenext follows z-order, which the
+# raise-focused daemon keeps shuffling — so cyclenext becomes unpredictable
+# with 3+ windows. This script walks the workspace's window list manually for
+# predictable next/prev behavior.
+#
+# Usage: hypr-cycle-maximize [next|prev] [workspace-id]
+#
+# Without a workspace it cycles the focused monitor's active one — what mod+Tab
+# wants. The bar's scroll handler passes one explicitly, because the bar being
+# scrolled may not be on the focused screen (hovering doesn't focus a monitor;
+# see misc:mouse_move_focuses_monitor in hyprland.conf).
 
 set -uo pipefail
 
 dir=${1:-next}
+ws=${2:-}
 
-ws=$(hyprctl -j activeworkspace 2>/dev/null | jq -r '.id') || exit 0
+[[ -n $ws ]] || ws=$(hyprctl -j activeworkspace 2>/dev/null | jq -r '.id') || exit 0
 active=$(hyprctl -j activewindow 2>/dev/null | jq -r '.address') || exit 0
 
 # Read workspace's windows in CREATION ORDER from the order tracker daemon's
@@ -31,7 +39,12 @@ for i in "${!addrs[@]}"; do
     [[ ${addrs[$i]} = "$active" ]] && { cur=$i; break; }
 done
 
-if [[ $dir == "prev" ]]; then
+if (( cur < 0 )); then
+    # The focused window isn't on this workspace at all — the case when
+    # another screen's taskbar is scrolled. Enter the list from its edge, so
+    # `next` lands on the first entry and `prev` on the last.
+    [[ $dir == "prev" ]] && next=$(( count - 1 )) || next=0
+elif [[ $dir == "prev" ]]; then
     next=$(( (cur - 1 + count) % count ))
 else
     next=$(( (cur + 1) % count ))

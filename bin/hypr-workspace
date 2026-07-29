@@ -38,12 +38,15 @@ offset=$(jq -r --argjson m "${mon:-0}" '([.[].id] | sort | index($m) // 0) * 12'
 ws=$(( ${offset:-0} + n ))
 mon_name=$(jq -r --argjson m "${mon:-0}" 'map(select(.id == $m))[0].name // empty' <<<"$monitors")
 
-# Hyprland hands the focused monitor back to the one under the CURSOR whenever
-# the workspace it just landed on has no window to give focus to — so switching
-# to an empty workspace on the second screen switches the right screen but
-# leaves focus on the first one. The NEXT number key then reads that as the
-# target screen and switches a workspace on the wrong monitor. Re-assert focus
-# on the screen we acted on; a no-op when the switch already landed there.
+# Hyprland used to hand the focused monitor back to the one under the CURSOR
+# whenever the workspace it just landed on had no window to give focus to — so
+# switching to an empty workspace on the second screen switched the right
+# screen but left focus on the first one, and the NEXT number key read that as
+# the target screen and acted on the wrong monitor. That is fixed at the source
+# by misc:mouse_move_focuses_monitor = false (see hyprland.conf); this stays as
+# a cheap guard on the invariant the mapping above depends on — after acting,
+# focus is on the screen we acted on. A no-op when the switch already landed
+# there, which it now does.
 reassert_focus() {
     [[ -n $mon_name ]] || return 0
     local focused

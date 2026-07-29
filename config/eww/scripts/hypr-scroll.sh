@@ -7,8 +7,14 @@
 #                                      # active workspace
 #
 # Wired from eww :onscroll, which substitutes `{}` with `up` / `down`.
-# Workspace scrolling cycles ONLY within the focused screen's own 12-workspace
-# block (laptop 1-12, external 13-24), through its non-empty workspaces — so it
+# Both actions apply to the screen whose bar is being scrolled — the one under
+# the CURSOR, which is not necessarily the focused one: hovering a screen no
+# longer focuses it (misc:mouse_move_focuses_monitor = false, see
+# hyprland.conf), so asking Hyprland for the focused monitor would scroll the
+# workspaces of whichever screen last took keyboard focus.
+#
+# Workspace scrolling cycles ONLY within that screen's own 12-workspace block
+# (laptop 1-12, external 13-24), through its non-empty workspaces — so it
 # matches the tags that screen shows and never jumps to another monitor's
 # range. (A global `workspace e±1` would wrap into the other screen's block.)
 #
@@ -55,19 +61,27 @@ if (( now - last < COOLDOWN_MS )); then
   exit 0
 fi
 
+# The scrolled screen's workspace-block offset and current workspace. The
+# screen is the one holding the cursor (see header); offset = its rank among
+# monitors sorted by id, times 12 — the same mapping the bar and hypr-workspace
+# use. .x/.y are logical px but .width/.height are physical, so the logical
+# extent is width/scale. Falls back to the focused monitor, then to the first,
+# if the cursor can't be placed.
+read -r _cx _cy <<< "$(hyprctl cursorpos 2>/dev/null | tr -d ',')"
+read -r off cur < <(hyprctl -j monitors | jq -r \
+    --argjson cx "${_cx:-0}" --argjson cy "${_cy:-0}" '
+    sort_by(.id) as $s
+    | ([ $s[] | select($cx >= .x and $cx < .x + .width / .scale
+                       and $cy >= .y and $cy < .y + .height / .scale) ][0]
+       // ($s | map(select(.focused))[0]) // $s[0]) as $m
+    | "\(([$s[].id] | index($m.id)) * 12) \($m.activeWorkspace.id)"')
+
 # Window cycling reuses hypr-cycle-maximize (also bound to mod+Tab /
 # mod+Shift+Tab), which walks the workspace's windows in the taskbar's
 # order. Hyprland's built-in `cyclenext` follows z-order, which the
 # raise-focused daemon keeps shuffling — unpredictable with 3+ windows.
 case "$target" in
   workspace)
-    # The focused (cursor) monitor's offset and current workspace. offset =
-    # rank among monitors sorted by id, times 12 — same mapping as the bar and
-    # hypr-workspace.
-    read -r off cur < <(hyprctl -j monitors | jq -r '
-        sort_by(.id) as $s
-        | ($s | map(select(.focused))[0]) as $m
-        | "\(([$s[].id] | index($m.id)) * 12) \($m.activeWorkspace.id)"')
     # Ring = this block's non-empty workspaces (+ the current one), sorted. Cycle
     # within it; up = previous, down = next, with wrap.
     mapfile -t ring < <(hyprctl -j workspaces | jq -r --argjson off "${off:-0}" --argjson cur "${cur:-0}" '
@@ -82,9 +96,13 @@ case "$target" in
     fi
     ;;
   window)
+    # Pass the scrolled screen's workspace explicitly — hypr-cycle-maximize
+    # defaults to the FOCUSED monitor's workspace (that's what mod+Tab wants),
+    # which is the other screen's whenever the bar being scrolled isn't the
+    # focused one.
     case "$direction" in
-      up)   ~/.local/bin/hypr-cycle-maximize prev ;;
-      down) ~/.local/bin/hypr-cycle-maximize next ;;
+      up)   ~/.local/bin/hypr-cycle-maximize prev "$cur" ;;
+      down) ~/.local/bin/hypr-cycle-maximize next "$cur" ;;
       *) echo "hypr-scroll: unknown direction '$direction'" >&2; exit 1 ;;
     esac
     ;;

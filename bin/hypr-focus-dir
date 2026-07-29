@@ -91,11 +91,11 @@ fi
 
 # --- Step 2: fall through to the monitor that way ---------------------------
 # Direction is resolved by geometry here instead of with `focusmonitor <dir>`,
-# which is relative to the FOCUSED monitor — and that one is cursor-driven
-# (follow_mouse=2 plus no_warps, see hyprland.conf), so it routinely disagrees
-# with the focused window's monitor. Same trap hypr_work_area documents. Steer
-# by the active window's monitor, falling back to the focused one when nothing
-# is focused.
+# which is relative to the FOCUSED monitor. That one used to be cursor-driven
+# and so routinely disagreed with the focused window's monitor; it now follows
+# keyboard focus (misc:mouse_move_focuses_monitor = false, see hyprland.conf),
+# but steering by the active window's own monitor needs no such assumption.
+# Falls back to the focused monitor when nothing is focused.
 monitors=$(hyprctl -j monitors 2>/dev/null) || exit 1
 cur_id=$(jq -r '.monitor // empty' <<<"${active:-null}")
 [[ -n $cur_id ]] || cur_id=$(jq -r 'map(select(.focused))[0].id // empty' <<<"$monitors")
@@ -128,12 +128,14 @@ next=$(jq -r --arg dir "$dir" --argjson id "$cur_id" '
 
 # Land on the window you last used over there, rather than dispatching
 # `focusmonitor` and hoping. `focusmonitor` early-returns when Hyprland
-# already considers the target focused — and because "focused monitor" tracks
-# the CURSOR, that happens constantly: leave the pointer on the laptop, focus
-# a window on the external via the taskbar, and Hyprland thinks the laptop is
-# focused while the focused window is on the external. mod+l back toward the
-# laptop then hit that early return and did nothing at all. focuswindow has no
-# such shortcut. Lowest focusHistoryID = most recently focused.
+# already considers the target focused, which used to happen constantly:
+# "focused monitor" tracked the CURSOR, so leaving the pointer on the laptop
+# and focusing a window on the external via the taskbar left Hyprland thinking
+# the laptop was focused, and mod+l back toward the laptop hit that early
+# return and did nothing at all. It follows keyboard focus now, but the early
+# return still fires whenever we're already on the target monitor (an empty
+# screen keeps focus with no window focused). focuswindow has no such
+# shortcut. Lowest focusHistoryID = most recently focused.
 next_win=$(jq -r --arg mon "$next" --argjson mons "$monitors" '
     ($mons | map(select(.name == $mon))[0].activeWorkspace.id) as $ws |
     [ .[] | select(.workspace.id == $ws) | select(.mapped and (.hidden | not)) ]

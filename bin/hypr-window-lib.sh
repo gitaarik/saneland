@@ -15,12 +15,11 @@
 # monitor; pass a numeric monitor id to target a specific one.
 #
 # PREFER hypr_work_area_for (below) when you have a window address. The
-# focused *monitor* is cursor-driven here (input:follow_mouse=2 plus
-# cursor:no_warps=true, see hyprland.conf), so it routinely disagrees with
-# the focused *window's* monitor: focus a window on the other output via the
-# taskbar or alt-tab and the cursor — hence the "focused" monitor — stays put.
-# Sizing a window against the wrong monitor is how windows on a second output
-# ended up wearing the laptop's work-area dimensions.
+# focused *monitor* is not the window's: it follows keyboard focus (see
+# misc:mouse_move_focuses_monitor in hyprland.conf), and the caller is usually
+# acting on some specific window — which may be neither the focused one nor on
+# the focused screen. Sizing a window against the wrong monitor is how windows
+# on a second output ended up wearing the laptop's work-area dimensions.
 #
 # Sets globals:
 #   WORK_W, WORK_H  work-area size in logical px (monitor / scale, minus the
