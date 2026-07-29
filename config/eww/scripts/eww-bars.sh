@@ -20,7 +20,9 @@
 # collide, and `--arg mon=<connector>` so it renders only ITS screen's tags +
 # windows (the `(bar)` widget reads hypr.monitors[mon]). The name for index i is
 # the i-th monitor sorted by Hyprland id — matching the GDK --screen order and
-# hypr-state.sh's per-monitor keys.
+# hypr-state.sh's per-monitor keys. An index can come to mean a DIFFERENT
+# monitor after a hot-unplug, so which connector each bar was opened with is
+# tracked too — see bars_state.
 
 set -uo pipefail
 
@@ -61,8 +63,42 @@ ensure_daemon() {
   return 1
 }
 
+# Which connector each open bar was told it is on, index -> name.
+#
+# `--arg mon=` is fixed when a bar is opened and eww can't be asked about it
+# afterwards (`active-windows` gives ids only), so the mapping has to be
+# remembered here. It matters because an index does NOT always keep pointing at
+# the same screen: indices are a dense 0..N-1 list, so removing a monitor makes
+# every later one shift down. Undock the external and index 1 disappears —
+# fine, bar-1 is closed. But close the LID while docked and it is index 0 that
+# vanishes: the external slides from 1 to 0, bar-1 gets closed as out of range,
+# and the bar left on screen is bar-0, still rendering `mon=eDP-1` — the
+# workspaces and taskbar of a monitor that isn't there. So a bar whose
+# connector no longer matches its index is closed and reopened.
+#
+# Lives in the runtime dir: bars don't outlive the session and neither should
+# this. Anything stale in it is harmless — a bar that isn't actually open is
+# opened fresh below, which rewrites its entry.
+bars_state=${XDG_RUNTIME_DIR:-/run/user/$UID}/eww-bars.state
+declare -A bar_mon=()
+
+load_state() {
+  local i m
+  bar_mon=()
+  [[ -r $bars_state ]] || return 0
+  while IFS=$'\t' read -r i m; do
+    [[ -n ${i:-} && -n ${m:-} ]] && bar_mon[$i]=$m
+  done < "$bars_state"
+}
+
+save_state() {
+  local i
+  for i in "${!bar_mon[@]}"; do printf '%s\t%s\n' "$i" "${bar_mon[$i]}"; done \
+    > "$bars_state.tmp" && mv "$bars_state.tmp" "$bars_state"
+}
+
 sync_bars() {
-  local n i idx open names
+  local n i idx w open names
   ensure_daemon || return
   # Connector names sorted by Hyprland id; index i (the GDK --screen index) is
   # the i-th of these. The COUNT drives coverage; the NAME is passed to the bar.
@@ -71,11 +107,17 @@ sync_bars() {
   [[ $n -gt 0 ]] || return
 
   open=$(eww active-windows 2>/dev/null | cut -d: -f1)
+  load_state
 
-  # Open a bar on every monitor index that doesn't already have one, telling it
-  # which screen it's on via --arg mon=<connector>.
+  # Open a bar on every monitor index that doesn't already have a correct one,
+  # telling it which screen it's on via --arg mon=<connector>.
   for (( i = 0; i < n; i++ )); do
-    grep -qx "bar-$i" <<<"$open" || eww open bar --id "bar-$i" --screen "$i" --arg "mon=${names[i]}"
+    if grep -qx "bar-$i" <<<"$open"; then
+      [[ ${bar_mon[$i]:-} == "${names[i]}" ]] && continue   # already right
+      eww close "bar-$i"                                    # now a different screen
+    fi
+    eww open bar --id "bar-$i" --screen "$i" --arg "mon=${names[i]}"
+    bar_mon[$i]=${names[i]}
   done
 
   # Close bars with no monitor behind them: the legacy single-instance `bar`
@@ -84,9 +126,11 @@ sync_bars() {
   while IFS= read -r w; do
     case "$w" in
       bar)   eww close "$w" ;;
-      bar-*) idx=${w#bar-}; (( idx >= n )) && eww close "$w" ;;
+      bar-*) idx=${w#bar-}; (( idx >= n )) && { eww close "$w"; unset 'bar_mon[$idx]'; } ;;
     esac
   done < <(grep -E '^bar(-[0-9]+)?$' <<<"$open")
+
+  save_state
 }
 
 sync_bars
