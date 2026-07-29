@@ -345,6 +345,34 @@ fine: it is legacy data, replaced by a real v3 entry the first time it saves.
 
 `hypr-window-policy show <class>` prints one line per screen.
 
+**A maximized window stays maximized when it changes screen.** Moving a window
+doesn't resize it, so one maximized on the laptop arrives on the Dell still
+1440x930, with a band of desktop down two sides, and one maximized on the Dell
+arrives on the laptop 1920x1050, hanging off the edges. The `movewindow` handler
+gives it the new screen's work area instead, so `mod+Ctrl+Shift+h/j/k/l` keeps
+it looking maximized in both directions — including shrinking it back on the way
+to the smaller screen.
+
+Nothing has to be tracked to know it was maximized, because *maximized* here **is
+a work area**: mod+m applies a geometry, not a state (`hypr_fills_work_area`), so
+a window wearing some **other** connected screen's work area was maximized there
+a moment ago, and that alone is the signal. `.monitor` is already the destination
+when the event arrives — verified by querying on the event itself — so there is
+no address→monitor map to keep either. A window that fills the screen it just
+landed on is left alone, which covers every move that stayed on one monitor
+(`mod+Shift+<tag>`) and every move between two screens of the same size; so are
+tiled windows, which the layout re-tiles anyway, and real fullscreen, which
+Hyprland re-applies per monitor.
+
+Only a *full* work area counts. A half-screen snap carried to another monitor
+keeps its old pixels — `reanchor_axis` knows how to re-read those for a
+different screen, but only at open time.
+
+It is a handler on the event rather than a wrapper around the two move binds
+because Hyprland posts `movewindow` from the one function that reassigns a
+window's workspace, so dragging a window across the monitor boundary goes
+through it too.
+
 ## hyprbars
 
 Hyprland draws no title bars by default. The `plugin { hyprbars { … } }` block

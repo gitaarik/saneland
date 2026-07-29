@@ -164,6 +164,23 @@ hypr_work_area_for() {
     fi
 }
 
+# Does a window of size $1 x $2 fill the work area last measured by
+# hypr_work_area / hypr_work_area_for?
+#
+# This is the whole definition of "maximized" here: there is no maximize STATE
+# to read back — mod+m just applies a geometry (hypr_set_max), deliberately, so
+# that a maximized window is still an ordinary floating window. Its SIZE is the
+# only thing that says it is maximized, and which screen's work area it is
+# wearing is the only thing that says where.
+#
+# The few px of slack absorb fractional-scale rounding: on the 1.5667-scaled
+# laptop panel Hyprland reports a window a pixel or two off the size it was
+# handed.
+hypr_fills_work_area() {
+    local dw=$(( $1 - WORK_W )) dh=$(( $2 - WORK_H ))
+    (( ${dw#-} <= 3 && ${dh#-} <= 3 ))
+}
+
 # Emit the --batch clauses for a window's "chrome" — the border, corner
 # rounding, and hyprbars title bar, which are coupled into three looks:
 #   max     borderless + square corners + NO title bar, for a full-screen
@@ -214,8 +231,7 @@ hypr_apply_geom() {
     local addr=$1 w=$2 h=$3 x=$4 y=$5
     hypr_work_area_for "$addr" || return 1
     local mode=normal
-    local dw=$(( w - WORK_W )) dh=$(( h - WORK_H ))
-    (( ${dw#-} <= 3 && ${dh#-} <= 3 )) && mode=max
+    hypr_fills_work_area "$w" "$h" && mode=max
     hyprctl --batch \
         "dispatch resizewindowpixel exact ${w} ${h},address:${addr}; \
          dispatch movewindowpixel exact ${x} ${y},address:${addr}; \

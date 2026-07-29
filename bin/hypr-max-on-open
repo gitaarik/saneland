@@ -50,6 +50,15 @@
 #     actions. Real fullscreen (mod+Shift+m, or an app's own F11) is left
 #     untouched.
 #
+#   - On move to another screen: a window that was filling the screen it
+#     came from is made to fill the new one. Moving a window does not
+#     resize it, so a maximized one arrives wearing the old screen's
+#     pixels — a hole around it on a bigger screen, hanging off the edges
+#     on a smaller one. Needs no bookkeeping to spot: "maximized" here IS
+#     a screen's work area (see hypr_fills_work_area), so a window wearing
+#     some OTHER connected screen's work area was maximized there a moment
+#     ago.
+#
 # Hyprland's closewindow event arrives after the window is dropped
 # from `hyprctl clients`, so a background loop snapshots clients to
 # a cache file every 2s and the close handler looks the window up
@@ -693,6 +702,63 @@ while IFS= read -r line <&3; do
                 hyprctl dispatch fullscreenstate "0 0,address:$addr" >/dev/null
                 sleep 0.05
                 hypr_set_max "$addr"
+            ) &
+            ;;
+
+        movewindow'>>'*)
+            # Format: movewindow>>ADDRESS,WORKSPACENAME. The pattern spells out
+            # `>>` so movewindowv2, which repeats every one of these, doesn't
+            # run the whole thing a second time.
+            #
+            # Fires for every workspace change; only a change of SCREEN can do
+            # anything here, which is what the size tests below decide.
+            #
+            # A handler and not a wrapper around the mod+Ctrl+Shift+h/j/k/l
+            # binds because Hyprland posts this from the one function that
+            # reassigns a window's workspace — so a window dragged across the
+            # monitor boundary arrives here too, and behaves the same.
+            addr_full="0x${line#movewindow>>}"
+            addr_full=${addr_full%%,*}
+
+            (
+                client=$(hyprctl -j clients 2>/dev/null \
+                    | jq -c --arg a "$addr_full" '.[]? | select(.address == $a)' 2>/dev/null)
+                [[ -z $client || $client == null ]] && exit 0
+
+                # Floating only, and never a real fullscreen: a tiled window's
+                # size belongs to the layout, which re-tiles it on the new
+                # screen anyway, and fullscreen is a state Hyprland re-applies
+                # per monitor by itself. Both would only be fought here.
+                [[ $(jq -r '.floating'   <<<"$client") == true ]] || exit 0
+                [[ $(jq -r '.fullscreen' <<<"$client") == 0    ]] || exit 0
+
+                w=$(jq -r '.size[0]'  <<<"$client")
+                h=$(jq -r '.size[1]'  <<<"$client")
+                mon_id=$(jq -r '.monitor' <<<"$client")
+                [[ $mon_id =~ ^[0-9]+$ ]] || exit 0   # not on a screen at all
+
+                # `.monitor` is the DESTINATION already: querying clients on the
+                # event itself reports the new screen (verified), so there is
+                # nothing to wait for and no address->monitor map to keep.
+                hypr_work_area "$mon_id" || exit 0
+                here=$WORK_MON
+
+                # Already the right size for the screen it is on. That covers
+                # every move that stayed on one monitor, and every move between
+                # two screens that happen to have the same work area.
+                hypr_fills_work_area "$w" "$h" && exit 0
+
+                # Wearing another screen's work area, so it was maximized there
+                # until a moment ago: maximize it here instead. hypr_set_max
+                # re-measures for this screen and restores the borderless
+                # chrome, which the window is still carrying.
+                while read -r id; do
+                    hypr_work_area "$id" || continue
+                    [[ $WORK_MON == "$here" ]] && continue
+                    hypr_fills_work_area "$w" "$h" || continue
+                    hypr_set_max "$addr_full"
+                    break
+                done < <(hyprctl -j monitors 2>/dev/null | jq -r '.[].id')
             ) &
             ;;
 
