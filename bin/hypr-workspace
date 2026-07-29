@@ -31,13 +31,30 @@ if [[ -z $mon || $mon == null ]]; then
     mon=$(hyprctl -j monitors 2>/dev/null | jq -r 'map(select(.focused))[0].id // 0')
 fi
 
+monitors=$(hyprctl -j monitors 2>/dev/null)
+
 # offset = rank of that monitor among all monitors sorted by id, times 12.
-offset=$(hyprctl -j monitors 2>/dev/null \
-    | jq -r --argjson m "${mon:-0}" '([.[].id] | sort | index($m) // 0) * 12')
+offset=$(jq -r --argjson m "${mon:-0}" '([.[].id] | sort | index($m) // 0) * 12' <<<"$monitors")
 ws=$(( ${offset:-0} + n ))
+mon_name=$(jq -r --argjson m "${mon:-0}" 'map(select(.id == $m))[0].name // empty' <<<"$monitors")
+
+# Hyprland hands the focused monitor back to the one under the CURSOR whenever
+# the workspace it just landed on has no window to give focus to — so switching
+# to an empty workspace on the second screen switches the right screen but
+# leaves focus on the first one. The NEXT number key then reads that as the
+# target screen and switches a workspace on the wrong monitor. Re-assert focus
+# on the screen we acted on; a no-op when the switch already landed there.
+reassert_focus() {
+    [[ -n $mon_name ]] || return 0
+    local focused
+    focused=$(hyprctl -j monitors 2>/dev/null \
+        | jq -r 'map(select(.focused))[0].name // empty')
+    [[ $focused == "$mon_name" ]] \
+        || hyprctl dispatch focusmonitor "$mon_name" >/dev/null
+}
 
 case $action in
-    switch) hyprctl dispatch workspace "$ws" ;;
-    move)   hyprctl dispatch movetoworkspacesilent "$ws" ;;
+    switch) hyprctl dispatch workspace "$ws" >/dev/null; reassert_focus ;;
+    move)   hyprctl dispatch movetoworkspacesilent "$ws" >/dev/null; reassert_focus ;;
     *) echo "Usage: hypr-workspace switch|move <1..12>" >&2; exit 1 ;;
 esac
