@@ -34,4 +34,7 @@ declare -A PKG=(
 #   compositor, portal-hyprland, session-uwsm, bar-eww, notifications-swaync,
 #   launcher-rofi, wallpaper-hyprpaper, lock-hyprlock, idle-hypridle,
 #   nightlight-hyprsunset, screenshot-hyprshot, annotate-satty, gtk-materia,
-#   font-adwaita
+#   font-adwaita, greeter-regreet
+#
+# greetd is packaged (`greetd`); ReGreet isn't — build it with cargo if you
+# want greeter/install.sh's login screen.

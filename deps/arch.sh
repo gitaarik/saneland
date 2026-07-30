@@ -40,6 +40,8 @@ declare -A PKG=(
   [nightlight-hyprsunset]="hyprsunset"
   [screenshot-hyprshot]="hyprshot"
   [annotate-satty]="satty"
+  [greeter-greetd]="greetd"
+  [greeter-regreet]="greetd-regreet"
 )
 
 # IDs served from the AUR (installed via AUR_INSTALL, not pacman). Verify — the

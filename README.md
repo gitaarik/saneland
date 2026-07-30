@@ -47,6 +47,7 @@ config/          # → ~/.config/*  (whole-dir symlinks)
   rofi/          # launcher — the start menu's "all apps" fallback (theme-integrated)
   gtk-3.0/ gtk-4.0/   # GTK app theming, so Firefox/dialogs follow light/dark
 bin/             # → ~/.local/bin/*  (per-file symlinks): hypr-* helpers, theme, hyprsig …
+greeter/         # → /etc/greetd  (OPTIONAL, needs root): the login screen
 wallpapers/      # drop your own images into dark/ and light/
 docs/            # ARCHITECTURE.md — the non-obvious design notes & gotchas
 install.sh       # symlinks everything into place (backs up what's there)
@@ -132,6 +133,32 @@ Then:
 4. Log into the **Hyprland (uwsm-managed)** session (the uwsm wrapper is what
    activates `graphical-session.target`, which the desktop portals gate on),
    or in a running session: `hyprctl reload && eww reload`.
+
+## Login screen (optional)
+
+Everything above stays inside your home directory. The login screen can't —
+it runs before you log in, as another user — so it's a separate, opt-in script:
+
+```bash
+sudo ./greeter/install.sh          # --dry-run first if you like
+sudo systemctl restart greetd      # applies it; ENDS YOUR SESSION
+```
+
+It replaces greetd's usual `cage -s -- regreet` with a stripped-down Hyprland
+running the same ReGreet UI. The reason is multi-monitor: cage welds every
+output into one surface (`-m extend`), so the login box lands on the seam
+between two screens, and its only alternative (`-m last`) picks whichever
+output was connected last and blanks the others. Under Hyprland the login
+window goes on **one** screen and the rest show the wallpaper — and each
+display gets the mode and scale from your `local.conf` instead of whatever
+its EDID prefers (a 4K TV that asks for 30Hz would otherwise render the
+greeter at 30Hz).
+
+Your monitor layout, keyboard layout and wallpaper are **copied** to
+`/etc/greetd` at install time, not read live — the greeter user can't see your
+home. Re-run the script after changing any of them. It picks the internal
+panel as the login screen by default; `--monitor DP-1` overrides that, and
+`--uninstall` restores the greeter you had before.
 
 ## Theming
 

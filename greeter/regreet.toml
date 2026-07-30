@@ -1,0 +1,30 @@
+# saneland — ReGreet (the login UI itself). Installed to /etc/greetd/regreet.toml
+# by greeter/install.sh, which backs up whatever was there first.
+#
+# The background path below is filled in at install time with the image the
+# installer copied into /usr/share/backgrounds. It's the same picture hyprpaper
+# paints on the other screens, so the login screen looks like one continuous
+# desktop rather than a login box on one monitor and an unrelated image on the
+# next. Drop the [background] section if you'd rather have a flat GTK backdrop.
+
+skip_selection = false
+
+[background]
+path = "@WALLPAPER@"
+# Cover, not Contain: the window is fullscreen on one monitor, and Contain
+# would letterbox any wallpaper whose aspect ratio doesn't match that screen.
+fit = "Cover"
+
+[appearance]
+greeting_msg = "Welcome back!"
+
+[GTK]
+application_prefer_dark_theme = true
+theme_name = "Adwaita-dark"
+icon_theme_name = "Adwaita"
+cursor_theme_name = "Adwaita"
+font_name = "Cantarell 14"
+
+[commands]
+reboot = [ "systemctl", "reboot" ]
+poweroff = [ "systemctl", "poweroff" ]

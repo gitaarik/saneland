@@ -21,6 +21,7 @@ CORE_DEPS=(
 OPTIONAL_DEPS=(
   lock-hyprlock idle-hypridle nightlight-hyprsunset
   screenshot-hyprshot annotate-satty
+  greeter-greetd greeter-regreet
 )
 
 declare -A DEP_DESC=(
@@ -53,6 +54,8 @@ declare -A DEP_DESC=(
   [nightlight-hyprsunset]="hyprsunset color temperature"
   [screenshot-hyprshot]="hyprshot screenshots"
   [annotate-satty]="satty screenshot annotation"
+  [greeter-greetd]="greetd login daemon (only for greeter/install.sh)"
+  [greeter-regreet]="ReGreet login UI (only for greeter/install.sh)"
 )
 
 # Minimum versions of the fast-moving components whose config syntax we depend

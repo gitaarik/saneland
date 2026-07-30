@@ -42,6 +42,8 @@ declare -A PKG=(
   [nightlight-hyprsunset]="hyprsunset"        # COPR
   [screenshot-hyprshot]="hyprshot"            # verify (may need manual)
   [annotate-satty]="satty"                    # verify (may need cargo/manual)
+  [greeter-greetd]="greetd"                   # verify (may need COPR)
+  [greeter-regreet]="regreet"                 # verify (may need COPR/cargo)
 )
 # Unmapped here (reported as "build from source / not packaged"):
 #   font-adwaita — Adwaita Sans; ships with recent GNOME, else install manually.
