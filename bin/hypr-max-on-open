@@ -76,8 +76,8 @@ if [[ ! -S $sock ]]; then
     exit 1
 fi
 
-state_dir=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-state
-cache_file=$state_dir/clients-cache.json
+state_dir=$HYPR_STATE_DIR          # set by hypr-window-lib.sh, which also owns
+cache_file=$state_dir/clients-cache.json   # the per-class geometry files in it
 mkdir -p "$state_dir"
 
 # Short-lived per-address markers so the fullscreen>>1 handler can tell
@@ -169,40 +169,6 @@ classify_by_title() {
     esac
     return 2
 }
-
-# Sanitise a class name for use as a filename. Almost never needed in
-# practice; defensive against classes with slashes.
-class_to_filename() {
-    printf '%s' "$1" | tr '/' '_'
-}
-
-# Saved-geometry schema version.
-#
-#   v1  x/y as GLOBAL coordinates. Only ever worked on a single monitor at 0x0:
-#       a window closed on a second output saved an x beyond the laptop's
-#       width and, once undocked, came back off-screen where it couldn't be
-#       reached.
-#   v2  x/y RELATIVE to the work area of the monitor the window was on, so a
-#       position means the same thing on any output. The SIZE was still one
-#       number for the whole class, which two screens of different sizes
-#       cannot share: a browser closed maximized on the laptop reopened
-#       1440x930 on the 1920-wide Dell, and maximizing it there made every
-#       later laptop window 1920 wide (clamped back to 1440, which then
-#       overwrote the Dell's size again on the next close — a permanent
-#       ping-pong where neither screen ended up right).
-#   v3  one entry PER MONITOR, keyed by connector name, plus the work area it
-#       was measured against:
-#         {v:3, last:"eDP-1", mons:{"eDP-1":{width,height,x,y,aw,ah}, …}}
-#       A window opening on a screen it has been on before gets that screen's
-#       own geometry. On a screen it has never been on, the most recently
-#       saved entry is REINTERPRETED for this one via reanchor_axis — aw/ah is
-#       what makes that possible, because it turns "1440 px wide" back into
-#       "as wide as the screen".
-#
-# v1 is discarded (fall back to maximize). v2 is still read — as a single
-# monitor-less entry, restored exactly as it was before, so an existing cache
-# keeps working — and upgraded to v3 the next time the window is saved.
-geom_schema_version=3
 
 # How close a window has to land to count as "the geometry took" (px). A few
 # px of slack absorbs fractional-scale rounding.
@@ -332,8 +298,8 @@ infer_work_area() {
 # Try to apply previously saved geometry for the given class. Returns
 # 0 on success, 1 if there's no usable saved file (or class is denied).
 apply_saved_geometry() {
-    local class=$1 addr=$2
-    local saved=$state_dir/"$(class_to_filename "$class")".json
+    local class=$1 addr=$2 saved
+    saved=$(hypr_geom_file "$class")
     [[ -f $saved ]] || return 1
 
     # The monitor comes first now: which entry we want depends on which screen
@@ -389,43 +355,6 @@ apply_saved_geometry() {
     # remembered size we just restored.
     apply_and_settle "$addr" "$w" "$h" "$(( WORK_X + x ))" "$(( WORK_Y + y ))"
     return 0
-}
-
-# x/y arrive as global coordinates (straight off `hyprctl clients`.at) and are
-# stored relative to mon_id's work-area origin — see geom_schema_version.
-#
-# Writes only THIS monitor's entry and leaves the other screens' alone, so
-# maximizing a browser on the Dell can't shrink it on the laptop. The work area
-# it was measured in is stored alongside, which is what lets the entry be
-# re-read for a screen it has never been on.
-save_geometry() {
-    local class=$1 w=$2 h=$3 x=$4 y=$5 mon_id=$6
-    local saved=$state_dir/"$(class_to_filename "$class")".json
-
-    if [[ $mon_id =~ ^[0-9]+$ ]]; then
-        hypr_work_area "$mon_id" || return 1
-    else
-        hypr_work_area || return 1
-    fi
-
-    # Carry over the other monitors' entries. Anything older than v3 is
-    # dropped rather than migrated: there is no record of which screen it came
-    # from, and guessing "this one" would put the laptop's size under the
-    # Dell's name. It has already been restored from by then anyway.
-    local prev
-    prev=$(jq -c 'if (.v? // 0) == 3 then (.mons // {}) else {} end' "$saved" 2>/dev/null) \
-        || prev='{}'
-    [[ -z $prev || $prev == null ]] && prev='{}'
-
-    jq -n --argjson v "$geom_schema_version" --arg mon "$WORK_MON" \
-          --argjson prev "$prev" \
-          --argjson w "$w" --argjson h "$h" \
-          --argjson x "$(( x - WORK_X ))" --argjson y "$(( y - WORK_Y ))" \
-          --argjson aw "$WORK_W" --argjson ah "$WORK_H" \
-        '{v: $v, last: $mon,
-          mons: ($prev + {($mon): {width: $w, height: $h, x: $x, y: $y,
-                                   aw: $aw, ah: $ah}})}' \
-        > "$saved.tmp" && mv "$saved.tmp" "$saved"
 }
 
 # Maximize, then check that it actually took.
@@ -499,7 +428,7 @@ persist_geometry() {
         2) (( count <= 1 )) || return 0 ;;     # ambiguous -> only when it's alone
     esac
     local wh=${geom%%+*} xy=${geom#*+}         # WxH+X+Y, X may be negative
-    save_geometry "$class" "${wh%%x*}" "${wh##*x}" "${xy%%+*}" "${xy##*+}" "$mon"
+    hypr_save_geometry "$class" "${wh%%x*}" "${wh##*x}" "${xy%%+*}" "${xy##*+}" "$mon"
 }
 
 # Background poller. Two jobs:
@@ -820,7 +749,7 @@ while IFS= read -r line <&3; do
             y=$(echo "$client" | jq -r '.at[1]')
             mon_id=$(echo "$client" | jq -r '.monitor')
 
-            save_geometry "$class" "$w" "$h" "$x" "$y" "$mon_id"
+            hypr_save_geometry "$class" "$w" "$h" "$x" "$y" "$mon_id"
             ;;
     esac
 done

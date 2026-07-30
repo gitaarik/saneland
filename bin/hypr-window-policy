@@ -113,7 +113,7 @@ case $cmd in
         printf 'verdict  %s\n' "$verdict"
         printf 'rule     %s\n' "$re"
         printf 'from     %s\n' "$file"
-        geom=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-state/$(printf '%s' "$class" | tr '/' '_').json
+        geom=$(hypr_geom_file "$class")
         # One entry per monitor since v3 — print them all, so it's obvious why
         # the same app comes up at different sizes on different screens.
         if [[ -f $geom ]]; then
@@ -144,8 +144,7 @@ case $cmd in
     forget)
         class=$(resolve_class "${2:-}") || exit 1
         write_rule "" "$(hypr_policy_regex "$class")"
-        geom=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-state/$(printf '%s' "$class" | tr '/' '_').json
-        rm -f "$geom"
+        rm -f "$(hypr_geom_file "$class")"
         say "$class → forgotten (rule and remembered size)"
         ;;
     -h|--help|help) usage ;;

@@ -237,3 +237,90 @@ hypr_apply_geom() {
          dispatch movewindowpixel exact ${x} ${y},address:${addr}; \
          $(hypr_chrome "$addr" "$mode")" >/dev/null
 }
+
+# ---------------------------------------------------------------------------
+# Remembered geometry
+# ---------------------------------------------------------------------------
+# A window's size and position is remembered per class, KWin-style, under
+# ~/.cache/hypr-window-state/<class>.json. hypr-max-on-open restores it when a
+# window opens and writes it when one is resized or closed; hypr-window-policy
+# prints it (`show`) and deletes it (`forget`). It lives here because both of
+# them need to agree on the path and the schema.
+#
+# Saved-geometry schema version:
+#
+#   v1  x/y as GLOBAL coordinates. Only ever worked on a single monitor at 0x0:
+#       a window closed on a second output saved an x beyond the laptop's
+#       width and, once undocked, came back off-screen where it couldn't be
+#       reached.
+#   v2  x/y RELATIVE to the work area of the monitor the window was on, so a
+#       position means the same thing on any output. The SIZE was still one
+#       number for the whole class, which two screens of different sizes
+#       cannot share: a browser closed maximized on the laptop reopened
+#       1440x930 on the 1920-wide Dell, and maximizing it there made every
+#       later laptop window 1920 wide (clamped back to 1440, which then
+#       overwrote the Dell's size again on the next close — a permanent
+#       ping-pong where neither screen ended up right).
+#   v3  one entry PER MONITOR, keyed by connector name, plus the work area it
+#       was measured against:
+#         {v:3, last:"eDP-1", mons:{"eDP-1":{width,height,x,y,aw,ah}, …}}
+#       A window opening on a screen it has been on before gets that screen's
+#       own geometry. On a screen it has never been on, the most recently
+#       saved entry is REINTERPRETED for this one via reanchor_axis (in
+#       hypr-max-on-open) — aw/ah is what makes that possible, because it
+#       turns "1440 px wide" back into "as wide as the screen".
+#
+# v1 is discarded by the reader (fall back to the policy). v2 is still read — as
+# a single monitor-less entry, restored exactly as it was before, so an existing
+# cache keeps working — and upgraded to v3 the next time the window is saved.
+HYPR_STATE_DIR=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-window-state
+HYPR_GEOM_VERSION=3
+
+# Path to a class's remembered-geometry file. The class is sanitised for use as
+# a filename: almost never needed in practice, defensive against a class with a
+# slash in it.
+hypr_geom_file() {
+    printf '%s/%s.json\n' "$HYPR_STATE_DIR" "$(printf '%s' "$1" | tr '/' '_')"
+}
+
+# Remember a geometry for a class: hypr_save_geometry CLASS W H X Y [MON_ID].
+#
+# x/y arrive as GLOBAL coordinates (straight off `hyprctl clients`.at) and are
+# stored relative to the work-area origin of MON_ID (default: the focused
+# monitor) — see the schema note above.
+#
+# Writes only THAT monitor's entry and leaves the other screens' alone, so
+# maximizing a browser on the Dell can't shrink it on the laptop. The work area
+# it was measured in is stored alongside, which is what lets the entry be
+# re-read for a screen it has never been on.
+hypr_save_geometry() {
+    local class=$1 w=$2 h=$3 x=$4 y=$5 mon_id=${6:-}
+    local saved
+    saved=$(hypr_geom_file "$class")
+
+    if [[ $mon_id =~ ^[0-9]+$ ]]; then
+        hypr_work_area "$mon_id" || return 1
+    else
+        hypr_work_area || return 1
+    fi
+
+    # Carry over the other monitors' entries. Anything older than v3 is
+    # dropped rather than migrated: there is no record of which screen it came
+    # from, and guessing "this one" would put the laptop's size under the
+    # Dell's name. It has already been restored from by then anyway.
+    local prev
+    prev=$(jq -c 'if (.v? // 0) == 3 then (.mons // {}) else {} end' "$saved" 2>/dev/null) \
+        || prev='{}'
+    [[ -z $prev || $prev == null ]] && prev='{}'
+
+    mkdir -p "$HYPR_STATE_DIR"
+    jq -n --argjson v "$HYPR_GEOM_VERSION" --arg mon "$WORK_MON" \
+          --argjson prev "$prev" \
+          --argjson w "$w" --argjson h "$h" \
+          --argjson x "$(( x - WORK_X ))" --argjson y "$(( y - WORK_Y ))" \
+          --argjson aw "$WORK_W" --argjson ah "$WORK_H" \
+        '{v: $v, last: $mon,
+          mons: ($prev + {($mon): {width: $w, height: $h, x: $x, y: $y,
+                                   aw: $aw, ah: $ah}})}' \
+        > "$saved.tmp" && mv "$saved.tmp" "$saved"
+}
