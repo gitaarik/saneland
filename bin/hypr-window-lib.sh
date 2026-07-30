@@ -21,17 +21,26 @@
 #   ~/.config/hypr/window-policy.local.conf   (git-ignored, yours)
 #   ~/.config/hypr/window-policy.conf         (tracked defaults)
 #
-# Line format is `<verdict> <class-regex>`; see window-policy.conf for the
-# full explanation of the three verdicts and why "not listed" means leave the
-# window alone.
+# Line format is `<keyword> <regex>`. Three keywords answer "may this class be
+# maximized" — always | leave | never — and two more say how many of an app's
+# windows count as main windows: `multi` (all of them) and `popup` (a title
+# that never does). See window-policy.conf for what each one means and why
+# "not listed" means leave the window alone.
 HYPR_POLICY_LOCAL=${XDG_CONFIG_HOME:-$HOME/.config}/hypr/window-policy.local.conf
 HYPR_POLICY_BASE=${XDG_CONFIG_HOME:-$HOME/.config}/hypr/window-policy.conf
 
-# Print the verdict for a class: always | leave | never. Unlisted -> leave.
-# With any second argument, print `<verdict>\t<regex>\t<file>` instead, so
-# `hypr-window-policy show` can say WHICH line decided.
-hypr_policy_for() {
-    local class=$1 verbose=${2:-} file line verdict re
+# Find the first policy line whose keyword is one of $1 (an alternation, e.g.
+# `always|leave|never`) and whose regex matches $2. Prints
+# `<keyword>\t<regex>\t<file>` and returns 0; returns 1 if nothing matched.
+#
+# First match wins, local file first, so a machine-specific rule always beats a
+# shipped default — and within one file the earlier line beats the later one,
+# which is what lets `never ^Tor Browser$` sit above the browser families.
+# Scanning all the keywords in ONE pass is what keeps that ordering meaningful:
+# a per-keyword search would silently prefer whichever keyword was searched for
+# first, whatever order the file is written in.
+hypr_policy_lookup() {
+    local want=$1 subject=$2 file line kw re
     for file in "$HYPR_POLICY_LOCAL" "$HYPR_POLICY_BASE"; do
         [[ -r $file ]] || continue
         while IFS= read -r line || [[ -n $line ]]; do
@@ -40,23 +49,45 @@ hypr_policy_for() {
             # Splitting on whitespace with `read` would break `^Tor Browser$`.
             line=${line%%[[:space:]]#*}
             [[ $line =~ ^[[:space:]]*([a-z]+)[[:space:]]+(.*[^[:space:]])[[:space:]]*$ ]] || continue
-            verdict=${BASH_REMATCH[1]}
+            kw=${BASH_REMATCH[1]}
             re=${BASH_REMATCH[2]}
-            case $verdict in always|leave|never) ;; *) continue ;; esac
-            [[ $class =~ $re ]] || continue
-            if [[ -n $verbose ]]; then
-                printf '%s\t%s\t%s\n' "$verdict" "$re" "$file"
-            else
-                printf '%s\n' "$verdict"
-            fi
+            [[ $kw =~ ^($want)$ ]] || continue
+            [[ $subject =~ $re ]] || continue
+            printf '%s\t%s\t%s\n' "$kw" "$re" "$file"
             return 0
         done < "$file"
     done
+    return 1
+}
+
+# Print the verdict for a class: always | leave | never. Unlisted -> leave.
+# With any second argument, print `<verdict>\t<regex>\t<file>` instead, so
+# `hypr-window-policy show` can say WHICH line decided.
+hypr_policy_for() {
+    local class=$1 verbose=${2:-} hit
+    hit=$(hypr_policy_lookup 'always|leave|never' "$class") \
+        || hit=$'leave\t(unlisted)\t(default)'
     if [[ -n $verbose ]]; then
-        printf 'leave\t(unlisted)\t(default)\n'
+        printf '%s\n' "$hit"
     else
-        printf 'leave\n'
+        printf '%s\n' "${hit%%$'\t'*}"
     fi
+}
+
+# Does this class have several REAL main windows — a browser, not an app whose
+# second window is a dialog? `multi` classes are exempt from hypr-max-on-open's
+# one-window-at-a-time rule; see window-policy.conf.
+hypr_class_is_multi() {
+    hypr_policy_lookup multi "$1" >/dev/null
+}
+
+# Is this window title one that is never a main window? Only consulted for
+# `multi` classes, as the exception list to their exemption: a browser's
+# Picture-in-Picture and Library windows share the class of the real browsing
+# windows and must not be sized or remembered like one. Every other class is
+# covered by the one-window rule and never asks.
+hypr_title_is_popup() {
+    [[ -n $1 ]] && hypr_policy_lookup popup "$1" >/dev/null
 }
 
 # Turn a literal class into an anchored regex for a policy line, escaping the

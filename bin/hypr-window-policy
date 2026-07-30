@@ -116,6 +116,22 @@ case $cmd in
         printf 'verdict  %s\n' "$verdict"
         printf 'rule     %s\n' "$re"
         printf 'from     %s\n' "$file"
+        # Whether the verdict is even reachable for THIS window: a class not
+        # marked `multi` is only ever sized while it is the app's only window,
+        # and one that is marked `multi` is turned away by a `popup` title.
+        if IFS=$'\t' read -r _ mre mfile < <(hypr_policy_lookup multi "$class"); then
+            printf 'windows  multi — every window of it is a main window\n'
+            printf '         %s  (%s)\n' "$mre" "$mfile"
+            title=$(hyprctl -j activewindow 2>/dev/null \
+                | jq -r --arg c "$class" 'select(.class == $c) | .title // empty' 2>/dev/null)
+            if [[ -n $title ]] \
+               && IFS=$'\t' read -r _ pre pfile < <(hypr_policy_lookup popup "$title"); then
+                printf 'popup    this window: %s\n' "$title"
+                printf '         %s  (%s) — not sized, not remembered\n' "$pre" "$pfile"
+            fi
+        else
+            printf 'windows  one at a time — sized only while it is the only window of its class\n'
+        fi
         geom=$(hypr_geom_file "$class")
         # One entry per monitor since v3 — print them all, so it's obvious why
         # the same app comes up at different sizes on different screens.
@@ -134,7 +150,7 @@ case $cmd in
         for f in "$HYPR_POLICY_LOCAL" "$HYPR_POLICY_BASE"; do
             [[ -r $f ]] || continue
             printf '\n== %s\n' "$f"
-            grep -nE '^[[:space:]]*(always|leave|never)[[:space:]]' "$f"
+            grep -nE '^[[:space:]]*(always|leave|never|multi|popup)[[:space:]]' "$f"
         done
         printf '\n== anything unmatched: leave (opens at the size it asks for)\n'
         ;;

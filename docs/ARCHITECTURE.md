@@ -222,9 +222,10 @@ Per-theme image pools live in `~/.config/hypr/wallpapers/{dark,light}/`.
 new window should be. In order:
 
 1. **`never`** in the policy (below) — don't touch it, don't remember it.
-2. **Not the only window of its class** — don't touch it. See "one window at a
-   time" below; this is the rule the rest of the section keeps referring back
-   to.
+2. **Not a main window** — don't touch it. For most classes that means "not the
+   only window of its class"; for a `multi` class it means "its title is on the
+   `popup` list". See "one window at a time" below; this is the rule the rest of
+   the section keeps referring back to.
 3. **Remembered geometry** for the class *on the screen it opened on*, from
    `~/.cache/hypr-window-state/<class>.json`. This wins over the policy: it is a
    decision you already made about this exact app. See "one geometry per
@@ -242,7 +243,7 @@ machine). `mod+Alt+m` flips the focused window's class between `always` and
 saving — only ever applies to a window that is the only one of its class at that
 moment (`alone_of_class`). A second window of an app is a dialog far more often
 than it is a second main window: GIMP's Preferences and Export As, Thunderbird's
-event details, a browser's Picture-in-Picture and Library.
+event details.
 
 This one rule replaced two mechanisms that both tried to answer "is this a main
 window?" and both had to be taught app by app: a per-app title classifier
@@ -256,11 +257,28 @@ size test too.
 
 The cost is that a second window of an app that doesn't remember its own size
 opens small. `mod+m` sizes that window, and `mod+Alt+Shift+m`
-(`hypr-window-policy remember`) records a geometry for the class deliberately —
-which is also the answer to the one thing the old classifier did better: a
-browser's size used to be saved unconditionally, even with sibling windows open,
-because the classifier could tell a browsing window from an `Extension: …`
-popup. Now saving waits for the app's last window, or for you to ask.
+(`hypr-window-policy remember`) records a geometry for the class deliberately.
+
+**…except for a `multi` class.** For a browser the rule above is simply wrong:
+its windows are all real main windows, so with four of them open not one could
+ever be sized on open or remembered on close, because none is ever alone. A class
+listed as `multi` in the policy is treated as if every window were the only one.
+
+That exemption is why `popup` exists. A browser *does* have windows that aren't
+browsing windows wearing the same class — Picture-in-Picture, the bookmarks
+Library, an extension detached into its own window — and they must not be
+maximized on open, nor **remembered**: a detached Bitwarden popup once left
+`waterfox.json` holding a centred 1152x744, and every browser start came back
+that size. Only a title separates them, so `multi` classes are the one place a
+title is consulted, against the `popup` list. That is the old classifier's
+knowledge, but as data in `window-policy.conf` rather than a case arm in the
+daemon — and anchored, so a page titled `Library — Waterfox` stays a browsing
+window while the bookmarks window (`Library`) does not. Everything not marked
+`multi` needs no per-app knowledge at all.
+
+`is_main` in `hypr-max-on-open` holds both readings and is asked at all three
+points: on open, on close, and by the resize poller (which passes the count it
+already has, so the common path costs no extra query).
 
 Nothing you do by hand is gated: `mod+m`, `mod+c`, the snaps, an app's own
 maximize button and moving a window between screens all act on whatever window

@@ -56,13 +56,12 @@
 # saving — applies only to a window that is the ONLY ONE OF ITS CLASS at that
 # moment (alone_of_class). A second window of an app is a dialog far more often
 # than it is a second main window: GIMP's Preferences and Export As,
-# Thunderbird's event details, a browser's Picture-in-Picture and Library. There
-# is no way to ask a Wayland client which it is — hyprctl exposes no parent
-# window, no window type and no size hints, and xdgTag/xdgDescription/
-# contentType are empty on every real client here (0.55.4) — so this one rule
-# replaces the two mechanisms that used to guess: a per-app title classifier
-# that needed a new arm for every app, and a "did it open at >= 60% of the work
-# area" size test that a large dialog sails straight through.
+# Thunderbird's event details. There is no way to ask a Wayland client which it
+# is — hyprctl exposes no parent window, no window type and no size hints, and
+# xdgTag/xdgDescription/contentType are empty on every real client here (0.55.4)
+# — so this one rule replaces the two mechanisms that used to guess: a per-app
+# title classifier that needed a new arm for every app, and a "did it open at
+# >= 60% of the work area" size test that a large dialog sails straight through.
 #
 # What it costs: a second window of an app that doesn't remember its own size
 # opens small. mod+m fixes that window, and mod+Alt+Shift+m
@@ -70,6 +69,17 @@
 # for when the automatic save can't see it. Nothing you do by hand is gated —
 # mod+m, mod+c, the snaps, an app's own maximize button and moving a window
 # between screens all act on whatever window you point them at.
+#
+# ...EXCEPT for a class the policy marks `multi`, where that reading is simply
+# wrong. A browser's windows are all real main windows: with four of them open
+# not one could ever be sized or remembered, because none is ever alone. A
+# `multi` class is treated as if every window were the only one — and is the one
+# place a TITLE is consulted, against the policy's `popup` list, because a
+# browser does have windows that aren't browsing windows (Picture-in-Picture,
+# the bookmarks Library, an extension detached into its own window) and they
+# wear the same class. That is the old per-app classifier's knowledge, moved out
+# of here and into window-policy.conf where it is data you can edit. See
+# is_main, which is where both readings live.
 #
 # Hyprland's closewindow event arrives after the window is dropped
 # from `hyprctl clients`, so a background loop snapshots clients to
@@ -162,6 +172,33 @@ alone_of_class() {
     others=$(hyprctl -j clients 2>/dev/null | jq --arg c "$1" --arg a "$2" \
         '[.[] | select(.class == $c and .address != $a)] | length' 2>/dev/null)
     [[ $others =~ ^[0-9]+$ ]] && (( others == 0 ))
+}
+
+# May this window be sized on open and remembered on close — THE ONE RULE and
+# its exemption, in the one place both ends of the daemon ask.
+#
+#   is_main CLASS ADDRESS TITLE [SIBLING_COUNT]
+#
+# A `multi` class says every window of it is a real main window, which is the
+# only honest reading for a browser: keep four windows open and the plain rule
+# can never size or remember any of them, because none is ever alone. The price
+# is that a browser also has windows that aren't browsing windows wearing the
+# same class, so a `multi` class is the one case where a TITLE is consulted —
+# against the `popup` list in window-policy.conf, where that per-app knowledge
+# is data instead of code.
+#
+# SIBLING_COUNT is the number of windows of the class INCLUDING this one, for
+# the poller, which already counted them in the snapshot it holds; without it
+# the count comes from hyprctl.
+is_main() {
+    local class=$1 addr=$2 title=$3 count=${4:-}
+    if hypr_class_is_multi "$class"; then
+        ! hypr_title_is_popup "$title"
+    elif [[ -n $count ]]; then
+        (( count <= 1 ))
+    else
+        alone_of_class "$class" "$addr"
+    fi
 }
 
 # How close a window has to land to count as "the geometry took" (px). A few
@@ -410,16 +447,16 @@ policy_learn() {
 }
 
 # Persist a geometry observed by the poller below. Same gate as the close-time
-# save — the app's only window — so a GIMP dialog or a Thunderbird event-details
-# popup can't overwrite the real window's size just by being dragged around.
+# save, so a GIMP dialog or a Thunderbird event-details popup can't overwrite
+# the real window's size just by being dragged around.
 #
 # $count is the number of windows of this class, straight out of the poller's
-# own snapshot, so this costs no extra hyprctl call; alone_of_class asks the
-# same question at the two ends where there is no snapshot to hand.
+# own snapshot, so is_main costs no extra hyprctl call here; it asks the same
+# question with a query at the two ends where there is no snapshot to hand.
 persist_geometry() {
-    local class=$1 geom=$2 mon=$3 count=$4
+    local class=$1 title=$2 geom=$3 mon=$4 count=$5
     [[ $(hypr_policy_for "$class") == never ]] && return 0
-    (( count <= 1 )) || return 0
+    is_main "$class" "" "$title" "$count" || return 0
     local wh=${geom%%+*} xy=${geom#*+}         # WxH+X+Y, X may be negative
     hypr_save_geometry "$class" "${wh%%x*}" "${wh##*x}" "${xy%%+*}" "${xy##*+}" "$mon"
 }
@@ -452,7 +489,7 @@ persist_geometry() {
         monitors_settling && settling=1        # once per tick, not per window
 
         cur=()
-        while IFS=$'\t' read -r a cls geom mon count; do
+        while IFS=$'\t' read -r a cls ttl geom mon count; do
             [[ -z $a ]] && continue
             cur[$a]=1
             if [[ -z ${base[$a]:-} ]]; then base[$a]=$geom; continue; fi
@@ -464,10 +501,10 @@ persist_geometry() {
             if [[ ${pend[$a]:-} != "$geom" ]]; then pend[$a]=$geom; continue; fi
             base[$a]=$geom
             unset 'pend[$a]'
-            persist_geometry "$cls" "$geom" "$mon" "$count"
+            persist_geometry "$cls" "$ttl" "$geom" "$mon" "$count"
         done < <(jq -r '
             (map(.class) | group_by(.) | map({key: .[0], value: length}) | from_entries) as $n
-            | .[] | [ .address, .class,
+            | .[] | [ .address, .class, .title,
                       "\(.size[0])x\(.size[1])+\(.at[0])+\(.at[1])",
                       .monitor, $n[.class] ] | @tsv' <<<"$snap")
 
@@ -498,14 +535,14 @@ trap 'exit' INT TERM
 while IFS= read -r line <&3; do
     case "$line" in
         openwindow*)
-            # Format: openwindow>>ADDRESS,WORKSPACE,CLASS,TITLE. Only the class
-            # is used: the title said nothing reliable about main-vs-dialog
-            # without a per-app rule for it, which is what THE ONE RULE
-            # replaces (see the header).
+            # Format: openwindow>>ADDRESS,WORKSPACE,CLASS,TITLE. The title only
+            # matters for a `multi` class, where it is checked against the
+            # `popup` list; every other class is decided by the class alone.
             data=${line#openwindow>>}
             addr=${data%%,*}
             rest=${data#*,}                        # WORKSPACE,CLASS,TITLE
             class=${rest#*,}                       # CLASS,TITLE
+            title=${class#*,}
             class=${class%%,*}
             addr_full="0x${addr}"
 
@@ -521,13 +558,20 @@ while IFS= read -r line <&3; do
             (
                 sleep 0.05
 
-                # The app already has a window open, so this one is a dialog
-                # far more often than it is a second main window — and there is
-                # no way to tell the two apart. Leave it exactly as it asked to
-                # be: GIMP's Export As and Preferences, Thunderbird's event
-                # details, a browser's Picture-in-Picture and Library all land
-                # here. mod+m if you disagree with one.
-                alone_of_class "$class" "$addr_full" || exit 0
+                # Not a main window -> leave it exactly as it asked to be.
+                # For most classes that means the app already had a window open,
+                # so this one is a dialog far more often than not: GIMP's Export
+                # As and Preferences, Thunderbird's event details. For a `multi`
+                # class it means the title is on the popup list. mod+m if you
+                # disagree with one.
+                #
+                # A title can still be settling 50ms in, so if the one the event
+                # carried didn't decide it, ask again for the one it has now.
+                if hypr_class_is_multi "$class" && ! hypr_title_is_popup "$title"; then
+                    title=$(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr_full" \
+                        '.[] | select(.address == $a) | .title' 2>/dev/null)
+                fi
+                is_main "$class" "$addr_full" "$title" || exit 0
 
                 # A remembered size beats the policy — it is a decision you
                 # already made about this exact class, on this exact screen.
@@ -698,6 +742,7 @@ while IFS= read -r line <&3; do
             fi
 
             class=$(echo "$client" | jq -r '.class')
+            title=$(echo "$client" | jq -r '.title')
 
             [[ $(hypr_policy_for "$class") == never ]] && continue
 
@@ -709,10 +754,13 @@ while IFS= read -r line <&3; do
 
             # The same gate as the open path, and for the same reason: what a
             # dialog was doing when you dismissed it is not what the app's real
-            # window should come back as. Closing the last window of a class is
-            # the moment its geometry is worth keeping — and mod+Alt+Shift+m
-            # records one deliberately when it isn't the last.
-            alone_of_class "$class" "$addr_full" || continue
+            # window should come back as. For most classes that means the last
+            # window of the class is the one worth keeping — and mod+Alt+Shift+m
+            # records one deliberately when it isn't the last. For a `multi`
+            # class every browsing window is worth keeping and only a `popup`
+            # title is turned away, which is what stops a detached extension
+            # window from overwriting the real size just by closing after it.
+            is_main "$class" "$addr_full" "$title" || continue
 
             w=$(echo "$client" | jq -r '.size[0]')
             h=$(echo "$client" | jq -r '.size[1]')
