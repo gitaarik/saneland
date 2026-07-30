@@ -368,28 +368,46 @@ fine: it is legacy data, replaced by a real v3 entry the first time it saves.
 
 `hypr-window-policy show <class>` prints one line per screen.
 
-**A maximized window stays maximized when it changes screen.** Moving a window
-doesn't resize it, so one maximized on the laptop arrives on the Dell still
-1440x930, with a band of desktop down two sides, and one maximized on the Dell
-arrives on the laptop 1920x1050, hanging off the edges. The `movewindow` handler
-gives it the new screen's work area instead, so `mod+Ctrl+Shift+h/j/k/l` keeps
-it looking maximized in both directions — including shrinking it back on the way
-to the smaller screen.
+**A maximized or snapped window keeps its shape when it changes screen.** Moving
+a window doesn't resize it, so one maximized on the laptop arrives on the Dell
+still 1440x930, with a band of desktop down two sides, and one maximized on the
+Dell arrives on the laptop 1920x1050, hanging off the edges. The `movewindow`
+handler gives it the new screen's equivalent instead, so `mod+Ctrl+Shift+h/j/k/l`
+keeps it looking right in both directions — including shrinking it back on the
+way to the smaller screen.
 
-Nothing has to be tracked to know it was maximized, because *maximized* here **is
-a work area**: mod+m applies a geometry, not a state (`hypr_fills_work_area`), so
-a window wearing some **other** connected screen's work area was maximized there
-a moment ago, and that alone is the signal. `.monitor` is already the destination
+Nothing has to be tracked to know what it was, because both shapes **are**
+geometries rather than states: mod+m applies a work area (`hypr_fills_work_area`)
+and `mod+Ctrl+h/j/k/l` applies half of one (`hypr_snap_axes`), so a window
+wearing some **other** connected screen's rectangle was in that shape there a
+moment ago, and that alone is the signal. `.monitor` is already the destination
 when the event arrives — verified by querying on the event itself — so there is
-no address→monitor map to keep either. A window that fills the screen it just
-landed on is left alone, which covers every move that stayed on one monitor
-(`mod+Shift+<tag>`) and every move between two screens of the same size; so are
-tiled windows, which the layout re-tiles anyway, and real fullscreen, which
-Hyprland re-applies per monitor.
+no address→monitor map to keep either. A window already wearing a rectangle of
+the screen it just landed on is left alone, which covers every move that stayed
+on one monitor (`mod+Shift+<tag>`) and every move between two screens of the same
+size; so are tiled windows, which the layout re-tiles anyway, and real
+fullscreen, which Hyprland re-applies per monitor.
 
-Only a *full* work area counts. A half-screen snap carried to another monitor
-keeps its old pixels — `reanchor_axis` knows how to re-read those for a
-different screen, but only at open time.
+A snap needs one thing a maximize doesn't: its **side**. The size says which axis
+was halved — half on one axis and full on the other is an edge half, half on both
+is a corner quarter — but a left and a right half are the same rectangle in
+different places, so which one it was has to come from where the window sits.
+Measured on this machine, Hyprland re-places a floating window at the same offset
+*into* the new monitor and clamps it inward when it no longer fits: a right half
+off the 1920-wide Dell lands hard against the laptop's right edge (x=483 for a
+954-wide window on a 1440-wide work area), and a 1044-tall one clamps to y=−117.
+So the window's centre is compared against the midline of whichever screen is
+*smaller* on that axis — the source's when the offset survived intact, the
+destination's when the clamp is what positioned it, which is the same test
+written once (`near_side`). It cannot tell apart a window wider than the whole
+destination work area, where a left and a right half clamp to identical pixels;
+that needs one screen to be roughly twice the other on that axis.
+
+The rectangle itself comes from `hypr_snap_geom` in the shared lib, applied by
+`hypr_set_snap`, which `hypr-snap-window` also calls — so a snap redone on
+another screen is the same pixels the shortcut would have produced there, chrome
+included. `hypr-snap-window` is left holding only the part that is really its
+own: turning a keypress (and a second one within 1.5s) into a side.
 
 It is a handler on the event rather than a wrapper around the two move binds
 because Hyprland posts `movewindow` from the one function that reassigns a

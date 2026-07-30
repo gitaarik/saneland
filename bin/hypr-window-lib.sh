@@ -218,6 +218,85 @@ hypr_set_max() {
          $(hypr_chrome "$addr" max)" >/dev/null
 }
 
+# ---------------------------------------------------------------------------
+# Snapping
+# ---------------------------------------------------------------------------
+# A snap is half the work area on one axis (or on both, for a corner), inset by
+# a border on every side so the 2px active border of the `snap` chrome renders
+# inside the screen instead of half off it. Like maximize, it is a GEOMETRY and
+# not a state: nothing records that a window is snapped, so the rectangle has to
+# be computable from the work area alone — which is what lets hypr-max-on-open
+# recognise one after the fact (hypr_snap_axes) and redo it on another screen.
+HYPR_SNAP_BORDER=3
+
+# hypr_snap_geom HORIZ VERT — the rectangle a snap occupies on the work area
+# last measured by hypr_work_area. HORIZ is left|right|"" and VERT is
+# top|bottom|"", where "" means the whole of that axis:
+#
+#   (left, "")      left half        ("", top)      top half
+#   (right, top)    top-right quarter
+#
+# Sets SNAP_W/SNAP_H/SNAP_X/SNAP_Y; x/y are GLOBAL coordinates, already offset
+# by the work area's origin.
+hypr_snap_geom() {
+    local horiz=$1 vert=$2 bw=$HYPR_SNAP_BORDER
+    local half_w=$(( WORK_W / 2 )) half_h=$(( WORK_H / 2 ))
+    case $horiz in
+        left)  SNAP_X=$(( WORK_X + bw ))          SNAP_W=$(( half_w - bw - bw )) ;;
+        right) SNAP_X=$(( WORK_X + half_w + bw )) SNAP_W=$(( half_w - bw - bw )) ;;
+        *)     SNAP_X=$(( WORK_X + bw ))          SNAP_W=$(( WORK_W - bw - bw )) ;;
+    esac
+    case $vert in
+        top)    SNAP_Y=$(( WORK_Y + bw ))          SNAP_H=$(( half_h - bw - bw )) ;;
+        bottom) SNAP_Y=$(( WORK_Y + half_h + bw )) SNAP_H=$(( half_h - bw - bw )) ;;
+        *)      SNAP_Y=$(( WORK_Y + bw ))          SNAP_H=$(( WORK_H - bw - bw )) ;;
+    esac
+}
+
+# hypr_snap_axes W H — is a window of this size snapped to the work area last
+# measured by hypr_work_area? Sets SNAP_AXIS_X and SNAP_AXIS_Y to `half` or
+# `full` and returns 0; returns 1 if the size is not a snap of this screen.
+#
+# The SIZE says which KIND of snap it is — half on one axis and full on the
+# other is an edge half, half on both is a corner quarter — but never which
+# SIDE: a left and a right half are the same rectangle in different places.
+# Callers that need the side get it from the position.
+#
+# Full on both axes is the work area inset by a border, which nothing produces:
+# maximize fills it exactly (hypr_fills_work_area), so that combination would
+# only be a coincidence and is rejected. Same 3px slack as hypr_fills_work_area,
+# for the same fractional-scale rounding.
+hypr_snap_axes() {
+    local bw=$HYPR_SNAP_BORDER d
+    d=$(( $1 - (WORK_W / 2 - bw - bw) )); SNAP_AXIS_X=half
+    if (( ${d#-} > 3 )); then
+        d=$(( $1 - (WORK_W - bw - bw) )); SNAP_AXIS_X=full
+        (( ${d#-} > 3 )) && return 1
+    fi
+    d=$(( $2 - (WORK_H / 2 - bw - bw) )); SNAP_AXIS_Y=half
+    if (( ${d#-} > 3 )); then
+        d=$(( $2 - (WORK_H - bw - bw) )); SNAP_AXIS_Y=full
+        (( ${d#-} > 3 )) && return 1
+    fi
+    [[ $SNAP_AXIS_X == full && $SNAP_AXIS_Y == full ]] && return 1
+    return 0
+}
+
+# Snap a window to a half or quarter of ITS OWN monitor's work area, with the
+# borderless-but-bordered "snap" chrome. hypr-snap-window is one caller (the
+# mod+Ctrl+h/j/k/l binds); hypr-max-on-open is the other, redoing a snap on the
+# screen a window was moved to. Both go through here so that "snapped left" means
+# exactly the same pixels however it was asked for.
+hypr_set_snap() {
+    local addr=$1 horiz=$2 vert=$3
+    hypr_work_area_for "$addr" || return 1
+    hypr_snap_geom "$horiz" "$vert"
+    hyprctl --batch \
+        "dispatch resizewindowpixel exact ${SNAP_W} ${SNAP_H},address:${addr}; \
+         dispatch movewindowpixel exact ${SNAP_X} ${SNAP_Y},address:${addr}; \
+         $(hypr_chrome "$addr" snap)" >/dev/null
+}
+
 # Apply an explicit geometry to a window, picking the chrome to match: a
 # window that fills the work area (within a few px of scale rounding) gets
 # the borderless, square-cornered "max" look like a real maximize; anything

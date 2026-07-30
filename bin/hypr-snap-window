@@ -3,10 +3,14 @@
 # Snap the active window to one half of the work area: left, right, top,
 # or bottom. Bound to mod+Ctrl+h/l/k/j.
 #
-# Same work-area logic as hypr-fill-work-area, via hypr_work_area in the
-# shared lib (wlr-randr for precise scale, reserved zones subtracted for the
-# eww bar). Applies the "snap" chrome (2px border, no hyprbars title bar) so
-# the snapped window looks like a proper tiled half rather than a free float.
+# The rectangle itself is hypr_snap_geom in the shared lib, applied by
+# hypr_set_snap: work area via hypr_work_area (wlr-randr for precise scale,
+# reserved zones subtracted for the eww bar), inset by a border so the border
+# renders inside the screen, and the "snap" chrome (2px border, no hyprbars
+# title bar) so the result looks like a proper tiled half rather than a free
+# float. This script's own job is only to turn a keypress into a side — which
+# is also why hypr-max-on-open can redo a snap on another screen without
+# going through here.
 
 set -uo pipefail
 source "${HOME}/.local/bin/hypr-window-lib.sh"
@@ -15,16 +19,6 @@ side=${1:?Usage: $0 left|right|top|bottom}
 
 target=$(hyprctl -j activewindow | jq -r '.address')
 [[ -z $target || $target = "null" ]] && exit 0
-
-# Snap within the window's OWN monitor, not the focused one — with a second
-# output those differ whenever the cursor is elsewhere (see hypr_work_area).
-hypr_work_area_for "$target" || exit 1
-work_w=$WORK_W work_h=$WORK_H org_x=$WORK_X org_y=$WORK_Y
-
-# Border size: visible borders take pixels on each side, so inset position +
-# shrink size accordingly. Otherwise borders on edges that touch the screen
-# boundary render outside the visible area.
-bw=3
 
 # Quarter snap: if the previous snap on this same window was a perpendicular
 # half (within 1.5s), combine into the matching corner. Otherwise apply a
@@ -37,6 +31,7 @@ horiz=""; vert=""
 case "$side" in
     left|right)  horiz=$side ;;
     top|bottom)  vert=$side ;;
+    *) echo "Usage: $0 left|right|top|bottom" >&2; exit 1 ;;
 esac
 
 if [[ -r $state_file ]]; then
@@ -50,40 +45,17 @@ if [[ -r $state_file ]]; then
     fi
 fi
 
-half_w=$(( work_w / 2 ))
-half_h=$(( work_h / 2 ))
-
-# All x/y below are offset from the work area's global origin (org_x/org_y),
-# so a snap lands on the window's own monitor rather than the leftmost one.
 if [[ -n $horiz && -n $vert ]]; then
-    # Quarter
-    w=$(( half_w - bw - bw ))
-    h=$(( half_h - bw - bw ))
-    [[ $horiz = left  ]] && x=$(( org_x + bw )) || x=$(( org_x + half_w + bw ))
-    [[ $vert  = top   ]] && y=$(( org_y + bw )) || y=$(( org_y + half_h + bw ))
-    # Clear state so the next snap starts a new combo.
+    # Quarter: clear state so the next snap starts a new combo.
     : > "$state_file"
 else
-    case "$side" in
-        left)
-            x=$(( org_x + bw ))  y=$(( org_y + bw ))
-            w=$(( half_w - bw - bw ))  h=$(( work_h - bw - bw )) ;;
-        right)
-            x=$(( org_x + half_w + bw ))  y=$(( org_y + bw ))
-            w=$(( half_w - bw - bw ))  h=$(( work_h - bw - bw )) ;;
-        top)
-            x=$(( org_x + bw ))  y=$(( org_y + bw ))
-            w=$(( work_w - bw - bw ))  h=$(( half_h - bw - bw )) ;;
-        bottom)
-            x=$(( org_x + bw ))  y=$(( org_y + half_h + bw ))
-            w=$(( work_w - bw - bw ))  h=$(( half_h - bw - bw )) ;;
-        *) echo "Usage: $0 left|right|top|bottom" >&2; exit 1 ;;
-    esac
-    # Save state for a possible follow-up perpendicular snap.
+    # Half: save state for a possible follow-up perpendicular snap.
     printf '%s\t%s\t%s\n' "$now" "$side" "$target" > "$state_file"
 fi
 
-hyprctl --batch \
-    "dispatch resizewindowpixel exact ${w} ${h},address:${target}; \
-     dispatch movewindowpixel exact ${x} ${y},address:${target}; \
-     $(hypr_chrome "$target" snap)" >/dev/null
+# One of horiz/vert is still empty for a half snap, which is exactly how
+# hypr_snap_geom spells "the full extent of that axis".
+#
+# Snaps within the window's OWN monitor, not the focused one — with a second
+# output those differ whenever the cursor is elsewhere (see hypr_work_area).
+hypr_set_snap "$target" "$horiz" "$vert"

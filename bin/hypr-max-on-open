@@ -42,14 +42,15 @@
 #     actions. Real fullscreen (mod+Shift+m, or an app's own F11) is left
 #     untouched.
 #
-#   - On move to another screen: a window that was filling the screen it
-#     came from is made to fill the new one. Moving a window does not
-#     resize it, so a maximized one arrives wearing the old screen's
-#     pixels — a hole around it on a bigger screen, hanging off the edges
-#     on a smaller one. Needs no bookkeeping to spot: "maximized" here IS
-#     a screen's work area (see hypr_fills_work_area), so a window wearing
-#     some OTHER connected screen's work area was maximized there a moment
-#     ago.
+#   - On move to another screen: a window that was filling — or snapped to
+#     a half or quarter of — the screen it came from is given the same
+#     rectangle of the new one. Moving a window does not resize it, so it
+#     arrives wearing the old screen's pixels: a hole around it on a bigger
+#     screen, hanging off the edges on a smaller one. Needs no bookkeeping
+#     to spot, because both are GEOMETRIES and not states — "maximized" IS
+#     a screen's work area (hypr_fills_work_area) and a snap IS half of one
+#     (hypr_snap_axes), so a window wearing some OTHER connected screen's
+#     rectangle was in that state there a moment ago.
 #
 # THE ONE RULE: everything automatic above — the restore, the maximize, and the
 # saving — applies only to a window that is the ONLY ONE OF ITS CLASS at that
@@ -114,6 +115,30 @@ monitors_settling() {
     mtime=$(stat -c %Y "$settle_file" 2>/dev/null) || return 1
     now=${EPOCHSECONDS:-$(date +%s)}
     (( now - mtime < monitor_settle_secs ))
+}
+
+# Is a moved window's centre on the near side of an axis (left / top) rather
+# than the far one (right / bottom)?
+#
+#   $1 the centre, RELATIVE to the destination work area's origin
+#   $2 the source screen's extent on this axis
+#   $3 the destination's extent
+#
+# Measured on this machine: Hyprland re-places a floating window at the same
+# offset into the new monitor and clamps it inward when it no longer fits, so
+# there are two cases, and the smaller of the two extents picks the right
+# midline for both. Moving to a BIGGER screen keeps the offset exactly, so the
+# centre is still the source's and the source's midline is what it must be
+# judged against. Moving to a SMALLER one may clamp, which pushes the window
+# hard against the very edge it was snapped to — so the destination's midline is
+# the one that answers, and it is also the smaller.
+#
+# What it cannot tell apart: a window WIDER (or taller) than the whole
+# destination work area, where a left and a right half both clamp to the same
+# pixels. That needs one screen to be roughly twice the other on that axis.
+near_side() {
+    local mid=$(( ($2 < $3 ? $2 : $3) / 2 ))
+    (( $1 < mid ))
 }
 
 # Which classes may be maximized is data, not code: hypr_policy_for (in
@@ -585,6 +610,8 @@ while IFS= read -r line <&3; do
 
                 w=$(jq -r '.size[0]'  <<<"$client")
                 h=$(jq -r '.size[1]'  <<<"$client")
+                x=$(jq -r '.at[0]'    <<<"$client")
+                y=$(jq -r '.at[1]'    <<<"$client")
                 mon_id=$(jq -r '.monitor' <<<"$client")
                 [[ $mon_id =~ ^[0-9]+$ ]] || exit 0   # not on a screen at all
 
@@ -593,21 +620,50 @@ while IFS= read -r line <&3; do
                 # nothing to wait for and no address->monitor map to keep.
                 hypr_work_area "$mon_id" || exit 0
                 here=$WORK_MON
+                dest_w=$WORK_W dest_h=$WORK_H dest_x=$WORK_X dest_y=$WORK_Y
 
-                # Already the right size for the screen it is on. That covers
+                # Already the right size for the screen it is on — maximized
+                # here, or snapped to a half or quarter of here. That covers
                 # every move that stayed on one monitor, and every move between
                 # two screens that happen to have the same work area.
                 hypr_fills_work_area "$w" "$h" && exit 0
+                hypr_snap_axes "$w" "$h" && exit 0
 
-                # Wearing another screen's work area, so it was maximized there
-                # until a moment ago: maximize it here instead. hypr_set_max
-                # re-measures for this screen and restores the borderless
+                # Wearing a rectangle of some OTHER screen, so that is what it
+                # was until a moment ago: redo it for this one. hypr_set_max and
+                # hypr_set_snap both re-measure here and restore the matching
                 # chrome, which the window is still carrying.
                 while read -r id; do
                     hypr_work_area "$id" || continue
                     [[ $WORK_MON == "$here" ]] && continue
-                    hypr_fills_work_area "$w" "$h" || continue
-                    hypr_set_max "$addr_full"
+
+                    if hypr_fills_work_area "$w" "$h"; then
+                        hypr_set_max "$addr_full"
+                        break
+                    fi
+
+                    # A snap's SIZE says which axis was halved; which SIDE of
+                    # that axis it was on has to come from where the window
+                    # sits, because a left and a right half are the same
+                    # rectangle. Hyprland carries a floating window across at
+                    # the same offset INTO the monitor and clamps it to fit when
+                    # the new screen is smaller (measured: a right half off the
+                    # 1920 Dell lands hard against the laptop's right edge), so
+                    # the centre is compared against the midline of whichever
+                    # screen is smaller on that axis — the source's when the
+                    # offset survived intact, this one's when the clamp is what
+                    # positioned it, and those are the same test.
+                    hypr_snap_axes "$w" "$h" || continue
+                    horiz='' vert=''
+                    if [[ $SNAP_AXIS_X == half ]]; then
+                        near_side $(( x + w / 2 - dest_x )) "$WORK_W" "$dest_w" \
+                            && horiz=left || horiz=right
+                    fi
+                    if [[ $SNAP_AXIS_Y == half ]]; then
+                        near_side $(( y + h / 2 - dest_y )) "$WORK_H" "$dest_h" \
+                            && vert=top || vert=bottom
+                    fi
+                    hypr_set_snap "$addr_full" "$horiz" "$vert"
                     break
                 done < <(hyprctl -j monitors 2>/dev/null | jq -r '.[].id')
             ) &
