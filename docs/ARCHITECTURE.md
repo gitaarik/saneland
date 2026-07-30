@@ -122,6 +122,53 @@ It's a daemon rather than a wrapper around the `killactive` bind because windows
 also close via the hyprbars close button and from inside the app (Ctrl+W,
 File→Quit), and all of those should behave the same.
 
+## Windows on a screen that goes away
+
+Each screen owns a block of 12 workspaces — monitors sorted by Hyprland id,
+rank *r* → offset *r*×12, so local tag 1..12 is global workspace off+1..off+12
+(laptop 1-12, external 13-24). `hypr-workspace`, `hypr-state.sh` and
+`hypr-scroll.sh` all derive it that way.
+
+The rank comes from the monitor's position among the **currently connected**
+monitors, so unplugging a screen renumbers every block after it. Unplug the
+external and Hyprland moves its workspaces — windows intact — onto a surviving
+screen, but nothing computes offset 12 any more:
+
+| reaches | before unplug | after |
+| --- | --- | --- |
+| number keys | 1-12 and 13-24 | 1-12 |
+| bar tags / taskbar | both blocks | 1-12 |
+| bar scroll | within either block | within 1-12 |
+
+The windows are alive and one `hyprctl dispatch workspace 13` away, but no
+binding gets you there. Only Alt-Tab still finds them — its MRU spans every
+client regardless of workspace — and once you land on ws 13 the bar shows no
+tag focused, because the workspace is out of its range.
+
+Closing the lid does the same thing from the other end: `eDP-1` goes away,
+every surviving rank drops by one, and it's the *external's* block that falls
+out of range.
+
+`bin/hypr-adopt-orphans --watch` (a `monitoradded`/`monitorremoved` listener)
+closes the hole with one rule: **a window outside the range the live monitors
+can address moves to the same tag on the screen it is on now.** External tag 3
+merges into laptop tag 3 — same number, so it's findable without being told,
+and windows that were grouped stay grouped. Written as "outside the live
+range" rather than "was on the screen that went away", the rule also covers
+the lid-close renumbering and a middle monitor of three leaving.
+
+Each adoption is recorded in `~/.cache/hypr-orphan-windows` (window → where it
+came from, where it was put), so replugging sends the windows home. A record
+is honoured only while the window is still on the tag it was merged into: move
+it yourself while undocked and it's yours to keep. Records are dropped when
+used, when the window closes, and when you move it, so nothing accumulates —
+and a file left by a previous session matches no live address, so it clears
+itself. The class is compared alongside the address because Hyprland addresses
+are pointers and a closed window's address can be reissued to a new one.
+
+Run it with no arguments for a one-shot "gather my lost windows" — a pass is
+idempotent and a no-op whenever everything is already in range.
+
 ## `hyprctl` from a stale shell
 
 `hyprctl` targets a compositor via `$HYPRLAND_INSTANCE_SIGNATURE`, captured at
@@ -168,7 +215,8 @@ The shell now blocks in the `read` **builtin**, which a signal does interrupt,
 and the loop runs in the main shell rather than a subshell — one process fewer
 and any state it keeps lives where the rest of the script can see it. Used by
 `hypr-max-on-open`, `hypr-window-order`, `hypr-raise-focused`,
-`hypr-keep-screen-focus`, `hypr-state.sh` and `eww-bars.sh --watch`.
+`hypr-keep-screen-focus`, `hypr-adopt-orphans --watch`, `hypr-state.sh` and
+`eww-bars.sh --watch`.
 
 `popup-toggle.sh` deliberately keeps the pipeline form: its listener is a
 one-shot that exits from inside the loop on the first `activewindow`, and the

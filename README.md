@@ -32,6 +32,10 @@ one-command **light/dark theme switcher** that repaints the whole session.
 - **Quality-of-life Hyprland scripts** — MRU Alt-Tab, window snapping /
   centering / maximize-toggle, scroll-to-switch workspaces, brightness &
   battery helpers.
+- **No windows lost to a hot-plug** — unplug a screen and its windows merge
+  into the same-numbered desktop on the screen that's left, instead of
+  stranding themselves on desktops no key can reach. Plug it back in and they
+  go home.
 
 ## Repository layout
 

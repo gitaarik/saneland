@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+#
+# hypr-adopt-orphans — keep every window reachable across a monitor hot-plug.
+#
+# THE PROBLEM. Each screen owns a block of 12 workspaces: monitors sorted by
+# Hyprland id, rank r -> offset r*12, so local tag 1..12 on that screen is
+# global workspace off+1..off+12 (laptop 1-12, external 13-24). The rank comes
+# from the monitor's position among the CURRENTLY CONNECTED monitors — see
+# hypr-workspace, hypr-state.sh and hypr-scroll.sh, which all compute it the
+# same way — so unplugging a screen renumbers everything after it.
+#
+# Unplug the external and Hyprland moves its workspaces, windows and all, onto
+# a surviving screen. They are alive and on-screen the moment you switch to
+# them — but nothing computes offset 12 any more, so no number key, no bar tag
+# and no bar scroll can reach them. Five windows, off the map. (Alt-Tab still
+# finds them: its MRU spans every client regardless of workspace. That is the
+# escape hatch this replaces.)
+#
+# The same hole opens without unplugging the screen you care about: close the
+# lid and eDP-1 goes away, every surviving monitor's rank drops by one, and it
+# is the EXTERNAL's whole block that falls out of range.
+#
+# THE FIX, in one rule: a window whose workspace is outside the range the live
+# monitors can address moves to the SAME TAG on the screen it is on now.
+# External tag 3 merges into laptop tag 3. Same number, so you know where to
+# look without being told, and windows that were grouped stay grouped. Stated
+# as "outside the live range" rather than "was on the screen that went away",
+# the one rule also covers the lid-close renumbering above, and a middle
+# monitor of three going away.
+#
+# AND BACK AGAIN. Each adoption is recorded (window -> where it came from,
+# where it was put) in ~/.cache/hypr-orphan-windows, so plugging the screen
+# back in sends the windows home. A record is honoured only while the window
+# is still sitting on the tag we merged it into: move it yourself while
+# undocked and it is yours, we forget it and it stays where you put it. The
+# record is dropped when it is used, when the window closes, or when you move
+# it — nothing accumulates, and a stale file from a previous session is
+# self-cleaning (no address in it matches a live window).
+#
+# Usage:
+#   hypr-adopt-orphans            one pass, now — "gather my lost windows"
+#   hypr-adopt-orphans --watch    daemon: one pass per monitor add/remove
+#
+# A pass is idempotent and does nothing at all when every window is already in
+# range, which is the single-monitor case and the normal case on every screen.
+#
+# LIMIT, stated plainly: workspaces are put back by NUMBER, and the number maps
+# to "the second screen", not to a particular panel. Undock, redock a different
+# external, and the windows come back on it. With three screens the block a
+# window is adopted into may be pinned to a still-missing monitor by a
+# `workspace = N, monitor:…` rule in local.conf, and Hyprland then places that
+# workspace on a screen of its own choosing — reachable, which is the point,
+# but not necessarily the screen it was adopted onto.
+
+set -uo pipefail
+
+# Workspaces per screen. Must match hypr-workspace, hypr-state.sh and
+# hypr-scroll.sh — the whole scheme is that all four agree on this number.
+WS_PER_MON=12
+
+CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/hypr-orphan-windows
+
+# Read the records file into a JSON array. Fields are addr, home (the
+# workspace it was adopted OUT of), merged (the one it was put on) and class.
+read_records() {
+    [[ -r $CACHE ]] || { echo '[]'; return; }
+    awk -F'\t' '
+        BEGIN { printf "[" }
+        NF >= 4 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ {
+            printf "%s{\"addr\":\"%s\",\"home\":%s,\"merged\":%s,\"class\":\"%s\"}",
+                   sep, $1, $2, $3, $4
+            sep = ","
+        }
+        END { print "]" }
+    ' "$CACHE"
+}
+
+# Work out every move in one jq pass, so the whole plan comes from a single
+# snapshot of the compositor and can be applied as one batch.
+#
+# The class is compared as a sanity check on the address: Hyprland addresses
+# are pointers and a closed window's address can be handed to a new one, which
+# would otherwise let a record teleport a stranger. It is sanitised on both
+# sides rather than escaped, because it is only ever compared, never used.
+plan() {
+    local monitors clients records
+    monitors=$(hyprctl -j monitors 2>/dev/null) || return 1
+    clients=$(hyprctl -j clients 2>/dev/null) || return 1
+    records=$(read_records)
+
+    jq -n \
+       --argjson monitors "$monitors" \
+       --argjson clients "$clients" \
+       --argjson records "$records" \
+       --argjson per "$WS_PER_MON" '
+        def clean: (. // "") | gsub("[^A-Za-z0-9._-]"; "");
+
+        # Ranks, and with them the highest workspace any live screen can reach.
+        ($monitors | sort_by(.id) | map(.id))     as $ranks
+        | (($ranks | length) * $per)              as $max
+        | ($clients | map(select(.address != null) | {key: .address, value: .})
+                    | from_entries)               as $by_addr
+
+        # --- put back what can go back --------------------------------------
+        # Silently drops any record whose window is gone, whose address now
+        # belongs to another app, or which you have moved yourself.
+        | ($records | map(
+              . as $r
+              | ($by_addr[$r.addr] // empty) as $c
+              | select(($c.class | clean) == $r.class)
+              | select($c.workspace.id == $r.merged)
+              | if $r.home <= $max
+                then {move: {addr: $r.addr, ws: $r.home}}
+                else {keep: $r}                  # its screen is still missing
+                end
+          ))                                      as $restore
+        | ($restore | map(select(.keep) | .keep)) as $kept
+        | ($kept | map({key: .addr, value: .}) | from_entries) as $kept_by
+
+        # --- adopt what has fallen out of range -----------------------------
+        # Special workspaces have negative ids and never qualify.
+        | ($clients | map(
+              select(.workspace.id > $max)
+              | . as $c
+              | ((($c.workspace.id - 1) % $per) + 1)                  as $tag
+              | (((($ranks | index($c.monitor)) // 0) * $per) + $tag) as $target
+              | select($target != $c.workspace.id)
+              | {move: {addr: $c.address, ws: $target},
+                 rec: {addr:   $c.address,
+                       # Carry the original home forward when this window is
+                       # being adopted a second time (two screens gone in a
+                       # row), so it can still find its way all the way back.
+                       home:   ($kept_by[$c.address].home // $c.workspace.id),
+                       merged: $target,
+                       class:  ($c.class | clean)}}
+          ))                                      as $adopt
+        | ($adopt | map(.rec.addr))               as $adopted
+
+        | {moves:   (($restore | map(select(.move) | .move)) + ($adopt | map(.move))),
+           records: (($kept | map(. as $k | select(($adopted | index($k.addr)) == null)))
+                     + ($adopt | map(.rec)))}
+    '
+}
+
+pass() {
+    local p moves batch
+
+    p=$(plan) || return 0
+    [[ -n $p ]] || return 0
+
+    moves=$(jq -r '.moves[] | "dispatch movetoworkspacesilent \(.ws),address:\(.addr)"' \
+                <<<"$p" 2>/dev/null)
+
+    if [[ -n $moves ]]; then
+        # `silent` so a rescue never drags your view to another workspace.
+        batch=$(awk 'NR > 1 { printf " ; " } { printf "%s", $0 } END { print "" }' <<<"$moves")
+        hyprctl --batch "$batch" >/dev/null 2>&1
+        echo "hypr-adopt-orphans: moved $(wc -l <<<"$moves") window(s)" >&2
+    fi
+
+    jq -r '.records[] | [.addr, .home, .merged, .class] | @tsv' <<<"$p" >"$CACHE" 2>/dev/null
+}
+
+pass
+
+[[ ${1:-} == --watch ]] || exit 0
+
+sock=${XDG_RUNTIME_DIR:-/run/user/$UID}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock
+[[ -S $sock ]] || exit 0
+
+# Read the event stream over a fd rather than piping it into `while`, so the
+# daemon can actually be stopped — see the "killable event loops" note in
+# docs/ARCHITECTURE.md.
+exec 3< <(ncat -U "$sock")
+ncat_pid=$!
+trap 'kill $ncat_pid 2>/dev/null' EXIT
+trap 'exit' INT TERM
+
+# `>>` is matched explicitly so monitoraddedv2 — which Hyprland emits alongside
+# every monitoradded — falls through instead of running the pass twice. The
+# pause lets Hyprland finish relocating the workspaces of a screen that just
+# left; enumerating during that is what would see them in their old places.
+while IFS= read -r line <&3; do
+    case "$line" in
+        monitoradded'>>'*|monitorremoved'>>'*)
+            sleep 0.5
+            pass
+            ;;
+    esac
+done
