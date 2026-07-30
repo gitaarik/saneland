@@ -5,19 +5,15 @@
 #   - On open: restore the window's last saved geometry for its class ON THE
 #     SCREEN IT OPENED ON (KWin-style "remember window size/position", per
 #     monitor). With nothing remembered yet, the window is maximized only if
-#     the auto-maximize policy says
-#     `always` for its class:
+#     the auto-maximize policy says `always` for its class:
 #       1. policy `never`    -> don't touch it at all
-#       2. classify_by_title -> per-app "is this a main window?"; a known
-#                               popup title is left alone even for an
-#                               `always` class (browser PiP, Library, …)
-#       3. remembered geometry, if any — it always wins over the policy.
-#                               This screen's entry if there is one, else the
+#       2. not the only window of its class -> don't touch it at all
+#                               (THE ONE RULE, below)
+#       3. remembered geometry, if any — it wins over the policy. This
+#                               screen's entry if there is one, else the
 #                               newest entry from any screen, re-read for this
 #                               one by reanchor_axis
-#       4. policy `always`   -> maximize. For a second-or-later window of
-#                               the class, only if it also opened large
-#                               (>= 60% of the work area on both axes)
+#       4. policy `always`   -> maximize
 #     Anything else keeps the size it asked for. The policy lives in
 #     ~/.config/hypr/window-policy.conf (+ .local.conf); read the header
 #     there for why "unlisted" means leave alone rather than guess.
@@ -34,14 +30,10 @@
 #
 #   - On close: save the window's geometry to a per-class file at
 #     ~/.cache/hypr-window-state/<class>.json — under the name of the monitor
-#     it was on, leaving the other screens' entries untouched — using
-#     classify_by_title to decide:
-#       0 (main)    -> save unconditionally
-#       1 (popup)   -> don't save
-#       2 (default) -> save only if it was the last window of its class
-#     This means snapped windows (50% on an axis) get saved, while a
-#     Thunderbird event-details popup never overwrites the main mail
-#     window's saved size.
+#     it was on, leaving the other screens' entries untouched — if it was the
+#     last window of its class. Any size is saved, snaps included (50% on an
+#     axis), because a geometry you arranged by hand is exactly what this is
+#     for; the last-of-class gate is what keeps a dialog from overwriting it.
 #
 #   - On fullscreen>>1: if a client maximized *itself* (a GTK/GNOME
 #     client-side-decoration maximize button -> set_maximized), reroute it
@@ -58,6 +50,25 @@
 #     a screen's work area (see hypr_fills_work_area), so a window wearing
 #     some OTHER connected screen's work area was maximized there a moment
 #     ago.
+#
+# THE ONE RULE: everything automatic above — the restore, the maximize, and the
+# saving — applies only to a window that is the ONLY ONE OF ITS CLASS at that
+# moment (alone_of_class). A second window of an app is a dialog far more often
+# than it is a second main window: GIMP's Preferences and Export As,
+# Thunderbird's event details, a browser's Picture-in-Picture and Library. There
+# is no way to ask a Wayland client which it is — hyprctl exposes no parent
+# window, no window type and no size hints, and xdgTag/xdgDescription/
+# contentType are empty on every real client here (0.55.4) — so this one rule
+# replaces the two mechanisms that used to guess: a per-app title classifier
+# that needed a new arm for every app, and a "did it open at >= 60% of the work
+# area" size test that a large dialog sails straight through.
+#
+# What it costs: a second window of an app that doesn't remember its own size
+# opens small. mod+m fixes that window, and mod+Alt+Shift+m
+# (hypr-window-policy remember) records a geometry for the class deliberately,
+# for when the automatic save can't see it. Nothing you do by hand is gated —
+# mod+m, mod+c, the snaps, an app's own maximize button and moving a window
+# between screens all act on whatever window you point them at.
 #
 # Hyprland's closewindow event arrives after the window is dropped
 # from `hyprctl clients`, so a background loop snapshots clients to
@@ -110,64 +121,22 @@ monitors_settling() {
 # answers always | leave | never. The two regexes that used to live here are
 # rules in those files now — `never ^Tor Browser$`, and `leave` for the
 # blueman/pavucontrol dialogs that hyprland.conf sizes with a windowrule.
-#
-# Fraction of the work area each axis must reach for a window to count
-# as "main" in the open-time size heuristic. Only consulted for a second-
-# or-later window of an `always` class — a first window is taken at its
-# word. NOT used at close time: saving is gated by classify_by_title +
-# last-of-class instead, so snapped windows (50% on one axis) are saved.
-main_threshold=0.6
 
-# Per-class title classifier. Returns:
-#   0 -> main    (open: apply saved or maximize; close: save)
-#   1 -> popup   (open: leave alone; close: don't save)
-#   2 -> default (open: first-of-class + heuristic; close: save iff last)
-classify_by_title() {
-    local class=$1 title=$2
-    case "$class" in
-        [Ff]irefox*|[Ll]ibrewolf*|[Ww]aterfox*|[Zz]en*|[Cc]hromium*|[Gg]oogle-chrome*|[Bb]rave*|[Vv]ivaldi*|[Mm]icrosoft-edge*)
-            # Common browsers (Firefox & Chromium families). Small internal
-            # popups shared across them — Picture-in-Picture, Firefox's
-            # bookmarks Library, About dialogs — are left alone; every other
-            # window of a browser class is a real browsing window and gets
-            # maximized. Add your browser's window-class above if missing
-            # (find it with `hyprctl clients | grep class`).
-            #
-            # "main" here means saved UNCONDITIONALLY, with no last-of-class
-            # gate — a browser's size must be remembered even while other
-            # browser windows are open. So anything in this class that ISN'T a
-            # browsing window has to be caught here, or it overwrites the real
-            # window's size just by closing after it. An extension popup
-            # detached into its own window (`Extension: (Bitwarden Password
-            # Manager) — Waterfox`) did exactly that: it left waterfox.json
-            # holding a centred 1152x744, and every browser start came back
-            # that size.
-            [[ $title == "Library" \
-            || $title == About* \
-            || $title == Extension:\ * \
-            || $title == *"Sharing Indicator" \
-            || $title == "Picture-in-Picture" \
-            || $title == "Picture in picture" ]] && return 1
-            return 0
-            ;;
-        org\.mozilla\.[Tt]hunderbird|[Tt]hunderbird)
-            # Main mail/calendar/chat windows: title ends in "Mozilla
-            # Thunderbird" (with or without a leading "<thing> - ").
-            # At openwindow time the title is often just "Mozilla
-            # Thunderbird" or empty before Inbox loads, so we accept
-            # both the bare form and the full form here.
-            [[ $title == "Thunderbird" \
-            || $title == "Mozilla Thunderbird" \
-            || $title == *" - Mozilla Thunderbird" ]] && return 0
-            # Unrecognised title -> fall through to default. The
-            # existing first-of-class + fullscreenClient/size heuristic
-            # then handles popups (event details, address book editor)
-            # correctly: first Thunderbird window is main and gets
-            # maximized; subsequent ones with set_maximized() get
-            # unmax'd and fall to the size check.
-            ;;
-    esac
-    return 2
+# Is the window at address $2 the only window of class $1 right now?
+#
+# THE ONE RULE (see the header) in one query. Both sides of the daemon use it,
+# and the address is EXCLUDED rather than counted, so it reads the same at
+# either end: at open time the new window is already in the client list, and at
+# close time the closing one usually still is — closewindow arrives before
+# Hyprland drops it, which is why the close handler can look it up live at all.
+#
+# The question is therefore always "does this app have another window open",
+# and no answer at all (hyprctl unreachable) counts as yes: leave it alone.
+alone_of_class() {
+    local others
+    others=$(hyprctl -j clients 2>/dev/null | jq --arg c "$1" --arg a "$2" \
+        '[.[] | select(.class == $c and .address != $a)] | length' 2>/dev/null)
+    [[ $others =~ ^[0-9]+$ ]] && (( others == 0 ))
 }
 
 # How close a window has to land to count as "the geometry took" (px). A few
@@ -272,10 +241,9 @@ apply_and_settle() {
 #
 # A v2 entry records no monitor, so on its own it can only be taken literally —
 # and a class that is never re-saved stays that way forever. Saving is gated on
-# last-of-class for anything classify_by_title calls `default`, so a terminal or
-# a chat app you always keep one window of is never written again and never
-# upgrades: kitty sat at v2 1440x930 and kept opening laptop-sized on the Dell
-# long after the browser had sorted itself out.
+# last-of-class, so a terminal or a chat app you always keep one window of is
+# never written again and never upgrades: kitty sat at v2 1440x930 and kept
+# opening laptop-sized on the Dell long after the browser had sorted itself out.
 #
 # A geometry must have FIT on the screen it was saved on, so the smallest
 # connected work area it fits in is the best candidate — and for the case that
@@ -416,17 +384,17 @@ policy_learn() {
         >> "$HYPR_POLICY_LOCAL"
 }
 
-# Persist a geometry observed by the poller below. Same gates as the
-# close-time save, so a Thunderbird event-details popup still can't overwrite
-# the main mail window's size just by being dragged around.
+# Persist a geometry observed by the poller below. Same gate as the close-time
+# save — the app's only window — so a GIMP dialog or a Thunderbird event-details
+# popup can't overwrite the real window's size just by being dragged around.
+#
+# $count is the number of windows of this class, straight out of the poller's
+# own snapshot, so this costs no extra hyprctl call; alone_of_class asks the
+# same question at the two ends where there is no snapshot to hand.
 persist_geometry() {
-    local class=$1 title=$2 geom=$3 mon=$4 count=$5
+    local class=$1 geom=$2 mon=$3 count=$4
     [[ $(hypr_policy_for "$class") == never ]] && return 0
-    classify_by_title "$class" "$title"
-    case $? in
-        1) return 0 ;;                        # popup -> never remembered
-        2) (( count <= 1 )) || return 0 ;;     # ambiguous -> only when it's alone
-    esac
+    (( count <= 1 )) || return 0
     local wh=${geom%%+*} xy=${geom#*+}         # WxH+X+Y, X may be negative
     hypr_save_geometry "$class" "${wh%%x*}" "${wh##*x}" "${xy%%+*}" "${xy##*+}" "$mon"
 }
@@ -459,7 +427,7 @@ persist_geometry() {
         monitors_settling && settling=1        # once per tick, not per window
 
         cur=()
-        while IFS=$'\t' read -r a cls ttl geom mon count; do
+        while IFS=$'\t' read -r a cls geom mon count; do
             [[ -z $a ]] && continue
             cur[$a]=1
             if [[ -z ${base[$a]:-} ]]; then base[$a]=$geom; continue; fi
@@ -471,10 +439,10 @@ persist_geometry() {
             if [[ ${pend[$a]:-} != "$geom" ]]; then pend[$a]=$geom; continue; fi
             base[$a]=$geom
             unset 'pend[$a]'
-            persist_geometry "$cls" "$ttl" "$geom" "$mon" "$count"
+            persist_geometry "$cls" "$geom" "$mon" "$count"
         done < <(jq -r '
             (map(.class) | group_by(.) | map({key: .[0], value: length}) | from_entries) as $n
-            | .[] | [ .address, .class, .title,
+            | .[] | [ .address, .class,
                       "\(.size[0])x\(.size[1])+\(.at[0])+\(.at[1])",
                       .monitor, $n[.class] ] | @tsv' <<<"$snap")
 
@@ -505,14 +473,15 @@ trap 'exit' INT TERM
 while IFS= read -r line <&3; do
     case "$line" in
         openwindow*)
-            # Format: openwindow>>ADDRESS,WORKSPACE,CLASS,TITLE
+            # Format: openwindow>>ADDRESS,WORKSPACE,CLASS,TITLE. Only the class
+            # is used: the title said nothing reliable about main-vs-dialog
+            # without a per-app rule for it, which is what THE ONE RULE
+            # replaces (see the header).
             data=${line#openwindow>>}
             addr=${data%%,*}
-            rest=${data#*,}
-            ws=${rest%%,*}
-            rest2=${rest#*,}
-            class=${rest2%%,*}
-            title=${rest2#*,}
+            rest=${data#*,}                        # WORKSPACE,CLASS,TITLE
+            class=${rest#*,}                       # CLASS,TITLE
+            class=${class%%,*}
             addr_full="0x${addr}"
 
             # Mark as freshly opened so a self-maximize-on-open (Thunderbird
@@ -524,21 +493,19 @@ while IFS= read -r line <&3; do
             verdict=$(hypr_policy_for "$class")
             [[ $verdict == never ]] && continue
 
-            classify_by_title "$class" "$title"
-            case $? in
-                0)  # main window: remembered geometry, else the policy
-                    (sleep 0.05
-                     apply_saved_geometry "$class" "$addr_full" && exit 0
-                     [[ $verdict == always ]] && maximize_checked "$class" "$addr_full") &
-                    continue ;;
-                1)  continue ;;
-            esac
-
             (
                 sleep 0.05
 
-                # A remembered size beats the policy either way — it is a
-                # decision you already made about this exact class.
+                # The app already has a window open, so this one is a dialog
+                # far more often than it is a second main window — and there is
+                # no way to tell the two apart. Leave it exactly as it asked to
+                # be: GIMP's Export As and Preferences, Thunderbird's event
+                # details, a browser's Picture-in-Picture and Library all land
+                # here. mod+m if you disagree with one.
+                alone_of_class "$class" "$addr_full" || exit 0
+
+                # A remembered size beats the policy — it is a decision you
+                # already made about this exact class, on this exact screen.
                 apply_saved_geometry "$class" "$addr_full" && exit 0
 
                 # Nothing remembered and no `always` rule: leave it at the
@@ -546,51 +513,6 @@ while IFS= read -r line <&3; do
                 # opened for the first time, and it is why a file chooser or a
                 # password prompt no longer comes up filling the screen.
                 [[ $verdict == always ]] || exit 0
-
-                # First-of-class: count windows currently sharing this
-                # class. The new window is already in the list, so
-                # count <= 1 means we're the only one.
-                count=$(hyprctl -j clients | jq --arg c "$class" \
-                    '[.[] | select(.class == $c)] | length')
-
-                if (( count <= 1 )); then
-                    maximize_checked "$class" "$addr_full"
-                    exit 0
-                fi
-
-                # Subsequent window of the same class: a popup sibling
-                # of a main window. If the client requested its own
-                # maximize state (Thunderbird's event-details popup does
-                # this on Wayland), undo it so we see the real preferred
-                # size; otherwise the heuristic sees ~work-area
-                # dimensions and wrongly classifies as main.
-                client=$(hyprctl -j clients | jq -c --arg a "$addr_full" \
-                    '.[] | select(.address == $a)')
-                [[ -z $client || $client == "null" ]] && exit 0
-
-                fc=$(echo "$client" | jq -r '.fullscreenClient')
-                if [[ $fc =~ ^[12]$ ]]; then
-                    hyprctl dispatch fullscreenstate "0 0,address:$addr_full" >/dev/null
-                    sleep 0.08
-                    client=$(hyprctl -j clients | jq -c --arg a "$addr_full" \
-                        '.[] | select(.address == $a)')
-                    [[ -z $client || $client == "null" ]] && exit 0
-                fi
-
-                ww=$(echo "$client" | jq -r '.size[0]')
-                wh=$(echo "$client" | jq -r '.size[1]')
-                mon_id=$(echo "$client" | jq -r '.monitor')
-
-                # Use the new window's own monitor, not the focused one —
-                # it may have opened on a different output.
-                hypr_work_area "$mon_id" || exit 0
-
-                is_main=$(awk -v ww="$ww" -v wh="$wh" \
-                              -v aw="$WORK_W" -v ah="$WORK_H" \
-                              -v t="$main_threshold" \
-                    'BEGIN { print (ww >= aw * t && wh >= ah * t) ? 1 : 0 }')
-
-                [[ $is_main == 0 ]] && exit 0
 
                 maximize_checked "$class" "$addr_full"
             ) &
@@ -720,7 +642,6 @@ while IFS= read -r line <&3; do
             fi
 
             class=$(echo "$client" | jq -r '.class')
-            title=$(echo "$client" | jq -r '.title')
 
             [[ $(hypr_policy_for "$class") == never ]] && continue
 
@@ -730,18 +651,12 @@ while IFS= read -r line <&3; do
             # remembered is the safer answer.
             monitors_settling && continue
 
-            classify_by_title "$class" "$title"
-            verdict=$?
-
-            case $verdict in
-                1)  continue ;;  # popup -> don't save
-                2)  # default -> save only if last-of-class
-                    remaining=$(hyprctl -j clients | jq --arg c "$class" \
-                        '[.[] | select(.class == $c)] | length')
-                    (( remaining > 0 )) && continue
-                    ;;
-                # 0 (main) -> save unconditionally
-            esac
+            # The same gate as the open path, and for the same reason: what a
+            # dialog was doing when you dismissed it is not what the app's real
+            # window should come back as. Closing the last window of a class is
+            # the moment its geometry is worth keeping — and mod+Alt+Shift+m
+            # records one deliberately when it isn't the last.
+            alone_of_class "$class" "$addr_full" || continue
 
             w=$(echo "$client" | jq -r '.size[0]')
             h=$(echo "$client" | jq -r '.size[1]')

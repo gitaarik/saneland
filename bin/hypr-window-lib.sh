@@ -244,8 +244,9 @@ hypr_apply_geom() {
 # A window's size and position is remembered per class, KWin-style, under
 # ~/.cache/hypr-window-state/<class>.json. hypr-max-on-open restores it when a
 # window opens and writes it when one is resized or closed; hypr-window-policy
-# prints it (`show`) and deletes it (`forget`). It lives here because both of
-# them need to agree on the path and the schema.
+# prints it (`show`), deletes it (`forget`) and writes it on demand
+# (`remember`, bound to mod+Alt+Shift+m). It lives here because both of them
+# need to agree on the path and the schema.
 #
 # Saved-geometry schema version:
 #

@@ -11,6 +11,9 @@
 #   hypr-window-policy never  [CLASS]     # don't touch it, don't remember it
 #   hypr-window-policy toggle [CLASS]     # always <-> leave  (bound to mod+Alt+m)
 #   hypr-window-policy forget [CLASS]     # drop its rule AND its remembered size
+#   hypr-window-policy remember           # remember the FOCUSED window's exact
+#                                         #   size and position for its class
+#                                         #   (bound to mod+Alt+Shift+m)
 #
 # CLASS defaults to the focused window's class. Rules are written to
 # ~/.config/hypr/window-policy.local.conf (git-ignored); the tracked
@@ -26,7 +29,7 @@
 set -uo pipefail
 source "${HOME}/.local/bin/hypr-window-lib.sh"
 
-usage() { sed -n '3,20p' "$0" | sed 's/^#\s\?//'; }
+usage() { sed -n '3,24p' "$0" | sed 's/^#\s\?//'; }
 
 # Talk to whoever is listening: stdout on a terminal, swaync otherwise.
 say() {
@@ -146,6 +149,29 @@ case $cmd in
         write_rule "" "$(hypr_policy_regex "$class")"
         rm -f "$(hypr_geom_file "$class")"
         say "$class → forgotten (rule and remembered size)"
+        ;;
+    remember)
+        # Record the focused window's geometry for its class, on the spot.
+        #
+        # hypr-max-on-open only writes a geometry while the window is the ONLY
+        # one of its class — that gate is what stops a dialog overwriting the
+        # app's real size (THE ONE RULE, in its header), but it also means a
+        # resize you make with a second window open goes unrecorded. This is the
+        # deliberate version of that save: no gate, because you asked for it.
+        #
+        # It takes no CLASS argument — there would be no geometry to read
+        # without a window to read it from.
+        client=$(hyprctl -j activewindow 2>/dev/null)
+        class=$(jq -r '.class // empty' <<<"$client")
+        [[ -z $class ]] && die "no window focused"
+        [[ $(hypr_policy_for "$class") == never ]] \
+            && die "$class is 'never' — its geometry is deliberately not remembered"
+        IFS=' ' read -r w h x y mon < <(jq -r \
+            '"\(.size[0]) \(.size[1]) \(.at[0]) \(.at[1]) \(.monitor)"' <<<"$client")
+        # WORK_MON is set by hypr_save_geometry, via the work area it measured.
+        hypr_save_geometry "$class" "$w" "$h" "$x" "$y" "$mon" \
+            || die "could not measure the monitor $class is on"
+        say "$class → remembered ${w}x${h} on $WORK_MON"
         ;;
     -h|--help|help) usage ;;
     *) die "unknown command '$cmd' (try --help)" ;;

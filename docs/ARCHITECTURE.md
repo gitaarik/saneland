@@ -222,28 +222,49 @@ Per-theme image pools live in `~/.config/hypr/wallpapers/{dark,light}/`.
 new window should be. In order:
 
 1. **`never`** in the policy (below) — don't touch it, don't remember it.
-2. **A known popup title** for that class (`classify_by_title`) — browser
-   Picture-in-Picture, Firefox's Library, `Extension: …` windows, the sharing
-   indicator — left alone. This list also gates *saving*, and for browsers that
-   matters more than the sizing: a browser window is saved unconditionally (its
-   size must be remembered even while sibling windows are open), so any
-   non-browsing window of the same class overwrites the real window's geometry
-   just by closing after it. A detached Bitwarden extension popup did exactly
-   that, leaving every browser start at a centred 1152x744.
+2. **Not the only window of its class** — don't touch it. See "one window at a
+   time" below; this is the rule the rest of the section keeps referring back
+   to.
 3. **Remembered geometry** for the class *on the screen it opened on*, from
-   `~/.cache/hypr-window-state/<class>.json`. This always wins: it is a
+   `~/.cache/hypr-window-state/<class>.json`. This wins over the policy: it is a
    decision you already made about this exact app. See "one geometry per
    screen" below.
 4. **`always`** in the policy — maximize to the work area of the monitor the
-   window opened on. For a second-or-later window of the same class it must
-   *also* have opened at ≥60% of the work area, which is what keeps a
-   Thunderbird event-details popup from being treated like the mail window.
+   window opened on.
 5. Otherwise the window keeps the size it asked for.
 
 The policy is data, not code: `config/hypr/window-policy.conf` (tracked,
 generic app families) and `window-policy.local.conf` (git-ignored, this
 machine). `mod+Alt+m` flips the focused window's class between `always` and
-`leave`; `hypr-window-policy show|list|forget` covers the rest.
+`leave`; `hypr-window-policy show|list|forget|remember` covers the rest.
+
+**One window at a time.** Automatic sizing — the restore, the maximize *and* the
+saving — only ever applies to a window that is the only one of its class at that
+moment (`alone_of_class`). A second window of an app is a dialog far more often
+than it is a second main window: GIMP's Preferences and Export As, Thunderbird's
+event details, a browser's Picture-in-Picture and Library.
+
+This one rule replaced two mechanisms that both tried to answer "is this a main
+window?" and both had to be taught app by app: a per-app title classifier
+(`classify_by_title`, which knew about browser and Thunderbird titles) and a
+"did it open at ≥60% of the work area" size test. Neither could scale — the
+classifier needed a new arm for every app, and the size test is blind to a large
+dialog. GIMP made both fail at once: every window it opens is app-id `gimp`, so
+its remembered full-screen geometry was being applied to every dialog it
+showed, and Preferences is ~70% of the laptop work area, big enough to pass the
+size test too.
+
+The cost is that a second window of an app that doesn't remember its own size
+opens small. `mod+m` sizes that window, and `mod+Alt+Shift+m`
+(`hypr-window-policy remember`) records a geometry for the class deliberately —
+which is also the answer to the one thing the old classifier did better: a
+browser's size used to be saved unconditionally, even with sibling windows open,
+because the classifier could tell a browsing window from an `Extension: …`
+popup. Now saving waits for the app's last window, or for you to ask.
+
+Nothing you do by hand is gated: `mod+m`, `mod+c`, the snaps, an app's own
+maximize button and moving a window between screens all act on whatever window
+you point them at.
 
 **Why a list and not a heuristic.** There is no way to ask a Wayland client
 whether it is a dialog. `hyprctl clients` exposes no parent window, no window
@@ -283,7 +304,9 @@ Two self-corrections keep the list small:
   it never flashes again. It won't overwrite a rule you wrote yourself.
 - **Geometry is persisted on resize, not just on close.** Hyprland's event
   socket has no resize event, so the 2s clients poll doubles as the change
-  detector: a new geometry is written once it has held still for two ticks.
+  detector: a new geometry is written once it has held still for two ticks — and
+  only while it is the app's only window, the same gate as everywhere else (the
+  poll counts the class in its own snapshot, so this costs no extra query).
   A window you never touch is never written from there — it still goes through
   the close-time path, which only saves the last window of a class.
 - **…except while the monitors are settling.** Unplug an output and Hyprland
@@ -332,11 +355,11 @@ space around it, so a centred window stays centred and one parked against an
 edge stays there.
 
 v2 files are still read and are upgraded the next time the window is saved — no
-cache wipe. But "the next save" never comes for a class `classify_by_title`
-calls *default*, because those are only written when the last window of the
-class closes: a terminal or a chat app you always keep one window of stays v2
-forever, and kitty went on opening laptop-sized on the Dell long after the
-browser had sorted itself out. So a v2 entry's screen is inferred instead — a
+cache wipe. But "the next save" can be a long way off, because a geometry is
+only written when the class has one window left: a terminal or a chat app you
+always keep one window of stays v2 for as long as you keep it open, and kitty
+went on opening laptop-sized on the Dell long after the browser had sorted
+itself out. So a v2 entry's screen is inferred instead — a
 geometry must have *fit* on the monitor it was saved on, so the smallest
 connected work area it fits in is the candidate, which for the case that
 matters (something saved filling its screen) is exact. The guess can be wrong
