@@ -63,6 +63,10 @@ the base one, symlinking the app per-file (`local/` wins, base fills the rest):
 ```
 local/eww/eww.yuck        # your bar layout; the rest of eww/ stays base
 local/swaync/config.json  # your notification rules
+local/hypr/hyprlock.conf  # your lock screen — e.g. pinning the clock and the
+                          #   password box to one monitor instead of drawing a
+                          #   copy on every screen. hyprlock has no `source =`,
+                          #   so this is its only override mechanism.
 ```
 
 Re-run `./install.sh` after adding an overlay file.
