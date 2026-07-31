@@ -7,8 +7,9 @@
 # it (different user, no access to your home, no theme cache) but needs the
 # same trick: hyprpaper 0.8.4 ignores the `wallpaper =` directive in its config
 # file and only responds to `hyprctl hyprpaper wallpaper ,<path>` over IPC.
-# The empty monitor field means "all outputs" — the screen holding the login
-# window covers its copy with ReGreet, the others keep showing it.
+# The empty monitor field means "all outputs", including the one holding the
+# login window: ReGreet's window is transparent (regreet.css), so this is the
+# picture you see behind it — the greeter has no background of its own.
 #
 # The image is a single file copied to /usr/share/backgrounds by
 # greeter/install.sh (world-readable: the greeter user can't read your home).

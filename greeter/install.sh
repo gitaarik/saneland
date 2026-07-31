@@ -255,17 +255,17 @@ did "write $ETC/saneland-greeter"
 run install -m 755 "$SRC/wallpaper.sh" "$ETC/saneland-greeter-wallpaper"
 did "write $ETC/saneland-greeter-wallpaper"
 
-# regreet.toml — substitute the wallpaper path, or drop the [background]
-# section entirely when there's no image to point it at (a `path` that doesn't
-# resolve makes ReGreet fail to start, which would mean no login screen).
+# regreet.toml and its stylesheet go in verbatim — neither mentions the
+# wallpaper. ReGreet's window is transparent (regreet.css) and hyprpaper paints
+# the image behind it, so there's no path to substitute and nothing to strip
+# out when there's no image to find. See the comment atop regreet.toml.
 back_up "$ETC/regreet.toml"
-if [[ -n $INSTALLED_WALLPAPER ]]; then
-  sed "s|@WALLPAPER@|$INSTALLED_WALLPAPER|" "$SRC/regreet.toml" | write "$ETC/regreet.toml"
-else
-  awk '/^\[background\]/ { skip=1; next } /^\[/ { skip=0 } !skip' "$SRC/regreet.toml" |
-    write "$ETC/regreet.toml"
-fi
-[[ $DRY == 1 ]] || chmod 644 "$ETC/regreet.toml"
+run install -m 644 "$SRC/regreet.toml" "$ETC/regreet.toml"
+did "write $ETC/regreet.toml"
+
+back_up "$ETC/regreet.css"
+run install -m 644 "$SRC/regreet.css" "$ETC/regreet.css"
+did "write $ETC/regreet.css"
 
 # A writable HOME for the greeter: its account's home is `/`, and Hyprland,
 # GTK and ReGreet all want somewhere for caches and state. See greeter.sh.

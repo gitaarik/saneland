@@ -1,0 +1,20 @@
+/* saneland — ReGreet's stylesheet. Installed to /etc/greetd/regreet.css, which
+ * is where ReGreet looks by default (`regreet --style`).
+ *
+ * One rule, and it's the reason regreet.toml has no [background] section: make
+ * ReGreet's window transparent so hyprpaper's wallpaper — which is already
+ * painted on every output, the login screen included — shows through it.
+ *
+ * The alternative, pointing [background] at the same image, makes ReGreet
+ * decode it through a GStreamer video pipeline and segfault in Mesa teardown
+ * when it exits. See the comment at the top of regreet.toml.
+ *
+ * Only the window's own backdrop goes transparent; the login box, clock and
+ * buttons keep the background Adwaita-dark gives them, so text stays readable
+ * over a light wallpaper.
+ */
+
+window.background {
+    background-color: transparent;
+    background-image: none;
+}
