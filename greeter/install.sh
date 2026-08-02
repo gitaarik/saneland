@@ -15,6 +15,7 @@
 # Usage:
 #   sudo ./greeter/install.sh                     install / re-run after a monitor change
 #   sudo ./greeter/install.sh --monitor DP-1      pick the login screen explicitly
+#   sudo ./greeter/install.sh --scale 1.3333333   shrink the login UI (see below)
 #   sudo ./greeter/install.sh --wallpaper IMG     pick the background explicitly
 #   sudo ./greeter/install.sh --dry-run           show what it would do
 #   sudo ./greeter/install.sh --uninstall         put the previous greeter back
@@ -22,6 +23,9 @@
 # Re-run it whenever you change your monitor layout: your `monitor =` lines are
 # copied out of ~/.config/hypr/local.conf at install time, not read live (the
 # greeter runs as another user and can't see your home).
+#
+# --scale is for trying a size out; `$greeter_scale = 1.3333333` in local.conf
+# is the persistent form, and survives the re-runs above.
 
 set -euo pipefail
 
@@ -31,10 +35,11 @@ ETC=/etc/greetd
 BACKGROUNDS=/usr/share/backgrounds
 STAMP=$(date +%Y%m%d-%H%M%S)
 
-MONITOR=""; WALLPAPER=""; DRY=0; UNINSTALL=0
+MONITOR=""; SCALE=""; WALLPAPER=""; DRY=0; UNINSTALL=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --monitor)   MONITOR=${2:?--monitor needs a name}; shift 2 ;;
+    --scale)     SCALE=${2:?--scale needs a number}; shift 2 ;;
     --wallpaper) WALLPAPER=${2:?--wallpaper needs a path}; shift 2 ;;
     --dry-run)   DRY=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
@@ -163,6 +168,67 @@ MONITOR=${MONITOR:-eDP-1}
 say "login screen: $MONITOR"
 say "(override with --monitor NAME; the others just show the wallpaper)"
 
+# --- how big the login UI comes out ----------------------------------------
+# ReGreet's box has no size of its own to tune: its width is fixed in logical
+# pixels by GTK size requests, so the font size barely moves it (Cantarell 14
+# and 11 render the same box, only with smaller text in it). What decides how
+# large it LOOKS is the scale of the screen it's on — which the greeter takes
+# from your session, where it's set for reading text all day rather than for
+# one centred dialog. `$greeter_scale` in local.conf (or --scale) overrides it
+# for the login screen alone; every other display keeps its session scale.
+#
+# Hyprland only accepts a scale that divides the mode into a whole number of
+# logical pixels, so the useful values are panel-specific — 2256x1504 takes
+# 1.3333333 (1692x1128) and 1 but rejects 1.25. The check below says so before
+# you find out from a greeter that ignored the line.
+if [[ -z $SCALE && -r $LOCAL_CONF ]]; then
+  SCALE=$(sed -n 's/^[[:space:]]*\$greeter_scale[[:space:]]*=[[:space:]]*\([^#[:space:]]*\).*/\1/p' \
+            "$LOCAL_CONF" | tail -1)
+fi
+
+# The override repeats the main monitor's own rule with only the scale field
+# swapped, so its mode and position survive; Hyprland applies the last matching
+# rule, and machine.conf emits this one after the copied layout.
+SCALE_LINE=""
+if [[ -n $SCALE ]]; then
+  base=""
+  while IFS= read -r line; do
+    [[ $(monitor_match "$line") == "$MONITOR" ]] && base=$line
+  done <<< "$MONITOR_LINES"
+
+  if [[ -n $base ]]; then
+    SCALE_LINE=$(awk -F, -v OFS=, -v s=" $SCALE" '{ $4 = s; print }' <<< "$base")
+
+    # Warn, don't fail: the mode may be `preferred`, in which case there's
+    # nothing to divide here and only the greeter itself can tell.
+    mode=$(awk -F, '{ print $2 }' <<< "$base" | tr -d '[:space:]')
+    if [[ $mode =~ ^([0-9]+)x([0-9]+) ]]; then
+      # Whole number within a hair: a "clean" fractional scale is never exact
+      # in decimal (2256 / 1.3333333 is 1692.00008, and Hyprland takes it).
+      awk -v w="${BASH_REMATCH[1]}" -v h="${BASH_REMATCH[2]}" -v s="$SCALE" \
+        'function off(v) { return (v - int(v + 0.5) < 0) ? int(v + 0.5) - v : v - int(v + 0.5) }
+         BEGIN { exit (off(w/s) < 0.01 && off(h/s) < 0.01) ? 0 : 1 }' ||
+        say "warn  $mode / $SCALE is not a whole number of logical pixels —" \
+            "Hyprland may reject it"
+    fi
+  else
+    SCALE_LINE="monitor = $MONITOR, preferred, auto, $SCALE"
+  fi
+  say "login UI scale: $SCALE (your session's value applies everywhere else)"
+fi
+
+# Rendered here rather than inline in the heredoc below, which can't hold a
+# multi-line ${VAR:+...}. Empty when there's no override, and then it collapses
+# to the blank line that separates the monitor lines from the input block.
+SCALE_BLOCK=""
+if [[ -n $SCALE_LINE ]]; then
+  printf -v SCALE_BLOCK '\n%s\n%s\n%s\n%s\n' \
+    '# $greeter_scale: the rule above for $main_monitor, repeated with only the' \
+    '# scale changed — the login box is a fixed size in LOGICAL pixels, so this' \
+    '# is what decides how big it comes out. The last matching rule wins.' \
+    "$SCALE_LINE"
+fi
+
 # --- keyboard layout -------------------------------------------------------
 # Copied from your session config so the password you type at the greeter is
 # the password you think you're typing. local.conf wins over the base config.
@@ -236,7 +302,7 @@ write "$ETC/machine.conf" <<EOF
 # Your session's monitor layout, so the greeter uses the same modes, scales and
 # positions (cage ran every display at its EDID-preferred mode).
 ${MONITOR_LINES:-# (none — the wildcard in hyprland.conf auto-detects)}
-
+${SCALE_BLOCK}
 input {
 ${KB:-    # (no kb_* settings found in your session config)}
 }

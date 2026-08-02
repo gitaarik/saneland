@@ -44,6 +44,19 @@
 # so the wildcard runs them at 30Hz — a laggy cursor and stuttery scrolling
 # rather than an obvious error. Check availableModes and state @60 explicitly.
 
+# --- Login screen size (optional) ------------------------------------------
+# Read by greeter/install.sh, ignored by the session. The greeter copies the
+# monitor lines above verbatim, so the login box is drawn at the same scale as
+# your desktop — which is set for reading text all day, and can make a single
+# centred dialog look oversized. This scales the login screen alone; every
+# other display keeps its line above. Lower is smaller.
+#
+# It has to divide that monitor's mode into whole logical pixels, same rule as
+# any scale (2256x1504 takes 1.3333333 or 1, but not 1.25). Re-run
+# `sudo ./greeter/install.sh` to apply.
+#
+# $greeter_scale = 1.3333333
+
 # --- Per-screen workspaces (multi-monitor) ---------------------------------
 # OPTIONAL — only for multiple monitors. The base keybinds send mod+1..12 (and
 # mod+shift+1..12) through ~/.local/bin/hypr-workspace, which gives each screen

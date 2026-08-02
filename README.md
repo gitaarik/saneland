@@ -160,6 +160,14 @@ home. Re-run the script after changing any of them. It picks the internal
 panel as the login screen by default; `--monitor DP-1` overrides that, and
 `--uninstall` restores the greeter you had before.
 
+If the login box comes out bigger than you'd like, the knob is the scale, not
+the font: ReGreet's box is a fixed number of logical pixels wide, so a smaller
+`font_name` only shrinks the text inside it. Set `$greeter_scale` in
+`local.conf` (or pass `--scale`) to drive the login screen at its own scale —
+every other display keeps your session's. Hyprland wants a scale that divides
+the mode into whole logical pixels, so the values on offer depend on the panel:
+2256x1504 takes `1.3333333` or `1`, but rejects `1.25`.
+
 ## Theming
 
 ```bash
