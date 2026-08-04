@@ -46,11 +46,13 @@
 #
 # LIMIT, stated plainly: workspaces are put back by NUMBER, and the number maps
 # to "the second screen", not to a particular panel. Undock, redock a different
-# external, and the windows come back on it. With three screens the block a
-# window is adopted into may be pinned to a still-missing monitor by a
-# `workspace = N, monitor:…` rule in local.conf, and Hyprland then places that
-# workspace on a screen of its own choosing — reachable, which is the point,
-# but not necessarily the screen it was adopted onto.
+# external, and the windows come back on it.
+#
+# The block a window is adopted into is pinned to a screen by
+# hypr-workspace-blocks, which runs on the same events and re-derives those
+# rules from rank. It debounces 0.2s shorter than this pass so the pinning is
+# in place first; if the order ever came out the other way both are idempotent
+# and both compute the destination from rank, so the result is the same.
 
 set -uo pipefail
 

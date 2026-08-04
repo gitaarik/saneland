@@ -122,12 +122,36 @@ It's a daemon rather than a wrapper around the `killactive` bind because windows
 also close via the hyprbars close button and from inside the app (Ctrl+W,
 File→Quit), and all of those should behave the same.
 
-## Windows on a screen that goes away
+## Which screen a workspace block belongs to
 
 Each screen owns a block of 12 workspaces — monitors sorted by Hyprland id,
 rank *r* → offset *r*×12, so local tag 1..12 is global workspace off+1..off+12
 (laptop 1-12, external 13-24). `hypr-workspace`, `hypr-state.sh` and
 `hypr-scroll.sh` all derive it that way.
+
+Hyprland has to be told the same thing, so a workspace lands on the screen it
+belongs to instead of following focus — but its rule can only name a
+**connector**: `workspace = 13, monitor:DP-2`. A connector name is not a rank.
+Put the same monitor on another port — a dock, the other side of the laptop —
+and it comes up as `DP-5`, all twelve rules stop matching, and the compositor
+and the scripts disagree about the second screen. Everything visible breaks at
+once: the screen gets no `default:true` so Hyprland parks it on the first free
+workspace (25, outside its own block) and the bar, drawing tags 13-24, shows
+**no tags at all**; `mod+shift+N` moves a window to 14 but nothing pulls 14
+onto that screen; and an unpinned workspace follows focus, so focus drifts back
+to the laptop and the next number key acts on the laptop's block.
+
+`bin/hypr-workspace-blocks --watch` writes those rules instead, from the live
+monitor list, where rank is known — nothing in the config names a connector.
+It also switches a screen that is showing a workspace outside its own block
+onto its first tag, which is the state a monitor is in for the moment between
+appearing and being pinned.
+
+It listens for `configreloaded` as well as the monitor events: `hyprctl reload`
+re-reads the config from disk and drops every runtime `keyword` with it, and
+`bin/theme` reloads on every dark/light switch.
+
+## Windows on a screen that goes away
 
 The rank comes from the monitor's position among the **currently connected**
 monitors, so unplugging a screen renumbers every block after it. Unplug the
@@ -215,8 +239,8 @@ The shell now blocks in the `read` **builtin**, which a signal does interrupt,
 and the loop runs in the main shell rather than a subshell — one process fewer
 and any state it keeps lives where the rest of the script can see it. Used by
 `hypr-max-on-open`, `hypr-window-order`, `hypr-raise-focused`,
-`hypr-keep-screen-focus`, `hypr-adopt-orphans --watch`, `hypr-state.sh` and
-`eww-bars.sh --watch`.
+`hypr-keep-screen-focus`, `hypr-adopt-orphans --watch`,
+`hypr-workspace-blocks --watch`, `hypr-state.sh` and `eww-bars.sh --watch`.
 
 `popup-toggle.sh` deliberately keeps the pipeline form: its listener is a
 one-shot that exits from inside the loop on the first `activewindow`, and the

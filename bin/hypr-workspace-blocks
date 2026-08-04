@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+#
+# hypr-workspace-blocks — give every screen its own block of 12 workspaces,
+# pinned to it BY RANK, at runtime.
+#
+# THE SCHEME. Monitors sorted by Hyprland id, rank r -> offset r*12, so local
+# tag 1..12 on that screen is global workspace off+1..off+12 (laptop 1-12,
+# external 13-24). hypr-workspace, hypr-state.sh, hypr-scroll.sh and
+# hypr-adopt-orphans all derive it exactly that way.
+#
+# WHY THIS EXISTS. Hyprland can pin a workspace to a screen, but only by NAME:
+# `workspace = 13, monitor:DP-2`. A name is not a rank. Move the same monitor
+# to another port — a dock, the other side of the laptop — and it comes up as
+# DP-5, all twelve of those rules stop matching, and the two halves of the
+# scheme disagree: the scripts still map the second screen to 13-24 (rank is
+# rank, it doesn't care what the connector is called) while the compositor no
+# longer knows those workspaces belong to that screen.
+#
+# What one stale connector name does, all of it at once:
+#
+#   - no rule matches, so the screen gets no `default:true` and Hyprland parks
+#     it on the first free workspace — 25, outside its own block. The bar draws
+#     tags 13-24 for that screen, none of which match, so it shows NO TAGS.
+#   - mod+shift+N still computes the right number (rank is right) and sends the
+#     window to 14 — but nothing pulls 14 onto that screen, so it lands out of
+#     sight.
+#   - an unpinned workspace follows whatever has focus. Focus drifts back to
+#     the laptop off an empty workspace, and the next number key reads the
+#     laptop as the target screen and acts on ITS block instead.
+#
+# So the rules are written from here, off the live monitor list, where rank is
+# known. Nothing in the config names a connector, and there is nothing to
+# update the next time a cable moves.
+#
+# `hyprctl reload` RE-READS the config from disk and drops every runtime
+# keyword with it, so `configreloaded` is watched alongside the monitor events.
+# bin/theme reloads on every dark/light switch — without that case the pinning
+# would quietly disappear the first time you changed theme.
+#
+# Usage:
+#   hypr-workspace-blocks           apply once, now
+#   hypr-workspace-blocks --watch   daemon: re-apply on monitor add/remove and
+#                                   after every config reload
+#
+# A pass is idempotent. With one monitor it pins 1-12 to it and stops there.
+
+set -uo pipefail
+
+# Workspaces per screen. Must match hypr-workspace, hypr-state.sh,
+# hypr-scroll.sh and hypr-adopt-orphans — the whole scheme is that they agree.
+WS_PER_MON=12
+
+apply() {
+    local monitors names n r k ws batch sep focused act lo hi
+
+    monitors=$(hyprctl -j monitors 2>/dev/null) || return 0
+    mapfile -t names < <(jq -r 'sort_by(.id) | .[].name' <<<"$monitors" 2>/dev/null)
+    n=${#names[@]}
+    (( n )) || return 0
+
+    # Every rule in ONE round-trip, so Hyprland settles the placement once
+    # instead of re-evaluating it after each of the 12-per-screen keywords.
+    # Values contain commas but never a semicolon, which is what --batch splits on.
+    batch=''
+    sep=''
+    for (( r = 0; r < n; r++ )); do
+        for (( k = 1; k <= WS_PER_MON; k++ )); do
+            ws=$(( r * WS_PER_MON + k ))
+            batch+="${sep}keyword workspace $ws, monitor:${names[r]}"
+            # Local tag 1 is the screen's default, so a monitor that appears
+            # later opens on its own block instead of grabbing a free number.
+            (( k == 1 )) && batch+=", default:true"
+            sep=' ; '
+        done
+    done
+    hyprctl --batch "$batch" >/dev/null 2>&1
+
+    # A screen Hyprland gave a workspace to BEFORE these rules existed — at
+    # login, or in the instant a monitor is plugged in — is still showing it,
+    # and it is outside that screen's block (workspace 25, above). Switch it to
+    # its own first tag. Windows stranded on the workspace it leaves are
+    # hypr-adopt-orphans' job: it runs on the same events and moves anything
+    # outside the live range to the same tag on the screen it is on, which is
+    # the workspace we are switching to here.
+    #
+    # focusmonitor is the only way to aim a workspace switch at a specific
+    # screen, so the focused screen is put back afterwards.
+    focused=$(jq -r 'map(select(.focused))[0].name // empty' <<<"$monitors")
+
+    for (( r = 0; r < n; r++ )); do
+        act=$(jq -r --arg m "${names[r]}" \
+            'map(select(.name == $m))[0].activeWorkspace.id // empty' <<<"$monitors")
+        # Special workspaces have negative ids — a screen showing a scratchpad
+        # is doing what it was told, leave it be.
+        [[ $act =~ ^[0-9]+$ ]] || continue
+        lo=$(( r * WS_PER_MON + 1 ))
+        hi=$(( lo + WS_PER_MON - 1 ))
+        (( act >= lo && act <= hi )) && continue
+        hyprctl dispatch focusmonitor "${names[r]}" >/dev/null
+        hyprctl dispatch focusworkspaceoncurrentmonitor "$lo" >/dev/null
+    done
+
+    [[ -n $focused ]] && hyprctl dispatch focusmonitor "$focused" >/dev/null
+    return 0
+}
+
+apply
+
+[[ ${1:-} == --watch ]] || exit 0
+
+sock=${XDG_RUNTIME_DIR:-/run/user/$UID}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock
+[[ -S $sock ]] || exit 0
+
+# Read the event stream over a fd rather than piping it into `while`, so the
+# daemon can actually be stopped — see the "killable event loops" note in
+# docs/ARCHITECTURE.md.
+exec 3< <(ncat -U "$sock")
+ncat_pid=$!
+trap 'kill $ncat_pid 2>/dev/null' EXIT
+trap 'exit' INT TERM
+
+# `>>` is matched explicitly so monitoraddedv2 — which Hyprland emits alongside
+# every monitoradded — falls through instead of running the pass twice.
+#
+# The pause lets Hyprland finish moving the workspaces of a screen that just
+# left. It is deliberately shorter than hypr-adopt-orphans' 0.5s on the same
+# events: the blocks should be pinned before it decides which windows are out
+# of range. Neither order is wrong — both compute the destination from rank,
+# and both passes are idempotent — this just keeps the common case in order.
+#
+# `hyprctl keyword` does not itself emit configreloaded, so a pass cannot
+# retrigger this loop.
+while IFS= read -r line <&3; do
+    case "$line" in
+        monitoradded'>>'*|monitorremoved'>>'*)
+            sleep 0.3
+            apply
+            ;;
+        configreloaded'>>'*)
+            apply
+            ;;
+    esac
+done
