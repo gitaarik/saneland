@@ -1,28 +1,37 @@
 #!/usr/bin/env bash
 #
 # hypr-workspace — switch to, or move the active window to, a PER-SCREEN
-# workspace. Bound to mod+1..12 (switch) and mod+shift+1..12 (move).
+# workspace. Bound to mod+1..12 (switch) and mod+shift+1..12 (move), and in the
+# `-dir` forms to mod+k/j and mod+ctrl+shift+k/j.
 #
 # Each monitor owns a block of 12 workspaces: the monitor with the lowest
 # Hyprland id (the internal panel) gets global workspaces 1-12, the next gets
 # 13-24, and so on — offset = monitor_rank * 12. A "local" tag 1..12 on a
-# screen maps to the global workspace `offset + tag`. The static
-# `workspace = N, monitor:…` bindings in local.conf must follow the same
-# rank order so the two agree; see local.conf.example.
+# screen maps to the global workspace `offset + tag`. `hypr-workspace-blocks`
+# pins each block to its screen at runtime, deriving the same rank order.
 #
 # The number keys act on the screen holding the FOCUSED WINDOW (not the one
 # under the cursor), falling back to the focused monitor when no window is
 # focused (e.g. an empty workspace).
 #
 # Usage: hypr-workspace switch|move <1..12>
+#        hypr-workspace switch-dir|move-dir u|d
+#
+# The `-dir` forms step one place up or down that screen's block instead of
+# naming a tag, which is what makes mod+h/j/k/l a 2D grid: h/l walks the
+# screens, j/k walks the workspaces on the screen you are on. See "Directional
+# keys" in docs/ARCHITECTURE.md.
 #
 # On a single monitor the rank is always 0, so offset is 0 and this reduces to
 # plain `workspace N` / `movetoworkspacesilent N` — i.e. unchanged behaviour.
 
 set -uo pipefail
 
-action=${1:?Usage: hypr-workspace switch|move <1..12>}
-n=${2:?Usage: hypr-workspace switch|move <1..12>}
+usage='Usage: hypr-workspace switch|move <1..12>
+       hypr-workspace switch-dir|move-dir u|d'
+
+action=${1:?$usage}
+n=${2:?$usage}
 
 # Target screen = the focused window's monitor; if nothing is focused, the
 # focused (cursor) monitor. `.monitor` on activewindow is the monitor id.
@@ -35,8 +44,58 @@ monitors=$(hyprctl -j monitors 2>/dev/null)
 
 # offset = rank of that monitor among all monitors sorted by id, times 12.
 offset=$(jq -r --argjson m "${mon:-0}" '([.[].id] | sort | index($m) // 0) * 12' <<<"$monitors")
-ws=$(( ${offset:-0} + n ))
+offset=${offset:-0}
 mon_name=$(jq -r --argjson m "${mon:-0}" 'map(select(.id == $m))[0].name // empty' <<<"$monitors")
+
+# --- The -dir forms: derive the tag instead of being handed one -------------
+#
+# Only tags the taskbar actually DRAWS are stepped through — populated, or the
+# active one, the same set hypr-state.sh calls tag_visible. Walking all twelve
+# would put four empty workspaces between tag 1 and tag 5 and make the key feel
+# broken; walking the visible ones means the column you move through is the
+# column you can see.
+#
+# No wrap, on purpose: mod+h at the leftmost screen is inert, so mod+k at the
+# top of the block is too. Wrapping would turn one keypress too many into a
+# silent jump across the whole block, with nothing to feel the edge by.
+if [[ $action == *-dir ]]; then
+    case $n in
+        u|up)   step=-1 ;;
+        d|down) step=1 ;;
+        *) echo "$usage" >&2; exit 1 ;;
+    esac
+
+    act=$(jq -r --argjson m "${mon:-0}" \
+        'map(select(.id == $m))[0].activeWorkspace.id // empty' <<<"$monitors")
+    [[ $act =~ ^[0-9]+$ ]] || exit 0
+    cur=$(( act - offset ))
+    # Outside its own block — hypr-workspace-blocks is mid-pin, or a named
+    # workspace is showing. No local tag to step from.
+    (( cur >= 1 && cur <= 12 )) || exit 0
+
+    clients=$(hyprctl -j clients 2>/dev/null) || exit 1
+    n=$(jq -r --argjson off "$offset" --argjson cur "$cur" --argjson step "$step" '
+        (map(.workspace.id) | unique) as $populated
+        | [ range(1; 13) | select((. - $cur) * $step > 0) ]
+        | map(. as $t | select($populated | index($off + $t)))
+        | (if $step > 0 then min else max end) // empty
+    ' <<<"$clients")
+
+    if [[ -z $n ]]; then
+        # Nothing occupied that way. For a switch that is the end of the
+        # column and the key is inert. For a move it is not: the window being
+        # moved is itself what would populate the next tag, so this is the one
+        # way to grow the block — without it, a screen holding a single
+        # workspace could never push a window onto a second one.
+        [[ $action == move-dir ]] || exit 0
+        n=$(( cur + step ))
+        (( n >= 1 && n <= 12 )) || exit 0
+    fi
+
+    action=${action%-dir}
+fi
+
+ws=$(( offset + n ))
 
 # Hyprland used to hand the focused monitor back to the one under the CURSOR
 # whenever the workspace it just landed on had no window to give focus to — so
@@ -59,5 +118,5 @@ reassert_focus() {
 case $action in
     switch) hyprctl dispatch workspace "$ws" >/dev/null; reassert_focus ;;
     move)   hyprctl dispatch movetoworkspacesilent "$ws" >/dev/null; reassert_focus ;;
-    *) echo "Usage: hypr-workspace switch|move <1..12>" >&2; exit 1 ;;
+    *) echo "$usage" >&2; exit 1 ;;
 esac

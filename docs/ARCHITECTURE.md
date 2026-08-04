@@ -151,6 +151,43 @@ It listens for `configreloaded` as well as the monitor events: `hyprctl reload`
 re-reads the config from disk and drops every runtime `keyword` with it, and
 `bin/theme` reloads on every dark/light switch.
 
+## Directional keys: monitors across, workspaces down
+
+`mod+h/j/k/l` is one grid, not four separate keys. Screens sit side by side, so
+the horizontal axis is the monitors; each screen owns a block of 12 workspaces
+(above), so that block is the vertical axis. `mod+l` walks right until it runs
+out of screen and then crosses to the next one; `mod+j` walks down until it
+runs out of window and then drops to the next workspace on the screen you are
+on. `mod+ctrl+shift+h/j/k/l` throws the focused window across the same grid.
+
+`hypr-focus-dir` tries three things in order: a neighbouring window on this
+workspace, the monitor that way, then — for `u`/`d` only — the next workspace
+in the block, delegated to `hypr-workspace switch-dir`. The monitor probe still
+runs first vertically, so a genuinely stacked pair of screens keeps working and
+only falls through to the block when there is nothing above or below. The
+horizontal keys deliberately do **not** fall through to workspaces; that
+asymmetry is the whole model.
+
+Two rules make the vertical steps feel like the bar looks:
+
+- **Only tags the taskbar draws are stepped through** — populated, or the
+  active one, the same set `hypr-state.sh` calls `tag_visible`. Walking all
+  twelve would put four empty workspaces between tag 1 and tag 5.
+- **No wrap.** `mod+h` at the outermost screen is inert, so `mod+k` at the top
+  of the block is too. Wrapping turns one keypress too many into a silent jump
+  across the whole block with no edge to feel.
+
+`move-dir` breaks the symmetry in exactly one place: at the end of the column
+it opens the next tag rather than doing nothing, because the window being moved
+is itself what populates it — otherwise a screen holding one workspace could
+never push a window onto a second. Since the new tag is inside the screen's own
+block, `hypr-workspace-blocks` has already pinned it to that screen.
+
+Because nearly every window is maximized (below), stacked windows share a
+centre and fail `hypr-focus-dir`'s deadzone test, so in practice `mod+j/k`
+changes workspace far more often than it moves focus within one. `mod+Tab`
+remains the way through a pile.
+
 ## Windows on a screen that goes away
 
 The rank comes from the monitor's position among the **currently connected**

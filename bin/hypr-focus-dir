@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 #
-# Directional focus that treats the next screen as one more step in the same
-# direction: focus the neighbouring window on this screen if there genuinely
-# is one, otherwise hop to the monitor that way. Bound to mod+h/j/k/l.
+# Directional focus that treats whatever is beyond this window as one more step
+# in the same direction. Bound to mod+h/j/k/l, and tried in three steps:
+#
+#   1. the neighbouring window on this screen, if there genuinely is one
+#   2. the monitor that way
+#   3. for up/down only, the next workspace up or down this screen's block
+#
+# So h/l walks the screens and j/k walks the workspaces on the screen you are
+# on: monitors across, workspaces down. Step 3 is delegated to
+# `hypr-workspace switch-dir`, which owns the block arithmetic.
 #
 # This replaces the plain `movefocus` dispatcher, which gets two things wrong
 # on a multi-monitor setup driven the way this one is:
@@ -123,8 +130,22 @@ next=$(jq -r --arg dir "$dir" --argjson id "$cur_id" '
     end
 ' <<<"$monitors")
 
-# Nothing that way — outermost screen, edge of the desktop. Deliberately inert.
-[[ -n $next ]] || exit 0
+# --- Step 3: nothing that way ------------------------------------------------
+# Horizontally that is the edge of the desktop and the key is deliberately
+# inert. Vertically it is not an edge at all: each screen owns a block of 12
+# workspaces (hypr-workspace-blocks), so up/down carry on into that block. h/l
+# walks the screens, j/k walks the workspaces on the screen you are on — one
+# grid, monitors across and workspaces down.
+#
+# The monitor probe above still runs first for u/d, so a genuinely stacked
+# pair of screens keeps working and only falls through to the block when there
+# is nothing above or below.
+if [[ -z $next ]]; then
+    case $dir in
+        u|d) exec ~/.local/bin/hypr-workspace switch-dir "$dir" ;;
+        *)   exit 0 ;;
+    esac
+fi
 
 # Land on the window you last used over there, rather than dispatching
 # `focusmonitor` and hoping. `focusmonitor` early-returns when Hyprland
