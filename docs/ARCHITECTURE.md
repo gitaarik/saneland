@@ -308,22 +308,37 @@ stick, so `theme` does a full `eww kill` + `eww open bar` (detached via
 The active theme is also written to `~/.cache/current-theme` for anything else
 you want to follow it.
 
-## Wallpapers (hyprpaper 0.8.4)
+## Wallpapers (awww)
 
 Per-theme image pools live in `~/.config/hypr/wallpapers/{dark,light}/`.
 
-- `hypr-wallpaper [scheme]` picks a random image from that pool and applies it,
-  avoiding an immediate repeat.
+- `hypr-wallpaper [scheme]` picks a random image from that pool and crossfades
+  to it, avoiding an immediate repeat.
 - `hypr-wallpaper-rotate` is a flock singleton timer (started from
   `hyprland.conf`) that re-runs `hypr-wallpaper` every interval for whatever
   theme is active, and paints once at login.
 - `theme` calls `hypr-wallpaper "$scheme"` on each switch to repaint at once.
 
-> **hyprpaper 0.8.4 quirk:** the hyprtoolkit rewrite ignores `wallpaper=` /
-> `preload` in `hyprpaper.conf` and dropped the `preload`/`unload`/`listloaded`
-> IPC subcommands. Only `hyprctl hyprpaper wallpaper ,<path>` works (it
-> auto-loads the image). So `hyprpaper.conf` only turns IPC on; everything else
-> goes through the helper scripts.
+The daemon is `awww-daemon` (`exec-once` in `hyprland.conf`); there is no config
+file — the fade lives in the `TRANSITION` array at the top of `hypr-wallpaper`
+and is passed per-call.
+
+> **Why not hyprpaper?** It has no transition support of any kind, so every
+> rotation tick is a single-frame repaint that reads as a flash. awww (the
+> renamed swww) crossfades, which is the whole reason for the swap. The **login
+> screen still uses hyprpaper** — see `greeter/wallpaper.sh` — because it paints
+> one static image once and has nothing to transition between.
+>
+> **Naming:** swww renamed itself to awww at 0.12 and the binaries went with it
+> (`awww`, `awww-daemon`). Distros below that ship them as `swww`/`swww-daemon`;
+> `MIN_VERSION` in `deps/manifest.sh` pins 0.12 for exactly this reason.
+
+> **hyprpaper 0.8.4 quirk** (still relevant to the greeter): the hyprtoolkit
+> rewrite ignores `wallpaper=` / `preload` in `hyprpaper.conf` and dropped the
+> `preload`/`unload`/`listloaded` IPC subcommands. Only
+> `hyprctl hyprpaper wallpaper ,<path>` works (it auto-loads the image). So
+> `/etc/greetd/hyprpaper.conf` only turns IPC on and the paint happens from
+> `/etc/greetd/saneland-greeter-wallpaper`.
 
 ## Auto-maximizing new windows
 

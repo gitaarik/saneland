@@ -7,5 +7,6 @@ Drop your own images into `dark/` and `light/`. The `theme` script and
 No images ship with this repo (they'd be someone else's copyright). The folders
 are intentionally empty except for `.gitkeep`.
 
-Any format hyprpaper accepts works (JPG, PNG, …). There's nothing else to
-configure — add or remove files and the next rotation picks them up.
+Any format awww accepts works (JPG, PNG, WebP, animated GIF, …). There's
+nothing else to configure — add or remove files and the next rotation picks
+them up.

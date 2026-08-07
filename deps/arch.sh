@@ -17,7 +17,7 @@ declare -A PKG=(
   [bar-eww]="eww"
   [notifications-swaync]="swaync"
   [launcher-rofi]="rofi-wayland"
-  [wallpaper-hyprpaper]="hyprpaper"
+  [wallpaper-awww]="awww"               # provides/replaces swww
   [audio-wireplumber]="wireplumber"
   [audio-pulse]="pipewire-pulse"
   [network-nm]="networkmanager"
@@ -42,6 +42,7 @@ declare -A PKG=(
   [annotate-satty]="satty"
   [greeter-greetd]="greetd"
   [greeter-regreet]="greetd-regreet"
+  [greeter-hyprpaper]="hyprpaper"
 )
 
 # IDs served from the AUR (installed via AUR_INSTALL, not pacman). Verify — the

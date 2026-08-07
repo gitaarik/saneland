@@ -32,9 +32,12 @@ declare -A PKG=(
 )
 # Build from source / upstream (not mapped above):
 #   compositor, portal-hyprland, session-uwsm, bar-eww, notifications-swaync,
-#   launcher-rofi, wallpaper-hyprpaper, lock-hyprlock, idle-hypridle,
+#   launcher-rofi, wallpaper-awww, lock-hyprlock, idle-hypridle,
 #   nightlight-hyprsunset, screenshot-hyprshot, annotate-satty, gtk-materia,
-#   font-adwaita, greeter-regreet
+#   font-adwaita, greeter-regreet, greeter-hyprpaper
+#
+# wallpaper-awww is the renamed swww (Rust) — `cargo install` it, and note the
+# configs call the 0.12+ binaries `awww`/`awww-daemon`.
 #
 # greetd is packaged (`greetd`); ReGreet isn't — build it with cargo if you
 # want greeter/install.sh's login screen.

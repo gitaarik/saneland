@@ -10,7 +10,7 @@
 
 CORE_DEPS=(
   compositor portal-hyprland session-uwsm
-  bar-eww notifications-swaync launcher-rofi wallpaper-hyprpaper
+  bar-eww notifications-swaync launcher-rofi wallpaper-awww
   audio-wireplumber audio-pulse network-nm
   bluetooth-bluez bluetooth-blueman power-upower power-profiles
   cli-jq cli-python cli-ncat cli-brightnessctl cli-rfkill cli-libnotify
@@ -21,7 +21,7 @@ CORE_DEPS=(
 OPTIONAL_DEPS=(
   lock-hyprlock idle-hypridle nightlight-hyprsunset
   screenshot-hyprshot annotate-satty
-  greeter-greetd greeter-regreet
+  greeter-greetd greeter-regreet greeter-hyprpaper
 )
 
 declare -A DEP_DESC=(
@@ -31,7 +31,7 @@ declare -A DEP_DESC=(
   [bar-eww]="eww — the status bar"
   [notifications-swaync]="SwayNotificationCenter"
   [launcher-rofi]="rofi launcher (Wayland build)"
-  [wallpaper-hyprpaper]="hyprpaper wallpaper daemon"
+  [wallpaper-awww]="awww wallpaper daemon (crossfades between images)"
   [audio-wireplumber]="WirePlumber (wpctl)"
   [audio-pulse]="PipeWire-Pulse (pactl)"
   [network-nm]="NetworkManager (nmcli)"
@@ -56,6 +56,7 @@ declare -A DEP_DESC=(
   [annotate-satty]="satty screenshot annotation"
   [greeter-greetd]="greetd login daemon (only for greeter/install.sh)"
   [greeter-regreet]="ReGreet login UI (only for greeter/install.sh)"
+  [greeter-hyprpaper]="hyprpaper — paints the login screen's one static image (only for greeter/install.sh)"
 )
 
 # Minimum versions of the fast-moving components whose config syntax we depend
@@ -64,5 +65,6 @@ declare -A DEP_DESC=(
 declare -A MIN_VERSION=(
   [compositor]="0.45"   # hyprland — rule syntax, plugin ABI
   [bar-eww]="0.5"       # :focusable is a boolean; string enum silently fails
-  [wallpaper-hyprpaper]="0.8"  # IPC-only wallpaper apply
+  [wallpaper-awww]="0.12"      # the swww -> awww rename; binaries are awww/awww-daemon
+  [greeter-hyprpaper]="0.8"    # IPC-only wallpaper apply
 )

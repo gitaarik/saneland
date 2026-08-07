@@ -4,9 +4,11 @@
 # /etc/greetd/saneland-greeter-wallpaper, run from the greeter's hyprland.conf.
 #
 # The session has ~/.local/bin/hypr-wallpaper for this; the greeter can't use
-# it (different user, no access to your home, no theme cache) but needs the
-# same trick: hyprpaper 0.8.4 ignores the `wallpaper =` directive in its config
-# file and only responds to `hyprctl hyprpaper wallpaper ,<path>` over IPC.
+# it (different user, no access to your home, no theme cache) and doesn't want
+# to — that one drives awww to crossfade between a rotating pool, while this
+# paints one static image once and is gone. So hyprpaper it is, with its quirk:
+# 0.8.4 ignores the `wallpaper =` directive in its config file and only
+# responds to `hyprctl hyprpaper wallpaper ,<path>` over IPC.
 # The empty monitor field means "all outputs", including the one holding the
 # login window: ReGreet's window is transparent (regreet.css), so this is the
 # picture you see behind it — the greeter has no background of its own.

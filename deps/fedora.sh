@@ -1,7 +1,7 @@
 # Fedora.
 #
 # Hyprland itself is in the official repos on recent Fedora, but the wider
-# hypr* ecosystem (hyprpaper/hyprlock/hypridle/hyprsunset) and eww are most
+# hypr* ecosystem (hyprlock/hypridle/hyprsunset/hyprpaper) and eww are most
 # reliably found in the solopasha/hyprland COPR — enable it first:
 #
 #   sudo dnf copr enable solopasha/hyprland
@@ -20,7 +20,7 @@ declare -A PKG=(
   [bar-eww]="eww"                             # COPR
   [notifications-swaync]="swaync"             # COPR
   [launcher-rofi]="rofi-wayland"              # COPR; 'rofi' in repos is X11
-  [wallpaper-hyprpaper]="hyprpaper"           # COPR
+  [wallpaper-awww]="awww"                     # verify; packaged as 'swww' before the 0.12 rename
   [audio-wireplumber]="wireplumber"
   [audio-pulse]="pipewire-pulse"
   [network-nm]="NetworkManager"
@@ -44,6 +44,7 @@ declare -A PKG=(
   [annotate-satty]="satty"                    # verify (may need cargo/manual)
   [greeter-greetd]="greetd"                   # verify (may need COPR)
   [greeter-regreet]="regreet"                 # verify (may need COPR/cargo)
+  [greeter-hyprpaper]="hyprpaper"             # COPR
 )
 # Unmapped here (reported as "build from source / not packaged"):
 #   font-adwaita — Adwaita Sans; ships with recent GNOME, else install manually.

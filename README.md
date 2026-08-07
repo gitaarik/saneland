@@ -28,7 +28,8 @@ one-command **light/dark theme switcher** that repaints the whole session.
   inline confirmation for power actions.
 - **One-command theming** — `theme dark` / `theme light` flips the eww bar,
   swaync, GTK, rofi and the wallpaper together via a symlink-swap pattern.
-- **Wallpaper rotation** with per-theme image pools (hyprpaper).
+- **Wallpaper rotation** with per-theme image pools, crossfading between images
+  (awww).
 - **Quality-of-life Hyprland scripts** — MRU Alt-Tab, window snapping /
   centering / maximize-toggle, scroll-to-switch workspaces, brightness &
   battery helpers.
@@ -42,7 +43,7 @@ one-command **light/dark theme switcher** that repaints the whole session.
 ```
 config/          # → ~/.config/*  (whole-dir symlinks)
   eww/           # the bar: eww.yuck + _eww-common.scss + per-theme SCSS + scripts/
-  hypr/          # hyprland.conf, hyprpaper.conf, hyprlock.conf, hypridle.conf
+  hypr/          # hyprland.conf, hyprlock.conf, hypridle.conf, window-policy.conf
   swaync/        # notification daemon (theme-integrated)
   rofi/          # launcher — the start menu's "all apps" fallback (theme-integrated)
   gtk-3.0/ gtk-4.0/   # GTK app theming, so Firefox/dialogs follow light/dark
@@ -72,7 +73,7 @@ to install them (`./deps.sh --print` to just see the plan). The list itself:
 | Battery/power      | `upower`, `power-profiles-daemon` |
 | GTK theme/icons    | `materia-gtk-theme`, `papirus-icon-theme` (the names `theme` sets via gsettings — swap in the script for others) |
 | Misc CLI           | `jq`, `python`, `nmap` (`ncat`), `brightnessctl`, `rfkill`, `libnotify` |
-| Wallpaper          | `hyprpaper` |
+| Wallpaper          | `awww` ≥0.12 (the renamed `swww`; binaries are `awww`/`awww-daemon`) |
 | Fonts              | `ttf-adwaita`/Adwaita Sans, `ttf-jetbrains-mono-nerd` |
 
 Optional (referenced by `hyprland.conf` — each only affects its own
@@ -144,6 +145,10 @@ sudo ./greeter/install.sh          # --dry-run first if you like
 sudo systemctl restart greetd      # applies it; ENDS YOUR SESSION
 ```
 
+Needs `greetd`, `regreet` and `hyprpaper` — the last one paints the login
+screen's single static image, which is why it's still a dependency even though
+the session itself now uses `awww`.
+
 It replaces greetd's usual `cage -s -- regreet` with a stripped-down Hyprland
 running the same ReGreet UI. The reason is multi-monitor: cage welds every
 output into one surface (`-m extend`), so the login box lands on the seam
@@ -204,14 +209,15 @@ Everything else is opinionated-but-editable in the tracked files:
 - **Keybinds & window rules** — the `bind`/`windowrule` blocks in
   `hyprland.conf`.
 - **Start-menu pins** — the `start-item` rows in `config/eww/eww.yuck`.
-- **Wallpaper rotation interval** — top of `bin/hypr-wallpaper-rotate`.
+- **Wallpaper rotation interval** — top of `bin/hypr-wallpaper-rotate`; the
+  crossfade between images is the `TRANSITION` line in `bin/hypr-wallpaper`.
 - **eww monitor** — bar windows use `:monitor 0` (first output); multi-monitor
   users edit `config/eww/eww.yuck` (not yet a `local` tunable).
 
 ## How it works / gotchas
 
 The non-obvious bits — why popups grab (or don't grab) the keyboard, how the
-MRU Alt-Tab reads `/dev/input`, the hyprpaper 0.8.4 IPC quirks, the stale
+MRU Alt-Tab reads `/dev/input`, why the wallpaper daemon isn't hyprpaper, the stale
 `HYPRLAND_INSTANCE_SIGNATURE` trap, and more — are documented in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
