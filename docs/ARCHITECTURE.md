@@ -317,6 +317,12 @@ Per-theme image pools live in `~/.config/hypr/wallpapers/{dark,light}/`.
 - `hypr-wallpaper-rotate` is a flock singleton timer (started from
   `hyprland.conf`) that re-runs `hypr-wallpaper` every interval for whatever
   theme is active, and paints once at login.
+- `hypr-wallpaper-rotate next` (**mod+b**) jumps to the next image now. It
+  signals the loop rather than painting directly, so the interval restarts from
+  the manual change instead of firing again moments later. The loop is found
+  through a PID file in `$XDG_RUNTIME_DIR`: `comm` truncates at 15 characters,
+  so `pkill -x hypr-wallpaper-rotate` never matches it, and `pkill -f` would
+  match the signalling process too.
 - `theme` calls `hypr-wallpaper "$scheme"` on each switch to repaint at once.
 
 The daemon is `awww-daemon` (`exec-once` in `hyprland.conf`); there is no config
@@ -339,6 +345,11 @@ and is passed per-call.
 > `hyprctl hyprpaper wallpaper ,<path>` works (it auto-loads the image). So
 > `/etc/greetd/hyprpaper.conf` only turns IPC on and the paint happens from
 > `/etc/greetd/saneland-greeter-wallpaper`.
+
+> Both children in the loop are spawned with `9>&-`. Bash leaves fd 9 (the
+> flock) inheritable, so a `sleep` orphaned by a compositor crash keeps holding
+> the lock, and the next login's rotator finds it taken and silently gives up
+> until the old sleep expires.
 
 ## Auto-maximizing new windows
 

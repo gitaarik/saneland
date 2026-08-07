@@ -9,14 +9,49 @@
 #
 # Change the cadence here (sleep(1) suffixes: 45m, 1h, 90s, ...):
 INTERVAL=30m
+#
+# `hypr-wallpaper-rotate next` (bound to mod+b) jumps to the next image
+# immediately and restarts the interval from there, so a manual change isn't
+# followed by an automatic one seconds later.
+
+run="${XDG_RUNTIME_DIR:-/tmp}/hypr-wallpaper-rotate"
+
+# `next` — nudge the running loop with SIGUSR1. It has to find the loop by PID
+# file: comm(2) truncates at 15 characters (so `pkill -x hypr-wallpaper-rotate`
+# never matches) and `pkill -f` would match this process too. The /proc check
+# guards against a stale PID that the kernel has since recycled onto something
+# innocent. With no loop running at all, just paint once directly.
+if [[ ${1:-} == next ]]; then
+    pid=$(cat "$run.pid" 2>/dev/null)
+    if [[ -n $pid && $(cat "/proc/$pid/comm" 2>/dev/null) == hypr-wallpaper-* ]]; then
+        kill -USR1 "$pid"
+    else
+        ~/.local/bin/hypr-wallpaper
+    fi
+    exit
+fi
 
 # Singleton: if a rotator is already running (e.g. a leftover from a previous
 # Hyprland instance, or a manual re-run) bail out. The lock auto-releases when
 # the holding process dies, so a crashed rotator won't block the next login.
-exec 9>"${XDG_RUNTIME_DIR:-/tmp}/hypr-wallpaper-rotate.lock" || exit 0
+exec 9>"$run.lock" || exit 0
 flock -n 9 || exit 0
 
+echo $$ > "$run.pid"
+
+# The wait is a backgrounded sleep rather than a plain one so SIGUSR1 can cut
+# it short: bash runs the handler as soon as `wait` is interrupted, and the
+# loop then falls straight into the next paint.
+sleep_pid=
+trap '[[ -n $sleep_pid ]] && kill "$sleep_pid" 2>/dev/null' USR1
+
+# `9>&-` on both children: bash doesn't set close-on-exec on fd 9, so a sleep
+# that outlives us (Hyprland exits, the shell is killed) would keep holding the
+# flock as an orphan — and the next login's rotator would find the lock taken
+# and quietly give up for the rest of the interval.
 while true; do
-    ~/.local/bin/hypr-wallpaper
-    sleep "$INTERVAL"
+    ~/.local/bin/hypr-wallpaper 9>&-
+    sleep "$INTERVAL" 9>&- &
+    sleep_pid=$!
+    wait "$sleep_pid" 2>/dev/null
 done
