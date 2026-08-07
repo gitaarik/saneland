@@ -323,6 +323,14 @@ Per-theme image pools live in `~/.config/hypr/wallpapers/{dark,light}/`.
   through a PID file in `$XDG_RUNTIME_DIR`: `comm` truncates at 15 characters,
   so `pkill -x hypr-wallpaper-rotate` never matches it, and `pkill -f` would
   match the signalling process too.
+- `hypr-wallpaper repaint` re-applies the image that's already showing instead
+  of picking a new one. The rotator runs it from a `socket2` watcher on every
+  `monitoradded`, because **a screen connected after the last paint gets no
+  wallpaper**: awww-daemon gives the new output a surface but leaves it empty,
+  and Hyprland's own built-in wallpaper shows through. `awww img` only reaches
+  the outputs that exist when it runs. Re-applying the *current* image (rather
+  than picking) means plugging in a screen doesn't reshuffle the one you were
+  already looking at.
 - `theme` calls `hypr-wallpaper "$scheme"` on each switch to repaint at once.
 
 The daemon is `awww-daemon` (`exec-once` in `hyprland.conf`); there is no config
@@ -350,6 +358,10 @@ and is passed per-call.
 > flock) inheritable, so a `sleep` orphaned by a compositor crash keeps holding
 > the lock, and the next login's rotator finds it taken and silently gives up
 > until the old sleep expires.
+>
+> The hot-plug watcher matches `monitoradded>>*`, not `monitoradded*` —
+> Hyprland fires both `monitoradded` and `monitoraddedv2` for a single connect,
+> and the loose glob would repaint twice.
 
 ## Auto-maximizing new windows
 

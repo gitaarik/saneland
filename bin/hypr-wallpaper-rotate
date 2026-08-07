@@ -39,6 +39,43 @@ flock -n 9 || exit 0
 
 echo $$ > "$run.pid"
 
+# Repaint whenever a monitor is connected. awww-daemon notices the new output
+# and gives it a surface, but never puts an image on it — `awww img` only
+# reaches the monitors that exist when it runs — so the screen comes up showing
+# Hyprland's own built-in wallpaper instead. `repaint` re-applies the CURRENT
+# image rather than picking a new one: plugging in a screen shouldn't reshuffle
+# the one you were already looking at.
+#
+# Same socket2 + ncat pattern as eww-bars.sh --watch, in the `exec 3<` form so
+# the loop is killable (see the "killable event loops" note in
+# docs/ARCHITECTURE.md). The short sleep lets Hyprland finish bringing the
+# output up before we paint it. Runs as a background job so the timer below
+# keeps its own schedule — a hot-plug is not a rotation tick.
+watch_monitors() {
+    local sock line ncat_pid
+    sock=${XDG_RUNTIME_DIR:-/run/user/$UID}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock
+    exec 3< <(ncat -U "$sock" 2>/dev/null)
+    ncat_pid=$!
+    trap 'kill "$ncat_pid" 2>/dev/null' EXIT
+    trap 'exit' INT TERM
+
+    while IFS= read -r line <&3; do
+        case "$line" in
+            # Hyprland fires BOTH monitoradded>>NAME and monitoraddedv2>>id,NAME,desc
+            # for one plug — anchoring on `>>` takes the v1 form only, so we
+            # don't paint the same image twice per connect.
+            monitoradded'>>'*)
+                sleep 0.5
+                ~/.local/bin/hypr-wallpaper repaint
+                ;;
+        esac
+    done
+}
+
+watch_monitors 9>&- &
+watcher_pid=$!
+trap 'kill "$watcher_pid" 2>/dev/null' EXIT
+
 # The wait is a backgrounded sleep rather than a plain one so SIGUSR1 can cut
 # it short: bash runs the handler as soon as `wait` is interrupted, and the
 # loop then falls straight into the next paint.

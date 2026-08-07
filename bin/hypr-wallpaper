@@ -4,8 +4,9 @@
 #
 # Pools live in ~/.config/hypr/wallpapers/<scheme>/ and may hold any number of
 # images — drop files in or delete them, no config to touch. Called by
-# hypr-wallpaper-rotate (the timer loop) and by ~/.local/bin/theme (to repaint
-# immediately on a dark/light switch instead of waiting for the next tick).
+# hypr-wallpaper-rotate (the timer loop, and its hot-plug watcher) and by
+# ~/.local/bin/theme (to repaint immediately on a dark/light switch instead of
+# waiting for the next tick).
 #
 # Why awww and not hyprpaper? hyprpaper has no transition support of any kind —
 # every change is a single-frame repaint, which reads as a flash on each
@@ -13,15 +14,16 @@
 # `awww img --help` lists the other transition types (wipe, grow, wave, …):
 TRANSITION=(--transition-type fade --transition-duration 1 --transition-fps 60)
 #
-# Usage: hypr-wallpaper [dark|light]   (defaults to ~/.cache/current-theme)
+# Usage:
+#   hypr-wallpaper [dark|light]   pick a fresh image (default: ~/.cache/current-theme)
+#   hypr-wallpaper repaint        re-apply the CURRENT image, for a screen that
+#                                 was connected after the last paint
+
+mode=pick
+[[ ${1:-} == repaint ]] && { mode=repaint; shift; }
 
 scheme="${1:-$(cat ~/.cache/current-theme 2>/dev/null || echo dark)}"
 dir="$HOME/.config/hypr/wallpapers/$scheme"
-
-mapfile -t pool < <(find "$dir" -maxdepth 1 -type f \
-    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
-    2>/dev/null | sort)
-(( ${#pool[@]} == 0 )) && exit 0
 
 # Wait for awww-daemon's socket. At login, monitor + surface setup takes a
 # moment before the daemon answers and `awww img` just errors out until then.
@@ -32,18 +34,31 @@ for _ in $(seq 1 40); do
     sleep 0.5
 done
 
-# Avoid repeating the last image when the pool has more than one. Tracked in a
-# state file rather than parsed from `awww query`, which reports the path
-# symlink-resolved (~/.config/hypr -> the dotfiles repo) and so wouldn't
-# string-match the ~/-relative paths we hand it here.
+# The image showing right now. Tracked in a state file rather than parsed from
+# `awww query`, which reports the path symlink-resolved (~/.config/hypr -> the
+# dotfiles repo) and so wouldn't string-match the ~/-relative paths we hand it
+# here. It serves two purposes: don't repeat it on the next pick, and re-apply
+# it verbatim on `repaint`.
 state="$HOME/.cache/wallpaper-last"
 last="$(cat "$state" 2>/dev/null)"
-pick="${pool[RANDOM % ${#pool[@]}]}"
-if (( ${#pool[@]} > 1 )); then
-    while [[ "$pick" == "$last" ]]; do
-        pick="${pool[RANDOM % ${#pool[@]}]}"
-    done
+
+if [[ $mode == repaint && -r "$last" ]]; then
+    pick=$last
+else
+    mapfile -t pool < <(find "$dir" -maxdepth 1 -type f \
+        \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+        2>/dev/null | sort)
+    (( ${#pool[@]} == 0 )) && exit 0
+
+    pick="${pool[RANDOM % ${#pool[@]}]}"
+    if (( ${#pool[@]} > 1 )); then
+        while [[ "$pick" == "$last" ]]; do
+            pick="${pool[RANDOM % ${#pool[@]}]}"
+        done
+    fi
 fi
 
-# No --outputs = every monitor, each fading on its own surface.
+# No --outputs = every monitor, each fading on its own surface. Note that this
+# only reaches the monitors that exist RIGHT NOW: awww-daemon gives a screen
+# connected later an empty surface, which is what the `repaint` path is for.
 awww img "${TRANSITION[@]}" "$pick" &>/dev/null && echo "$pick" > "$state"
