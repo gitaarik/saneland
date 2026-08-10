@@ -32,6 +32,9 @@ one-command **light/dark theme switcher** that repaints the whole session.
   (awww) — plus `wallpaper-fetch` to fill an empty pool from Wikimedia Commons,
   sorting each image into dark/ or light/ by measuring it rather than trusting
   its category.
+- **Wallpapers that follow the sun** — each theme can keep its own `dawn/` and
+  `dusk/` sets, chosen by the sun's actual elevation (`sun-phase`). The theme
+  itself never changes on its own; only which images inside it are eligible.
 - **Quality-of-life Hyprland scripts** — MRU Alt-Tab, window snapping /
   centering / maximize-toggle, scroll-to-switch workspaces, brightness &
   battery helpers.

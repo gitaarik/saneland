@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""sun-phase — which part of the day it is here, as dawn / day / dusk / night.
+
+Printed for hypr-wallpaper, which keeps a separate pool of images per phase so
+the desktop matches the light coming through the window. Nothing else in
+saneland changes with the clock: the THEME stays wherever you put it, because
+being told what colour scheme to use at 7pm is exactly the behaviour this
+desktop avoids. Only the wallpaper drifts, and only inside the theme you chose.
+
+Why compute the sun instead of using clock times? "Evening" is not a time, it
+is an angle. Fixed hours are wrong by an hour twice a year and wrong by four
+hours in Tromsø; the sun's elevation is right everywhere, needs no network, and
+costs a millisecond of arithmetic.
+
+Where the coordinates come from, in order:
+  1. $SANELAND_LAT / $SANELAND_LON, if both are set
+  2. the timezone's reference city, read out of tzdata's zone1970.tab
+  3. failing both, "day" — a sane answer that keeps the wallpaper working
+
+Point 2 is the interesting one: /etc/localtime already implies roughly where you
+are, to the nearest reference city, and that is far more precision than picking
+a photograph needs. Being 200km off moves sunrise by a few minutes. So this
+works with no configuration at all and asks no geolocation service anything.
+
+Usage:
+  sun-phase              print dawn | day | dusk | night
+  sun-phase --verbose    also report elevation, coordinates and their source
+"""
+
+import math
+import os
+import sys
+import time
+from pathlib import Path
+
+# Elevation bands, in degrees above (+) or below (-) the horizon.
+#
+# -6 is civil twilight, the point where the horizon is still readable and colour
+# has drained from the sky. +6 is roughly the top of the "golden hour" that
+# photographers name, when light is still warm and raking. Between them is the
+# window this whole feature exists for; outside it the sun is unambiguously up
+# or down. Both are overridable, mostly for taste: widening them gives the
+# dawn/dusk pools more of the day.
+TWILIGHT_LOW = float(os.environ.get("SUN_TWILIGHT_LOW", -6.0))
+TWILIGHT_HIGH = float(os.environ.get("SUN_TWILIGHT_HIGH", 6.0))
+
+ZONE_TABS = ("/usr/share/zoneinfo/zone1970.tab", "/usr/share/zoneinfo/zone.tab")
+
+
+def parse_iso6709(coord):
+    """±DDMM±DDDMM or ±DDMMSS±DDDMMSS -> (lat, lon) in degrees.
+
+    tzdata writes coordinates packed, without separators, so the field widths
+    are the only thing distinguishing degrees from minutes. Latitude always
+    carries two degree digits and longitude three, which is what lets the two
+    halves be told apart at all.
+    """
+    for split in (5, 7):  # ±DDMM / ±DDMMSS
+        if len(coord) == split + (split + 1):
+            lat_s, lon_s = coord[:split], coord[split:]
+            break
+    else:
+        return None
+
+    def to_deg(s, deg_digits):
+        sign = -1 if s[0] == "-" else 1
+        body = s[1:]
+        deg = int(body[:deg_digits])
+        minutes = int(body[deg_digits:deg_digits + 2])
+        seconds = int(body[deg_digits + 2:deg_digits + 4]) if len(body) > deg_digits + 2 else 0
+        return sign * (deg + minutes / 60 + seconds / 3600)
+
+    return to_deg(lat_s, 2), to_deg(lon_s, 3)
+
+
+def timezone_name():
+    tz = os.environ.get("TZ")
+    if tz:
+        return tz.lstrip(":")
+    link = Path("/etc/localtime")
+    if link.exists():
+        target = str(link.resolve())
+        if "/zoneinfo/" in target:
+            return target.split("/zoneinfo/", 1)[1]
+    tzfile = Path("/etc/timezone")
+    if tzfile.is_file():
+        return tzfile.read_text().strip()
+    return None
+
+
+def coordinates():
+    """-> (lat, lon, source description)"""
+    lat, lon = os.environ.get("SANELAND_LAT"), os.environ.get("SANELAND_LON")
+    if lat and lon:
+        try:
+            return float(lat), float(lon), "SANELAND_LAT/LON"
+        except ValueError:
+            pass  # fall through to tzdata rather than dying over a typo
+
+    tz = timezone_name()
+    if tz:
+        for tab in ZONE_TABS:
+            try:
+                with open(tab, encoding="utf-8") as fh:
+                    for line in fh:
+                        if line.startswith("#"):
+                            continue
+                        fields = line.split("\t")
+                        # zone1970.tab may list several zone names in one row.
+                        if len(fields) >= 3 and tz in fields[2].split(","):
+                            parsed = parse_iso6709(fields[1])
+                            if parsed:
+                                return parsed[0], parsed[1], f"tzdata {tz}"
+            except OSError:
+                continue
+    return None, None, "unknown"
+
+
+def solar_elevation(lat, lon, when):
+    """Sun's elevation in degrees at a POSIX timestamp.
+
+    Standard low-precision solar position (NOAA). Good to well under a degree,
+    which is orders of magnitude better than choosing a wallpaper requires.
+    """
+    julian = when / 86400.0 + 2440587.5
+    n = julian - 2451545.0
+
+    mean_long = (280.460 + 0.9856474 * n) % 360
+    mean_anom = math.radians((357.528 + 0.9856003 * n) % 360)
+    ecliptic_long = math.radians(
+        mean_long + 1.915 * math.sin(mean_anom) + 0.020 * math.sin(2 * mean_anom)
+    )
+    obliquity = math.radians(23.439 - 0.0000004 * n)
+
+    declination = math.asin(math.sin(obliquity) * math.sin(ecliptic_long))
+    right_asc = math.atan2(
+        math.cos(obliquity) * math.sin(ecliptic_long), math.cos(ecliptic_long)
+    )
+
+    # Greenwich mean sidereal time -> local hour angle of the sun.
+    gmst = (18.697374558 + 24.06570982441908 * n) % 24
+    local_sidereal = math.radians(gmst * 15 + lon)
+    hour_angle = local_sidereal - right_asc
+
+    lat_r = math.radians(lat)
+    sin_elev = math.sin(lat_r) * math.sin(declination) + math.cos(lat_r) * math.cos(
+        declination
+    ) * math.cos(hour_angle)
+    return math.degrees(math.asin(max(-1.0, min(1.0, sin_elev))))
+
+
+def phase(lat, lon, when):
+    elevation = solar_elevation(lat, lon, when)
+    if elevation > TWILIGHT_HIGH:
+        return "day", elevation
+    if elevation < TWILIGHT_LOW:
+        return "night", elevation
+    # Inside the twilight band, dawn and dusk are the same elevation — the only
+    # thing telling them apart is which way the sun is going. Sampling ten
+    # minutes ahead is the cheapest reliable way to ask, and avoids any
+    # solar-noon bookkeeping.
+    rising = solar_elevation(lat, lon, when + 600) > elevation
+    return ("dawn" if rising else "dusk"), elevation
+
+
+def main():
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(__doc__.strip())
+        return 0
+
+    lat, lon, source = coordinates()
+    if lat is None:
+        # No location is not an error worth failing a wallpaper over.
+        if verbose:
+            print("no coordinates (set SANELAND_LAT/SANELAND_LON); assuming day",
+                  file=sys.stderr)
+        print("day")
+        return 0
+
+    now = time.time()
+    name, elevation = phase(lat, lon, now)
+    if verbose:
+        print(
+            f"{name}  elevation={elevation:+.2f}°  "
+            f"lat={lat:.2f} lon={lon:.2f}  source={source}  "
+            f"band=[{TWILIGHT_LOW:+g}°,{TWILIGHT_HIGH:+g}°]"
+        )
+    else:
+        print(name)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

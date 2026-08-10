@@ -20,14 +20,28 @@
 # behind a bottom bar and Hyprland's window borders without fighting them. A
 # blown-out sky ruins a dark theme; crushed blacks ruin a light one. So every
 # candidate is measured before it is kept, and the measurement decides which
-# pool it lands in — dark/ and light/ are sorted by what the image IS, not by
-# which category it came from. The thresholds below were calibrated against a
-# real hand-picked pool; see THRESHOLDS.
+# theme it belongs to. The thresholds were calibrated against a real hand-picked
+# pool; see THRESHOLDS.
+#
+# There are six pools, not two. Each theme keeps its own dawn and dusk sets, so
+# the desktop can follow the light through the window without the theme itself
+# ever changing under you:
+#
+#   dark/   dark/dawn/   dark/dusk/
+#   light/  light/dawn/  light/dusk/
+#
+# hypr-wallpaper asks sun-phase which one to draw from. The theme names the row,
+# the sun names the column, and dark/ and light/ are simply the night and day
+# sets of their own themes. The dawn/dusk split cannot be measured — a sunrise
+# and a sunset are the same photograph — so it comes from the Commons category,
+# which is the only place that knows.
 #
 # Usage:
-#   wallpaper-fetch                    add 10 images to each theme pool
-#   wallpaper-fetch -n 25              add 25 to each
-#   wallpaper-fetch --theme dark       only top up dark/
+#   wallpaper-fetch                    add 10 images to every pool
+#   wallpaper-fetch -n 25              add 25 to each pool
+#   wallpaper-fetch --theme dark       only the dark theme's pools
+#   wallpaper-fetch --phase dusk       only the dusk pools
+#   wallpaper-fetch --phase main       only dark/ and light/, no dawn or dusk
 #   wallpaper-fetch --public-domain    CC0 / public-domain only (much smaller pool)
 #   wallpaper-fetch --dry-run          report what it would keep, write nothing
 #
@@ -44,9 +58,9 @@ set -euo pipefail
 # A category that returns nothing is skipped with a warning rather than being
 # fatal: Commons renames things, and one dead source should not break a run.
 #
-# The mix is deliberate. Featured/Quality landscape sets carry the bulk and the
-# quality floor; aurorae/sunsets/clouds are here because the dark pool needs
-# candidates that are dark by nature rather than by underexposure.
+# Each category carries a PHASE — night, day, dawn or dusk — and that is what
+# decides which of the six pools its images may land in.
+#
 # Categories that can plausibly yield a NIGHT photograph. Only these are allowed
 # to fill dark/ — see the note on why measurement alone is not enough.
 NIGHT_CATEGORIES=(
@@ -71,12 +85,10 @@ NIGHT_CATEGORIES=(
   "Aurora australis"
   "Noctilucent clouds"
   "Moonlight"
-  "Blue hour"
-  "Twilight"
-  "Dusk"
-  "Quality images of sunsets"
-  "Featured pictures of sunsets"
   "Volcanic eruptions"
+  # Twilight, Blue hour, Dusk and the sunset sets used to be here. They moved to
+  # DUSK_CATEGORIES, where they belong: they are the evening, not the middle of
+  # the night, and leaving them in both lists harvested each one twice.
   # NOT "Night photography": overwhelmingly urban and institutional. One run
   # through it produced a city skyline, a floodlit dog, a roundabout and an
   # armoured vehicle — "taken at night" is not the same claim as "of the night".
@@ -95,7 +107,6 @@ CATEGORIES=(
   "Featured pictures of lakes"
   "Featured pictures of forests"
   "Featured pictures of waterfalls"
-  "Featured pictures of sunsets"
   "Featured pictures of clouds"
   "Featured pictures of nature"
   "Featured pictures of trees"
@@ -114,10 +125,63 @@ CATEGORIES=(
   "Quality images of caves"
 )
 
-# One list to harvest, plus a set for the night test.
-CATEGORIES+=("${NIGHT_CATEGORIES[@]}")
-declare -A IS_NIGHT_CAT=()
-for c in "${NIGHT_CATEGORIES[@]}"; do IS_NIGHT_CAT["$c"]=1; done
+# Dawn and dusk, kept apart on purpose.
+#
+# Photographically the two are near enough identical — a low warm sun, and no
+# statistic can say which horizon it is over. Commons can, because the
+# photographer knew. So the split is carried by the category and nothing else,
+# which is the only place the information actually exists.
+#
+# Sunrise material is plentiful (Sunrises 500, Dawn 500, Quality images of
+# sunrises 364), so the morning pool is not the poor relation it might look.
+# "Morning" is excluded despite being large: it means "before noon", not "at
+# first light", and pulls in ordinary daylight.
+DAWN_CATEGORIES=(
+  "Sunrises"
+  "Quality images of sunrises"
+  "Featured pictures of sunrises"
+  "Dawn"
+  "Alpenglow"
+)
+
+DUSK_CATEGORIES=(
+  "Sunsets"
+  "Quality images of sunsets"
+  "Featured pictures of sunsets"
+  "Dusk"
+  "Twilight"
+  "Blue hour"
+)
+
+# Phase lookup for every category, and one harvest list covering all of them.
+declare -A CAT_PHASE=()
+for c in "${CATEGORIES[@]}";       do CAT_PHASE["$c"]=day;   done
+for c in "${NIGHT_CATEGORIES[@]}"; do CAT_PHASE["$c"]=night; done
+for c in "${DAWN_CATEGORIES[@]}";  do CAT_PHASE["$c"]=dawn;  done
+for c in "${DUSK_CATEGORIES[@]}";  do CAT_PHASE["$c"]=dusk;  done
+CATEGORIES+=("${NIGHT_CATEGORIES[@]}" "${DAWN_CATEGORIES[@]}" "${DUSK_CATEGORIES[@]}")
+
+# Where a candidate is allowed to land, given the phase its category implies and
+# the theme its pixels imply:
+#
+#   night category + measures dark   -> dark/         (the theme's main set)
+#   day   category + measures light  -> light/
+#   dawn  category + either          -> <theme>/dawn/
+#   dusk  category + either          -> <theme>/dusk/
+#
+# The two cross combinations are refused rather than filed somewhere: a daylight
+# subject that measures dark is the cave-in-the-dark-pool problem, and a night
+# subject that measures light is either a city or a mistake. Dawn and dusk are
+# the exception because a sunrise genuinely comes in both weights — the dark
+# theme wants the blue-hour end of it, the light theme wants the golden end, and
+# the measurement is what tells them apart.
+pool_for() {          # pool_for THEME PHASE -> subpath, or empty if disallowed
+  case "$2" in
+    night) [[ $1 == dark  ]] && printf '%s' "$1" ;;
+    day)   [[ $1 == light ]] && printf '%s' "$1" ;;
+    dawn|dusk) printf '%s/%s' "$1" "$2" ;;
+  esac
+}
 
 # -----------------------------------------------------------------------------
 # THRESHOLDS — what makes an image usable, and for which theme
@@ -289,8 +353,9 @@ EXCLUDE_WORDS='castle|castillo|schloss|chateau|château|kasteel|palace|palais|pa
 # Options
 # -----------------------------------------------------------------------------
 DEST="$HOME/.config/hypr/wallpapers"   # the same path hypr-wallpaper reads
-COUNT=10                               # images to ADD per theme, not a target size
+COUNT=10                               # images to ADD per pool, not a target size
 THEMES=(dark light)
+PHASES=(night day dawn dusk)
 LICENSE_MODE=free
 DRY=0
 VERBOSE=0
@@ -320,6 +385,12 @@ while (( $# )); do
                         light) THEMES=(light) ;;
                         both)  THEMES=(dark light) ;;
                         *) die "--theme takes dark, light or both" ;;
+                      esac; shift 2 ;;
+    --phase)          case ${2:?} in
+                        all)  PHASES=(night day dawn dusk) ;;
+                        main) PHASES=(night day) ;;
+                        night|day|dawn|dusk) PHASES=("${2}") ;;
+                        *) die "--phase takes night, day, dawn, dusk, main or all" ;;
                       esac; shift 2 ;;
     --public-domain)  LICENSE_MODE=pd; shift ;;
     --dry-run)        DRY=1; shift ;;
@@ -542,22 +613,28 @@ load_pool_signatures() {
   fi
   : > "$TMP/sigs.txt"
   : > "$TMP/newhashes"
-  for t in "${THEMES[@]}"; do
-    [[ -d "$DEST/$t" ]] || continue
-    for f in "$DEST/$t"/*; do
-      [[ -f $f ]] || continue
-      name="$t/$(basename "$f")"
-      [[ $(basename "$f") == .gitkeep ]] && continue
-      size=$(stat -c%s "$f" 2>/dev/null) || continue
-      s=${cache["$name:$size"]:-}
-      if [[ -z $s ]]; then
-        s=$(sig "$f") || continue
-        fresh=$((fresh + 1))
-      fi
-      printf '%s\n' "$s" >> "$TMP/sigs.txt"
-      printf '%s\t%s\t%s\n' "$name" "$size" "${s/ /$'\t'}" >> "$TMP/newhashes"
-      k=$(series_key "$(basename "$f")")
-      [[ -n $k ]] && seen_series["$k"]=1
+  # Across every pool, not just the ones being filled: an image already sitting
+  # in light/dusk/ should still block a near-copy landing in dark/. Duplicate
+  # detection that only looked at the target pool would let the same sunrise in
+  # six times over.
+  for t in dark light; do
+    for sub in "" /dawn /dusk; do
+      [[ -d "$DEST/$t$sub" ]] || continue
+      for f in "$DEST/$t$sub"/*; do
+        [[ -f $f ]] || continue
+        name="$t$sub/$(basename "$f")"
+        [[ $(basename "$f") == .gitkeep ]] && continue
+        size=$(stat -c%s "$f" 2>/dev/null) || continue
+        s=${cache["$name:$size"]:-}
+        if [[ -z $s ]]; then
+          s=$(sig "$f") || continue
+          fresh=$((fresh + 1))
+        fi
+        printf '%s\n' "$s" >> "$TMP/sigs.txt"
+        printf '%s\t%s\t%s\n' "$name" "$size" "${s/ /$'\t'}" >> "$TMP/newhashes"
+        k=$(series_key "$(basename "$f")")
+        [[ -n $k ]] && seen_series["$k"]=1
+      done
     done
   done
   (( DRY )) || mv "$TMP/newhashes" "$HASHFILE" 2>/dev/null || true
@@ -677,16 +754,33 @@ info ""
 # -----------------------------------------------------------------------------
 # Download, measure, place
 # -----------------------------------------------------------------------------
-want_dark=0 want_light=0
+# One target per POOL, not per theme: the six of them fill independently, and a
+# run stops only once every pool it was asked for is satisfied.
+declare -A want=() got=()
+outstanding=0
 for t in "${THEMES[@]}"; do
-  [[ $t == dark  ]] && want_dark=$COUNT
-  [[ $t == light ]] && want_light=$COUNT
+  for p in "${PHASES[@]}"; do
+    sub=$(pool_for "$t" "$p") || true
+    [[ -n $sub ]] || continue          # e.g. (light, night) is not a pool
+    want["$t:$p"]=$COUNT
+    got["$t:$p"]=0
+    outstanding=$((outstanding + 1))
+  done
 done
-got_dark=0 got_light=0
+(( outstanding )) || die "nothing to fill — check --theme/--phase"
 declare -A hue_count=()
 declare -A cat_count=()
 declare -a kept_rows=()
 tested=0 skipped=0
+
+# True once every requested pool has had its fill.
+pools_satisfied() {
+  local k
+  for k in "${!want[@]}"; do
+    (( ${got[$k]:-0} < ${want[$k]} )) && return 1
+  done
+  return 0
+}
 
 # Per-run caps: one hue family cannot come back as ten blue lakes, and one
 # category cannot come back as ten auroras.
@@ -696,20 +790,20 @@ cat_cap=$(awk -v c="$COUNT" -v s="$CATEGORY_SHARE_MAX" 'BEGIN{ v=int(c*s); print
 # Not under --dry-run: a run that promises to write nothing should not leave
 # directories behind either.
 if (( ! DRY )); then
-  for t in "${THEMES[@]}"; do
-    mkdir -p "$DEST/$t"
+  for k in "${!want[@]}"; do
+    mkdir -p "$DEST/$(pool_for "${k%%:*}" "${k##*:}")"
   done
 fi
 
 while IFS=$'\t' read -r thumb title lic artist desc srccat; do
-  (( got_dark >= want_dark && got_light >= want_light )) && break
+  pools_satisfied && break
   [[ -n $thumb ]] || continue
 
   # Category quota, checked BEFORE spending a download. Which theme an image
   # belongs to is only known after measuring it, so the pre-download test is the
   # loose one — the category is exhausted across every theme being filled — and
   # the exact per-theme cap is applied after the verdict is in.
-  if (( ${cat_count[$srccat]:-0} >= cat_cap * ${#THEMES[@]} )); then
+  if (( ${cat_count[$srccat]:-0} >= cat_cap * outstanding )); then
     dbg "category quota full ($srccat) — $title"
     continue
   fi
@@ -729,7 +823,9 @@ while IFS=$'\t' read -r thumb title lic artist desc srccat; do
   (( ${#letters} >= 3 )) || stem="commons-$(printf '%s' "$title" | sha1sum | cut -c1-12)"
   fname="${stem:0:80}.$ext"
 
-  if [[ -e "$DEST/dark/$fname" || -e "$DEST/light/$fname" || -n ${seen_names[$fname]:-} ]]; then
+  # The ledger covers every pool at once, which matters now that there are six of
+  # them: the same photograph must not turn up in dark/dusk/ and light/dusk/.
+  if [[ -n ${seen_names[$fname]:-} ]]; then
     skipped=$((skipped + 1)); continue
   fi
 
@@ -755,21 +851,27 @@ while IFS=$'\t' read -r thumb title lic artist desc srccat; do
   #
   # No pixel statistic separates them reliably, but the source category does:
   # whether a photograph was taken at night is a fact about the photograph, and
-  # Commons has already sorted it. So dark/ draws only from NIGHT_CATEGORIES, and
-  # measurement still decides which of those are actually dark enough.
-  if [[ $verdict == dark && -z ${IS_NIGHT_CAT[$srccat]:-} ]]; then
-    dbg "dim, but a daytime subject ($srccat) — $title"
+  # Commons has already sorted it. The same argument carries the dawn/dusk split,
+  # which pixels cannot make at all.
+  #
+  # So: the category names the phase, the measurement names the theme, and
+  # pool_for decides whether that pairing is a real pool.
+  [[ $verdict == dark || $verdict == light ]] || { dbg "${verdict#reject:} — $title"; continue; }
+
+  cphase=${CAT_PHASE[$srccat]:-day}
+  target=$(pool_for "$verdict" "$cphase") || true
+  if [[ -z $target ]]; then
+    dbg "$cphase subject that measures $verdict, no pool for that — $title"
+    continue
+  fi
+  key="$verdict:$cphase"
+  if [[ -z ${want[$key]:-} ]] || (( ${got[$key]} >= ${want[$key]} )); then
+    dbg "$key full or not requested: $title"
     continue
   fi
 
-  case $verdict in
-    dark)  [[ $want_dark  -gt 0 && $got_dark  -lt $want_dark  ]] || { dbg "dark full: $title"; continue; } ;;
-    light) [[ $want_light -gt 0 && $got_light -lt $want_light ]] || { dbg "light full: $title"; continue; } ;;
-    *)     dbg "${verdict#reject:} — $title"; continue ;;
-  esac
-
-  if (( ${cat_count[$verdict:$srccat]:-0} >= cat_cap )); then
-    dbg "category quota full ($verdict/$srccat) — $title"
+  if (( ${cat_count[$key:$srccat]:-0} >= cat_cap )); then
+    dbg "category quota full ($key/$srccat) — $title"
     continue
   fi
 
@@ -794,7 +896,7 @@ while IFS=$'\t' read -r thumb title lic artist desc srccat; do
   fi
 
   bucket=$(( hue / 60 ))
-  if (( ${hue_count[$verdict:$bucket]:-0} >= hue_cap )); then
+  if (( ${hue_count[$key:$bucket]:-0} >= hue_cap )); then
     dbg "hue quota ${bucket} full — $title"
     continue
   fi
@@ -815,14 +917,14 @@ while IFS=$'\t' read -r thumb title lic artist desc srccat; do
   fi
 
   if (( DRY )); then
-    info "  would keep [$verdict] $fname  (mean=$mean p_dark=$pd p_bright=$pb hue=$hue)"
+    info "  would keep [$target] $fname  (mean=$mean p_dark=$pd p_bright=$pb hue=$hue)"
   else
     fetch_image "$full" "$TMP/full" || { warn "could not fetch full size, skipping: $title"; continue; }
-    mv "$TMP/full" "$DEST/$verdict/$fname"
-    info "  + [$verdict] $fname  (mean=$mean hue=$hue)"
+    mv "$TMP/full" "$DEST/$target/$fname"
+    info "  + [$target] $fname  (mean=$mean hue=$hue)"
     # Record against the real file, so the next run reuses it from cache.
     if [[ -n $csig ]]; then
-      printf '%s\t%s\t%s\n' "$verdict/$fname" "$(stat -c%s "$DEST/$verdict/$fname")" \
+      printf '%s\t%s\t%s\n' "$target/$fname" "$(stat -c%s "$DEST/$target/$fname")" \
         "${csig/ /$'\t'}" >> "$HASHFILE"
     fi
     printf '%s\n' "$fname" >> "$SEENFILE"
@@ -834,12 +936,11 @@ while IFS=$'\t' read -r thumb title lic artist desc srccat; do
   [[ -n $csig ]] && printf '%s\n' "$csig" >> "$TMP/sigs.txt"
   [[ -n $ckey ]] && seen_series["$ckey"]=1
 
-  hue_count[$verdict:$bucket]=$(( ${hue_count[$verdict:$bucket]:-0} + 1 ))
-  cat_count[$verdict:$srccat]=$(( ${cat_count[$verdict:$srccat]:-0} + 1 ))
+  hue_count[$key:$bucket]=$(( ${hue_count[$key:$bucket]:-0} + 1 ))
+  cat_count[$key:$srccat]=$(( ${cat_count[$key:$srccat]:-0} + 1 ))
   cat_count[$srccat]=$(( ${cat_count[$srccat]:-0} + 1 ))
-  kept_rows+=("$verdict"$'\t'"$fname"$'\t'"$lic"$'\t'"$artist"$'\t'"$desc")
-  [[ $verdict == dark  ]] && got_dark=$((got_dark + 1))
-  [[ $verdict == light ]] && got_light=$((got_light + 1))
+  kept_rows+=("$target"$'\t'"$fname"$'\t'"$lic"$'\t'"$artist"$'\t'"$desc")
+  got["$key"]=$(( ${got[$key]} + 1 ))
 done < "$TMP/pool.tsv"
 
 # -----------------------------------------------------------------------------
@@ -871,10 +972,16 @@ fi
 # Summary
 # -----------------------------------------------------------------------------
 info ""
-info "Tested $tested downloads; kept $got_dark dark, $got_light light."
-(( skipped )) && info "Skipped $skipped already present."
-if (( got_dark < want_dark || got_light < want_light )); then
-  warn "Short of the target — the pool ran dry. Re-run to sample more candidates,"
+info "Tested $tested downloads. Kept per pool:"
+short=0
+for k in $(printf '%s\n' "${!want[@]}" | sort); do
+  sub=$(pool_for "${k%%:*}" "${k##*:}")
+  printf '  %-12s %d/%d\n' "$sub" "${got[$k]}" "${want[$k]}"
+  (( ${got[$k]} < ${want[$k]} )) && short=1
+done
+(( skipped )) && info "Skipped $skipped already fetched before."
+if (( short )); then
+  warn "Some pools fell short — their candidates ran out. Re-run to sample more,"
   warn "or loosen a threshold (e.g. DARK_MEAN_MAX=0.35 wallpaper-fetch)."
 fi
 if (( ! DRY )) && (( ${#kept_rows[@]} )); then

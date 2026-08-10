@@ -4,6 +4,39 @@ Drop your own images into `dark/` and `light/`. The `theme` script and
 `hypr-wallpaper` pick a random image from the pool matching the active theme;
 `hypr-wallpaper-rotate` cycles them on a timer.
 
+## Time of day
+
+Each theme can also keep a `dawn/` and a `dusk/` set, used while the sun is near
+the horizon:
+
+```
+dark/   dark/dawn/   dark/dusk/
+light/  light/dawn/  light/dusk/
+```
+
+`sun-phase` reports which of dawn/day/dusk/night it is and `hypr-wallpaper`
+draws from the matching pool. **The theme never changes on its own** — that
+stays a decision you make. All that shifts is which images inside your chosen
+theme are eligible, so a dark desktop at sunset shows the dark theme's dusk
+photographs rather than its midnight ones.
+
+`dark/` and `light/` need no `night/` or `day/` counterpart: they already are
+those sets. Both sub-pools are optional, and an empty or missing one falls
+straight back to the flat pool, so an existing setup keeps working untouched.
+
+Time comes from the sun's elevation, not the clock — evening is an angle, not an
+hour, and fixed times are wrong twice a year and wrong all year at high
+latitudes. Location is read from your timezone's entry in tzdata, so there is
+nothing to configure and no geolocation service involved; `SANELAND_LAT` /
+`SANELAND_LON` override it. Dawn and dusk are the band from −6° to +6°, roughly
+an hour at each end at mid latitudes. Since rotation re-evaluates on every tick,
+the changeover happens within one interval.
+
+```bash
+sun-phase --verbose          # dusk  elevation=+2.31°  lat=40.40 lon=-3.68 …
+SANELAND_PHASE=dusk hypr-wallpaper   # force one, for a look
+```
+
 No images ship with this repo (they'd be someone else's copyright). The folders
 are intentionally empty except for `.gitkeep`.
 
@@ -16,9 +49,11 @@ them up.
 An empty pool means a black desktop, so there's a fetcher for the cold start:
 
 ```bash
-wallpaper-fetch              # add 10 images to each theme pool
+wallpaper-fetch              # add 10 images to every pool
 wallpaper-fetch -n 25        # ask for more
-wallpaper-fetch --theme dark # top up one pool
+wallpaper-fetch --theme dark # only the dark theme's pools
+wallpaper-fetch --phase dusk # only the dusk pools
+wallpaper-fetch --phase main # only dark/ and light/, skip dawn and dusk
 wallpaper-fetch --dry-run    # report what it would keep, write nothing
 ```
 
@@ -73,6 +108,13 @@ rivers, beaches, snow — and treats the sky phenomena (aurorae, star trails,
 noctilucent clouds, moonlight) as the minority they should be. An astronomy-only
 version produced a pool that looked like an observatory gallery: every frame
 mostly sky above a sliver of silhouette. A dark wallpaper wants ground in it.
+
+The same argument carries the dawn/dusk split, which pixels cannot make at all:
+a sunrise and a sunset are the same photograph, so only the category knows which
+is which. Those two phases are the exception to the rule above — a low sun comes
+in both weights, and the *measurement* decides whether a given sunrise belongs
+to the dark theme's blue-hour end or the light theme's golden one. That is why
+one Commons category feeds two different pools.
 
 One category is deliberately absent: "Night photography". It is overwhelmingly
 urban and institutional — a run through it returned a city skyline, a floodlit

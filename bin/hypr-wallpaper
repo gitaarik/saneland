@@ -25,6 +25,28 @@ mode=pick
 scheme="${1:-$(cat ~/.cache/current-theme 2>/dev/null || echo dark)}"
 dir="$HOME/.config/hypr/wallpapers/$scheme"
 
+# Time of day picks a sub-pool WITHIN the chosen theme. The theme itself is
+# never touched: dark stays dark at noon if that is what you asked for. All that
+# changes is which images inside it are eligible, so at dusk you get the theme's
+# dusk photographs instead of its midnight ones.
+#
+# dawn/ and dusk/ are optional. Missing or empty, this falls straight back to
+# the flat pool, which is what every existing setup has — and day and night
+# deliberately have no subdirectory at all, because they ARE the flat pool:
+# dark/ is already the night set and light/ is already the day set.
+#
+# SANELAND_PHASE overrides the sun, for testing and for anyone who would rather
+# pin it.
+phase="${SANELAND_PHASE:-$(~/.local/bin/sun-phase 2>/dev/null || echo day)}"
+pooldir="$dir"
+case $phase in
+    dawn|dusk)
+        if compgen -G "$dir/$phase/*" >/dev/null 2>&1; then
+            pooldir="$dir/$phase"
+        fi
+        ;;
+esac
+
 # Wait for awww-daemon's socket. At login, monitor + surface setup takes a
 # moment before the daemon answers and `awww img` just errors out until then.
 # On a theme switch or a rotation tick it's already up, so this breaks on the
@@ -45,9 +67,19 @@ last="$(cat "$state" 2>/dev/null)"
 if [[ $mode == repaint && -r "$last" ]]; then
     pick=$last
 else
-    mapfile -t pool < <(find "$dir" -maxdepth 1 -type f \
+    # -maxdepth 1 is doing real work here: it keeps the dawn/ and dusk/ images
+    # out of the flat pool, so the theme's main set stays the night (or day) set
+    # rather than quietly absorbing every phase.
+    mapfile -t pool < <(find "$pooldir" -maxdepth 1 -type f \
         \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
         2>/dev/null | sort)
+    # A phase pool holding only dotfiles or junk would strand us with nothing;
+    # fall back rather than leave the screen on whatever was there.
+    if (( ${#pool[@]} == 0 )) && [[ $pooldir != "$dir" ]]; then
+        mapfile -t pool < <(find "$dir" -maxdepth 1 -type f \
+            \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+            2>/dev/null | sort)
+    fi
     (( ${#pool[@]} == 0 )) && exit 0
 
     pick="${pool[RANDOM % ${#pool[@]}]}"
