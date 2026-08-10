@@ -65,7 +65,12 @@ fi
 # --- wallpaper — repaint immediately from the new theme's pool ---
 # (hypr-wallpaper picks a random image from ~/.config/hypr/wallpapers/$scheme/;
 # without this the rotation daemon would keep the old image until its next tick.)
-if [[ -d ~/.config/hypr/wallpapers/$COLOR_SCHEME ]] && pgrep -x hyprpaper >/dev/null; then
+# The daemon to check for is awww-daemon, not hyprpaper. This gate still named
+# hyprpaper after the swap to awww, so it never fired in a real session and the
+# repaint this block exists to perform silently did not happen — a theme switch
+# kept the old theme's wallpaper until the rotator's next tick, up to half an
+# hour later.
+if [[ -d ~/.config/hypr/wallpapers/$COLOR_SCHEME ]] && pgrep -x awww-daemon >/dev/null; then
     ~/.local/bin/hypr-wallpaper "$COLOR_SCHEME"
 fi
 
