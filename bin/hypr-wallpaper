@@ -2,8 +2,9 @@
 #
 # Pick a random wallpaper from a theme's pool and crossfade to it via awww.
 #
-# Pools live in ~/.config/hypr/wallpapers/<scheme>/ and may hold any number of
-# images — drop files in or delete them, no config to touch. Called by
+# Pools live in ~/.config/hypr/wallpapers/{dark,dusk,dawn,light}/ and may hold
+# any number of images — drop files in or delete them, no config to touch. The
+# theme picks the pool and the sun can shift it one rung; see below. Called by
 # hypr-wallpaper-rotate (the timer loop, and its hot-plug watcher) and by
 # ~/.local/bin/theme (to repaint immediately on a dark/light switch instead of
 # waiting for the next tick).
@@ -23,26 +24,37 @@ mode=pick
 [[ ${1:-} == repaint ]] && { mode=repaint; shift; }
 
 scheme="${1:-$(cat ~/.cache/current-theme 2>/dev/null || echo dark)}"
-dir="$HOME/.config/hypr/wallpapers/$scheme"
+pools="$HOME/.config/hypr/wallpapers"
+dir="$pools/$scheme"
 
-# Time of day picks a sub-pool WITHIN the chosen theme. The theme itself is
-# never touched: dark stays dark at noon if that is what you asked for. All that
-# changes is which images inside it are eligible, so at dusk you get the theme's
-# dusk photographs instead of its midnight ones.
+# Four pools, one brightness ladder:
+#
+#     dark/  ->  dusk/  ->  dawn/  ->  light/
+#
+# The theme picks which end you live at and the sun moves you one rung towards
+# the middle when it is near the horizon. Which rung is the THEME's to choose,
+# not the clock's: the light theme brightens into dawn and the dark theme
+# darkens into dusk, whichever end of the day it actually is. So a dark desktop
+# at sunrise shows dusk photographs — the ones that sit next to its night set —
+# rather than the bright ones a sunrise would otherwise imply.
+#
+# The theme itself is never touched: dark stays dark at noon if that is what you
+# asked for. All that changes is which images are eligible.
 #
 # dawn/ and dusk/ are optional. Missing or empty, this falls straight back to
-# the flat pool, which is what every existing setup has — and day and night
-# deliberately have no subdirectory at all, because they ARE the flat pool:
-# dark/ is already the night set and light/ is already the day set.
+# the theme's own pool, which is what every existing setup has — and there is no
+# night/ or day/ pool because dark/ and light/ already are those sets.
 #
 # SANELAND_PHASE overrides the sun, for testing and for anyone who would rather
 # pin it.
 phase="${SANELAND_PHASE:-$(~/.local/bin/sun-phase 2>/dev/null || echo day)}"
+twilight=dusk
+[[ $scheme == light ]] && twilight=dawn
 pooldir="$dir"
 case $phase in
     dawn|dusk)
-        if compgen -G "$dir/$phase/*" >/dev/null 2>&1; then
-            pooldir="$dir/$phase"
+        if compgen -G "$pools/$twilight/*" >/dev/null 2>&1; then
+            pooldir="$pools/$twilight"
         fi
         ;;
 esac
@@ -67,9 +79,8 @@ last="$(cat "$state" 2>/dev/null)"
 if [[ $mode == repaint && -r "$last" ]]; then
     pick=$last
 else
-    # -maxdepth 1 is doing real work here: it keeps the dawn/ and dusk/ images
-    # out of the flat pool, so the theme's main set stays the night (or day) set
-    # rather than quietly absorbing every phase.
+    # -maxdepth 1 so a pool stays the directory you can see: anything you tuck
+    # into a subfolder of it is yours, not another rung of the ladder.
     mapfile -t pool < <(find "$pooldir" -maxdepth 1 -type f \
         \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
         2>/dev/null | sort)

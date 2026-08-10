@@ -63,8 +63,10 @@ if pgrep -x Hyprland >/dev/null; then
 fi
 
 # --- wallpaper — repaint immediately from the new theme's pool ---
-# (hypr-wallpaper picks a random image from ~/.config/hypr/wallpapers/$scheme/;
-# without this the rotation daemon would keep the old image until its next tick.)
+# (hypr-wallpaper picks a random image from the new theme's pool — which near
+# sunrise or sunset is its twilight pool rather than ~/.config/hypr/wallpapers/
+# $scheme/; without this the rotation daemon would keep the old image until its
+# next tick.)
 # The daemon to check for is awww-daemon, not hyprpaper. This gate still named
 # hyprpaper after the swap to awww, so it never fired in a real session and the
 # repaint this block exists to perform silently did not happen — a theme switch

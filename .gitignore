@@ -25,17 +25,10 @@
 # see wallpapers/README.md). No imagery is ever tracked here: it is someone
 # else's copyright, and the pools are machine state, not source.
 /wallpapers/dark/*
+/wallpapers/dusk/*
+/wallpapers/dawn/*
 /wallpapers/light/*
 !/wallpapers/*/.gitkeep
-# The per-phase sub-pools. Git will not look inside a directory it has already
-# excluded, so the directories have to be un-ignored before their contents can
-# be excluded again — hence the re-ignore on the next two lines rather than a
-# single deeper pattern.
-!/wallpapers/*/dawn/
-!/wallpapers/*/dusk/
-/wallpapers/*/dawn/*
-/wallpapers/*/dusk/*
-!/wallpapers/*/*/.gitkeep
 # Credits for whatever wallpaper-fetch pulled down — describes your local pool,
 # so it follows the images rather than the repo.
 /wallpapers/ATTRIBUTION.md

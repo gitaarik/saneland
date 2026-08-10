@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """sun-phase — which part of the day it is here, as dawn / day / dusk / night.
 
-Printed for hypr-wallpaper, which keeps a separate pool of images per phase so
-the desktop matches the light coming through the window. Nothing else in
-saneland changes with the clock: the THEME stays wherever you put it, because
-being told what colour scheme to use at 7pm is exactly the behaviour this
-desktop avoids. Only the wallpaper drifts, and only inside the theme you chose.
+Printed for hypr-wallpaper, so the desktop matches the light coming through the
+window. This reports the sky and nothing more; which pool that maps to is
+hypr-wallpaper's business, and it does not map one-to-one — dawn and dusk both
+mean "the sun is near the horizon", and the THEME picks which of the two
+twilight pools to draw from. Reporting them separately anyway keeps this tool
+honest about the world and leaves the policy in one place.
+
+Nothing else in saneland changes with the clock: the theme stays wherever you
+put it, because being told what colour scheme to use at 7pm is exactly the
+behaviour this desktop avoids. Only the wallpaper drifts.
 
 Why compute the sun instead of using clock times? "Evening" is not a time, it
 is an angle. Fixed hours are wrong by an hour twice a year and wrong by four

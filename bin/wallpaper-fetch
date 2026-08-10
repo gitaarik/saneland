@@ -23,25 +23,28 @@
 # theme it belongs to. The thresholds were calibrated against a real hand-picked
 # pool; see THRESHOLDS.
 #
-# There are six pools, not two. Each theme keeps its own dawn and dusk sets, so
-# the desktop can follow the light through the window without the theme itself
-# ever changing under you:
+# There are four pools, not two, and they form one brightness ladder:
 #
-#   dark/   dark/dawn/   dark/dusk/
-#   light/  light/dawn/  light/dusk/
+#   dark/  ->  dusk/  ->  dawn/  ->  light/
 #
-# hypr-wallpaper asks sun-phase which one to draw from. The theme names the row,
-# the sun names the column, and dark/ and light/ are simply the night and day
-# sets of their own themes. The dawn/dusk split cannot be measured — a sunrise
-# and a sunset are the same photograph — so it comes from the Commons category,
-# which is the only place that knows.
+# so the desktop can follow the light through the window without the theme
+# itself ever changing under you. The theme picks which end you live at; when
+# the sun is near the horizon hypr-wallpaper moves you one rung towards the
+# middle, and WHICH rung is the theme's choice rather than the clock's — the
+# light theme brightens into dawn, the dark theme darkens into dusk, at either
+# end of the day. dark/ and light/ are simply the night and day sets.
+#
+# That makes the two middle pools brightness tiers, not times: dawn/ is the
+# bright end of twilight and dusk/ the dark end, which is exactly what the
+# measurement can tell apart. Sunrise versus sunset it could never tell — the
+# same photograph either way — and no longer has to.
 #
 # Usage:
 #   wallpaper-fetch                    add 10 images to every pool
 #   wallpaper-fetch -n 25              add 25 to each pool
-#   wallpaper-fetch --theme dark       only the dark theme's pools
-#   wallpaper-fetch --phase dusk       only the dusk pools
-#   wallpaper-fetch --phase main       only dark/ and light/, no dawn or dusk
+#   wallpaper-fetch --theme dark       only the dark theme's pools (dark/, dusk/)
+#   wallpaper-fetch --phase twilight   only dawn/ and dusk/
+#   wallpaper-fetch --phase main       only dark/ and light/, no twilight
 #   wallpaper-fetch --public-domain    CC0 / public-domain only (much smaller pool)
 #   wallpaper-fetch --dry-run          report what it would keep, write nothing
 #
@@ -58,8 +61,8 @@ set -euo pipefail
 # A category that returns nothing is skipped with a warning rather than being
 # fatal: Commons renames things, and one dead source should not break a run.
 #
-# Each category carries a PHASE — night, day, dawn or dusk — and that is what
-# decides which of the six pools its images may land in.
+# Each category carries a PHASE — night, day or twilight — and that, with the
+# measured theme, is what decides which of the four pools its images may land in.
 #
 # Categories that can plausibly yield a NIGHT photograph. Only these are allowed
 # to fill dark/ — see the note on why measurement alone is not enough.
@@ -87,8 +90,8 @@ NIGHT_CATEGORIES=(
   "Moonlight"
   "Volcanic eruptions"
   # Twilight, Blue hour, Dusk and the sunset sets used to be here. They moved to
-  # DUSK_CATEGORIES, where they belong: they are the evening, not the middle of
-  # the night, and leaving them in both lists harvested each one twice.
+  # TWILIGHT_CATEGORIES, where they belong: they are the evening, not the middle
+  # of the night, and leaving them in both lists harvested each one twice.
   # NOT "Night photography": overwhelmingly urban and institutional. One run
   # through it produced a city skyline, a floodlit dog, a roundabout and an
   # armoured vehicle — "taken at night" is not the same claim as "of the night".
@@ -125,26 +128,25 @@ CATEGORIES=(
   "Quality images of caves"
 )
 
-# Dawn and dusk, kept apart on purpose.
+# The low sun, sunrise and sunset together.
 #
-# Photographically the two are near enough identical — a low warm sun, and no
-# statistic can say which horizon it is over. Commons can, because the
-# photographer knew. So the split is carried by the category and nothing else,
-# which is the only place the information actually exists.
+# Both ends of the day feed one stream on purpose. Photographically they are
+# near enough identical — a low warm sun, and no statistic can say which horizon
+# it is over — and the pools they fill are brightness tiers rather than times of
+# day, so nothing downstream needs the answer. What separates the golden frame
+# from the blue one is exactly what CAN be measured, which is where the split
+# happens instead.
 #
-# Sunrise material is plentiful (Sunrises 500, Dawn 500, Quality images of
-# sunrises 364), so the morning pool is not the poor relation it might look.
+# The material is plentiful at both ends (Sunsets 500, Sunrises 500, Dawn 500,
+# Quality images of sunrises 364), so neither tier is the poor relation.
 # "Morning" is excluded despite being large: it means "before noon", not "at
 # first light", and pulls in ordinary daylight.
-DAWN_CATEGORIES=(
+TWILIGHT_CATEGORIES=(
   "Sunrises"
   "Quality images of sunrises"
   "Featured pictures of sunrises"
   "Dawn"
   "Alpenglow"
-)
-
-DUSK_CATEGORIES=(
   "Sunsets"
   "Quality images of sunsets"
   "Featured pictures of sunsets"
@@ -155,31 +157,30 @@ DUSK_CATEGORIES=(
 
 # Phase lookup for every category, and one harvest list covering all of them.
 declare -A CAT_PHASE=()
-for c in "${CATEGORIES[@]}";       do CAT_PHASE["$c"]=day;   done
-for c in "${NIGHT_CATEGORIES[@]}"; do CAT_PHASE["$c"]=night; done
-for c in "${DAWN_CATEGORIES[@]}";  do CAT_PHASE["$c"]=dawn;  done
-for c in "${DUSK_CATEGORIES[@]}";  do CAT_PHASE["$c"]=dusk;  done
-CATEGORIES+=("${NIGHT_CATEGORIES[@]}" "${DAWN_CATEGORIES[@]}" "${DUSK_CATEGORIES[@]}")
+for c in "${CATEGORIES[@]}";          do CAT_PHASE["$c"]=day;      done
+for c in "${NIGHT_CATEGORIES[@]}";    do CAT_PHASE["$c"]=night;    done
+for c in "${TWILIGHT_CATEGORIES[@]}"; do CAT_PHASE["$c"]=twilight; done
+CATEGORIES+=("${NIGHT_CATEGORIES[@]}" "${TWILIGHT_CATEGORIES[@]}")
 
 # Where a candidate is allowed to land, given the phase its category implies and
 # the theme its pixels imply:
 #
-#   night category + measures dark   -> dark/         (the theme's main set)
-#   day   category + measures light  -> light/
-#   dawn  category + either          -> <theme>/dawn/
-#   dusk  category + either          -> <theme>/dusk/
+#   night    category + measures dark   -> dark/
+#   day      category + measures light  -> light/
+#   twilight category + measures dark   -> dusk/    (the dark theme's twilight)
+#   twilight category + measures light  -> dawn/    (the light theme's)
 #
 # The two cross combinations are refused rather than filed somewhere: a daylight
 # subject that measures dark is the cave-in-the-dark-pool problem, and a night
-# subject that measures light is either a city or a mistake. Dawn and dusk are
-# the exception because a sunrise genuinely comes in both weights — the dark
-# theme wants the blue-hour end of it, the light theme wants the golden end, and
-# the measurement is what tells them apart.
-pool_for() {          # pool_for THEME PHASE -> subpath, or empty if disallowed
+# subject that measures light is either a city or a mistake. Twilight is the
+# exception that needs no refusal, because a low sun genuinely comes in both
+# weights — the dark theme wants the blue-hour end of it, the light theme the
+# golden end, and the measurement is what tells them apart.
+pool_for() {          # pool_for THEME PHASE -> pool name, or empty if disallowed
   case "$2" in
-    night) [[ $1 == dark  ]] && printf '%s' "$1" ;;
-    day)   [[ $1 == light ]] && printf '%s' "$1" ;;
-    dawn|dusk) printf '%s/%s' "$1" "$2" ;;
+    night)    [[ $1 == dark  ]] && printf 'dark' ;;
+    day)      [[ $1 == light ]] && printf 'light' ;;
+    twilight) [[ $1 == dark  ]] && printf 'dusk' || printf 'dawn' ;;
   esac
 }
 
@@ -355,7 +356,7 @@ EXCLUDE_WORDS='castle|castillo|schloss|chateau|château|kasteel|palace|palais|pa
 DEST="$HOME/.config/hypr/wallpapers"   # the same path hypr-wallpaper reads
 COUNT=10                               # images to ADD per pool, not a target size
 THEMES=(dark light)
-PHASES=(night day dawn dusk)
+PHASES=(night day twilight)
 LICENSE_MODE=free
 DRY=0
 VERBOSE=0
@@ -387,10 +388,14 @@ while (( $# )); do
                         *) die "--theme takes dark, light or both" ;;
                       esac; shift 2 ;;
     --phase)          case ${2:?} in
-                        all)  PHASES=(night day dawn dusk) ;;
+                        all)  PHASES=(night day twilight) ;;
                         main) PHASES=(night day) ;;
-                        night|day|dawn|dusk) PHASES=("${2}") ;;
-                        *) die "--phase takes night, day, dawn, dusk, main or all" ;;
+                        night|day|twilight) PHASES=("${2}") ;;
+                        # dawn/ and dusk/ are one phase split by measurement, so
+                        # naming a pool means naming its theme as well.
+                        dawn) die "dawn/ is the light theme's twilight — use: --phase twilight --theme light" ;;
+                        dusk) die "dusk/ is the dark theme's twilight — use: --phase twilight --theme dark" ;;
+                        *) die "--phase takes night, day, twilight, main or all" ;;
                       esac; shift 2 ;;
     --public-domain)  LICENSE_MODE=pd; shift ;;
     --dry-run)        DRY=1; shift ;;
@@ -614,27 +619,25 @@ load_pool_signatures() {
   : > "$TMP/sigs.txt"
   : > "$TMP/newhashes"
   # Across every pool, not just the ones being filled: an image already sitting
-  # in light/dusk/ should still block a near-copy landing in dark/. Duplicate
-  # detection that only looked at the target pool would let the same sunrise in
-  # six times over.
-  for t in dark light; do
-    for sub in "" /dawn /dusk; do
-      [[ -d "$DEST/$t$sub" ]] || continue
-      for f in "$DEST/$t$sub"/*; do
-        [[ -f $f ]] || continue
-        name="$t$sub/$(basename "$f")"
-        [[ $(basename "$f") == .gitkeep ]] && continue
-        size=$(stat -c%s "$f" 2>/dev/null) || continue
-        s=${cache["$name:$size"]:-}
-        if [[ -z $s ]]; then
-          s=$(sig "$f") || continue
-          fresh=$((fresh + 1))
-        fi
-        printf '%s\n' "$s" >> "$TMP/sigs.txt"
-        printf '%s\t%s\t%s\n' "$name" "$size" "${s/ /$'\t'}" >> "$TMP/newhashes"
-        k=$(series_key "$(basename "$f")")
-        [[ -n $k ]] && seen_series["$k"]=1
-      done
+  # in dusk/ should still block a near-copy landing in dark/, which is the pool
+  # right next to it on the ladder. Duplicate detection that only looked at the
+  # target pool would let the same sunrise in four times over.
+  for t in dark dusk dawn light; do
+    [[ -d "$DEST/$t" ]] || continue
+    for f in "$DEST/$t"/*; do
+      [[ -f $f ]] || continue
+      name="$t/$(basename "$f")"
+      [[ $(basename "$f") == .gitkeep ]] && continue
+      size=$(stat -c%s "$f" 2>/dev/null) || continue
+      s=${cache["$name:$size"]:-}
+      if [[ -z $s ]]; then
+        s=$(sig "$f") || continue
+        fresh=$((fresh + 1))
+      fi
+      printf '%s\n' "$s" >> "$TMP/sigs.txt"
+      printf '%s\t%s\t%s\n' "$name" "$size" "${s/ /$'\t'}" >> "$TMP/newhashes"
+      k=$(series_key "$(basename "$f")")
+      [[ -n $k ]] && seen_series["$k"]=1
     done
   done
   (( DRY )) || mv "$TMP/newhashes" "$HASHFILE" 2>/dev/null || true
@@ -754,7 +757,7 @@ info ""
 # -----------------------------------------------------------------------------
 # Download, measure, place
 # -----------------------------------------------------------------------------
-# One target per POOL, not per theme: the six of them fill independently, and a
+# One target per POOL, not per theme: the four of them fill independently, and a
 # run stops only once every pool it was asked for is satisfied.
 declare -A want=() got=()
 outstanding=0
@@ -823,8 +826,8 @@ while IFS=$'\t' read -r thumb title lic artist desc srccat; do
   (( ${#letters} >= 3 )) || stem="commons-$(printf '%s' "$title" | sha1sum | cut -c1-12)"
   fname="${stem:0:80}.$ext"
 
-  # The ledger covers every pool at once, which matters now that there are six of
-  # them: the same photograph must not turn up in dark/dusk/ and light/dusk/.
+  # The ledger covers every pool at once: the same photograph must not turn up in
+  # both dusk/ and dawn/, which draw on exactly the same categories.
   if [[ -n ${seen_names[$fname]:-} ]]; then
     skipped=$((skipped + 1)); continue
   fi
@@ -851,8 +854,8 @@ while IFS=$'\t' read -r thumb title lic artist desc srccat; do
   #
   # No pixel statistic separates them reliably, but the source category does:
   # whether a photograph was taken at night is a fact about the photograph, and
-  # Commons has already sorted it. The same argument carries the dawn/dusk split,
-  # which pixels cannot make at all.
+  # Commons has already sorted it. Twilight is the one phase where the pixels get
+  # the casting vote, because there the two pools ARE a brightness split.
   #
   # So: the category names the phase, the measurement names the theme, and
   # pool_for decides whether that pairing is a real pool.

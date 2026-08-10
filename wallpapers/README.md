@@ -6,23 +6,35 @@ Drop your own images into `dark/` and `light/`. The `theme` script and
 
 ## Time of day
 
-Each theme can also keep a `dawn/` and a `dusk/` set, used while the sun is near
-the horizon:
+There are four pools, and they form one brightness ladder:
 
 ```
-dark/   dark/dawn/   dark/dusk/
-light/  light/dawn/  light/dusk/
+dark/  ->  dusk/  ->  dawn/  ->  light/
 ```
 
-`sun-phase` reports which of dawn/day/dusk/night it is and `hypr-wallpaper`
-draws from the matching pool. **The theme never changes on its own** — that
-stays a decision you make. All that shifts is which images inside your chosen
-theme are eligible, so a dark desktop at sunset shows the dark theme's dusk
-photographs rather than its midnight ones.
+Your theme picks which end you live at. When the sun is near the horizon,
+`hypr-wallpaper` moves you one rung towards the middle:
+
+| Sun | `theme light` | `theme dark` |
+|---|---|---|
+| day | `light/` | `dark/` |
+| near the horizon | `dawn/` | `dusk/` |
+| night | `light/` | `dark/` |
+
+Which rung is the **theme's** choice, not the clock's: the light theme brightens
+into `dawn/` and the dark theme darkens into `dusk/`, at either end of the day.
+So a dark desktop at sunrise shows dusk photographs — the ones that sit next to
+its night set — rather than the bright ones a sunrise would otherwise imply.
+The two middle pools are brightness tiers, not times.
+
+**The theme never changes on its own** — that stays a decision you make. All
+that shifts is which images are eligible, and `sun-phase` only decides *whether*
+you are on a middle rung at all.
 
 `dark/` and `light/` need no `night/` or `day/` counterpart: they already are
-those sets. Both sub-pools are optional, and an empty or missing one falls
-straight back to the flat pool, so an existing setup keeps working untouched.
+those sets. `dawn/` and `dusk/` are optional, and an empty or missing one falls
+straight back to the theme's own pool, so an existing setup keeps working
+untouched.
 
 Time comes from the sun's elevation, not the clock — evening is an angle, not an
 hour, and fixed times are wrong twice a year and wrong all year at high
@@ -49,12 +61,12 @@ them up.
 An empty pool means a black desktop, so there's a fetcher for the cold start:
 
 ```bash
-wallpaper-fetch              # add 10 images to every pool
-wallpaper-fetch -n 25        # ask for more
-wallpaper-fetch --theme dark # only the dark theme's pools
-wallpaper-fetch --phase dusk # only the dusk pools
-wallpaper-fetch --phase main # only dark/ and light/, skip dawn and dusk
-wallpaper-fetch --dry-run    # report what it would keep, write nothing
+wallpaper-fetch                  # add 10 images to every pool
+wallpaper-fetch -n 25            # ask for more
+wallpaper-fetch --theme dark     # only the dark theme's pools (dark/, dusk/)
+wallpaper-fetch --phase twilight # only dawn/ and dusk/
+wallpaper-fetch --phase main     # only dark/ and light/, skip the twilight pools
+wallpaper-fetch --dry-run        # report what it would keep, write nothing
 ```
 
 It pulls freely-licensed nature photography from Wikimedia Commons' curated
@@ -109,12 +121,12 @@ noctilucent clouds, moonlight) as the minority they should be. An astronomy-only
 version produced a pool that looked like an observatory gallery: every frame
 mostly sky above a sliver of silhouette. A dark wallpaper wants ground in it.
 
-The same argument carries the dawn/dusk split, which pixels cannot make at all:
-a sunrise and a sunset are the same photograph, so only the category knows which
-is which. Those two phases are the exception to the rule above — a low sun comes
-in both weights, and the *measurement* decides whether a given sunrise belongs
-to the dark theme's blue-hour end or the light theme's golden one. That is why
-one Commons category feeds two different pools.
+Twilight is the one phase where the pixels get the casting vote, because there
+the two pools *are* a brightness split: a low sun genuinely comes in both
+weights, and the measurement decides whether a frame belongs to the dark theme's
+blue-hour end (`dusk/`) or the light theme's golden one (`dawn/`). Sunrise
+versus sunset is the distinction no statistic can make — the same photograph
+either way — and nothing here needs it, so both feed one stream.
 
 One category is deliberately absent: "Night photography". It is overwhelmingly
 urban and institutional — a run through it returned a city skyline, a floodlit

@@ -149,8 +149,8 @@ Done. Next steps:
        sudo usermod -aG input "$USER"   # then re-login
   3. Set your monitors / app choices in ~/.config/hypr/local.conf
      (seeded above from local.conf.example — the base config stays generic).
-  4. Drop wallpapers into wallpapers/dark/ and wallpapers/light/,
-     or run 'wallpaper-fetch' to fill both pools from Wikimedia Commons.
+  4. Drop wallpapers into wallpapers/{dark,dusk,dawn,light}/, or run
+     'wallpaper-fetch' to fill all four pools from Wikimedia Commons.
   5. Enable the hyprbars plugin (see README.md → hyprbars).
   6. Log into the "Hyprland (uwsm-managed)" session, or reload:
        hyprctl reload && eww reload
