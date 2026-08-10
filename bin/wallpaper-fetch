@@ -1,0 +1,883 @@
+#!/usr/bin/bash
+#
+# wallpaper-fetch — fill the theme wallpaper pools with freely-licensed nature
+# photography from Wikimedia Commons.
+#
+# Why a fetcher instead of shipped images? Wallpapers are someone else's
+# copyright, so saneland ships none (see wallpapers/README.md) — which leaves a
+# fresh clone with two empty pools and a black desktop. This script closes that
+# gap without putting a single byte of imagery in the repo: it ships URLs and a
+# filter, and the images land in your home directory at your request.
+#
+# Why Commons? It is the only large photo source that is free by construction
+# (nothing else may be hosted), exposes a per-file machine-readable license, and
+# has human-curated quality tiers — the categories below are Featured/Quality
+# picture sets, i.e. images that people voted good. Unsplash and Pexels are NOT
+# equivalent: despite the reputation, neither is CC0, and both carry terms that
+# make redistribution murkier than their marketing suggests.
+#
+# Why does it not just download whatever it finds? A wallpaper has a job: sit
+# behind a bottom bar and Hyprland's window borders without fighting them. A
+# blown-out sky ruins a dark theme; crushed blacks ruin a light one. So every
+# candidate is measured before it is kept, and the measurement decides which
+# pool it lands in — dark/ and light/ are sorted by what the image IS, not by
+# which category it came from. The thresholds below were calibrated against a
+# real hand-picked pool; see THRESHOLDS.
+#
+# Usage:
+#   wallpaper-fetch                    add 10 images to each theme pool
+#   wallpaper-fetch -n 25              add 25 to each
+#   wallpaper-fetch --theme dark       only top up dark/
+#   wallpaper-fetch --public-domain    CC0 / public-domain only (much smaller pool)
+#   wallpaper-fetch --dry-run          report what it would keep, write nothing
+#
+# Needs: curl, jq, ImageMagick (magick). All read-only against Commons.
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Source categories
+# -----------------------------------------------------------------------------
+# Commons category names, each verified to exist and to hold files directly
+# (many plausible-sounding ones — "Featured pictures of seascapes", "Milky Way"
+# — are empty or hold only subcategories, so they are deliberately absent).
+# A category that returns nothing is skipped with a warning rather than being
+# fatal: Commons renames things, and one dead source should not break a run.
+#
+# The mix is deliberate. Featured/Quality landscape sets carry the bulk and the
+# quality floor; aurorae/sunsets/clouds are here because the dark pool needs
+# candidates that are dark by nature rather than by underexposure.
+# Categories that can plausibly yield a NIGHT photograph. Only these are allowed
+# to fill dark/ — see the note on why measurement alone is not enough.
+NIGHT_CATEGORIES=(
+  # Night LANDSCAPES first, and most of the list, on purpose. An earlier version
+  # was all astronomy and the dark pool came out looking like an observatory
+  # gallery: starfields, Milky Way arches, star trails, each one mostly sky with
+  # a sliver of silhouette. A dark wallpaper wants ground in it.
+  "Nature at night"
+  "Night landscapes"
+  "Forests at night"
+  "Trees at night"
+  "Mountains at night"
+  "Lakes at night"
+  "Rivers at night"
+  "Beaches at night"
+  "Snow at night"
+  # Sky phenomena. Still wanted — an aurora is the reason half these images
+  # exist — but outnumbered so the category cap keeps them from taking over.
+  "Night sky"
+  "Star trails"
+  "Aurora borealis"
+  "Aurora australis"
+  "Noctilucent clouds"
+  "Moonlight"
+  "Blue hour"
+  "Twilight"
+  "Dusk"
+  "Quality images of sunsets"
+  "Featured pictures of sunsets"
+  "Volcanic eruptions"
+  # NOT "Night photography": overwhelmingly urban and institutional. One run
+  # through it produced a city skyline, a floodlit dog, a roundabout and an
+  # armoured vehicle — "taken at night" is not the same claim as "of the night".
+  # NOT "Stars" or "Full moon" either: both are the sky with nothing under it.
+)
+
+# Daylight subjects. These can only ever land in light/.
+CATEGORIES=(
+  "Featured pictures of landscapes"
+  "Quality images of landscapes"
+  "Quality images of nature"
+  "Quality images of mountains"
+  "Quality images of lakes"
+  "Quality images of forests"
+  "Featured pictures of mountains"
+  "Featured pictures of lakes"
+  "Featured pictures of forests"
+  "Featured pictures of waterfalls"
+  "Featured pictures of sunsets"
+  "Featured pictures of clouds"
+  "Featured pictures of nature"
+  "Featured pictures of trees"
+  "Featured pictures of flowers"
+  "Featured pictures of islands"
+  "Featured pictures of fog"
+  "Featured pictures of coasts"
+  "Featured pictures of volcanoes"
+  "Featured pictures of caves"
+  "Quality images of waterfalls"
+  "Quality images of coasts"
+  "Quality images of trees"
+  "Quality images of fog"
+  "Quality images of clouds"
+  "Quality images of glaciers"
+  "Quality images of caves"
+)
+
+# One list to harvest, plus a set for the night test.
+CATEGORIES+=("${NIGHT_CATEGORIES[@]}")
+declare -A IS_NIGHT_CAT=()
+for c in "${NIGHT_CATEGORIES[@]}"; do IS_NIGHT_CAT["$c"]=1; done
+
+# -----------------------------------------------------------------------------
+# THRESHOLDS — what makes an image usable, and for which theme
+# -----------------------------------------------------------------------------
+# Not invented: these come from measuring an existing hand-curated pool of 36
+# dark and 44 light wallpapers. What that data showed:
+#
+#   - The two sets separate cleanly on mean luminance. Dark ran 0.06-0.28,
+#     light ran 0.26-0.63. The gap between MEAN_MAX/MIN below is that boundary;
+#     anything landing inside it is "neither theme" and is dropped.
+#   - Dark wallpapers essentially never blow highlights (p_bright <= 0.001
+#     across all 36) but happily crush blacks (up to 0.63 of the frame). A
+#     bright blob on a dark desktop is what actually hurts; deep shadow is not.
+#   - Light wallpapers are the mirror image: they avoid crushed blacks
+#     (p_dark mostly < 0.08) and tolerate some clipping.
+#
+# So the caps are asymmetric on purpose. Every value is overridable from the
+# environment if your taste differs — e.g. DARK_MEAN_MAX=0.35 wallpaper-fetch.
+: "${DARK_MEAN_MIN:=0.05}"     # below this it is a black rectangle, not a photo
+: "${DARK_MEAN_MAX:=0.30}"
+: "${DARK_PBRIGHT_MAX:=0.015}" # fraction of near-white pixels — the strict one
+: "${DARK_PDARK_MAX:=0.45}"    # generous: shadow is fine on a dark desktop
+: "${DARK_CMEAN_MAX:=0.45}"    # centre must stay calm (see below)
+
+: "${LIGHT_MEAN_MIN:=0.33}"
+: "${LIGHT_MEAN_MAX:=0.72}"    # above this it washes out light-theme borders
+: "${LIGHT_PDARK_MAX:=0.10}"
+: "${LIGHT_PBRIGHT_MAX:=0.08}"
+
+: "${STD_MIN:=0.04}"           # reject flat gradients/fog with no subject
+
+# The centre check exists because hyprlock draws a light clock, date and
+# password box dead centre over a blurred screenshot of the desktop — which on
+# an empty workspace is the wallpaper. A hotspot behind that text is the one
+# local-contrast failure this setup actually notices.
+: "${CENTRE_CROP:=50x40%}"
+
+# Variety caps: no single hue family, and no single source category, may take
+# more than this share of one run's keeps.
+#
+# Both are needed and they catch different failures. Hue alone is not enough —
+# a test run filled the entire dark pool with five auroras, which spread across
+# five different hue buckets (70, 116, 179, 287, 305 degrees) while being
+# obviously the same picture five times. Subject identity lives in the source
+# category, not the colour. Hue still earns its place on the light side, where a
+# nature pool otherwise converges on blue: the measured pool ran 187-255 degrees
+# almost throughout.
+: "${HUE_SHARE_MAX:=0.5}"
+: "${CATEGORY_SHARE_MAX:=0.34}"
+
+# Near-duplicate rejection. Those caps are per-run, so nothing stopped a second
+# run from adding another frame of the same aurora: the dark pool ended up with
+# one photographer's "Auroras_N_-_panoramio" series several times over, plus a
+# pair that were visibly the same picture under two different Commons names.
+#
+# Each image gets two 64-bit fingerprints and the two Hamming distances are
+# SUMMED, because neither hash is trustworthy alone: average-hash collapses on
+# "dark frame with a bright band", difference-hash misses re-encodes.
+#
+# Measured across a 63-image pool, real duplicates and false alarms INTERLEAVE:
+#
+#   sum  pair                                            verdict
+#    17  Auroras_7 vs Auroras_-_panoramio                 duplicate
+#    18  Auroras_more vs Auroras_-_panoramio              duplicate
+#    19  Alien_landscape vs Auroras_7                     different images
+#    22  Dubrovnik vs Bergtocht                           different images
+#    23  Auroras_2 vs Auroras_6                           duplicate
+#    24  Akagera_Night_Sky vs Alien_landscape             different images
+#
+# So no threshold separates them, and this one is deliberately set BELOW the
+# first false positive rather than high enough to catch every duplicate: wrongly
+# deleting a good image is worse than keeping a similar one. Series-level repeats
+# are caught by SERIES_KEY below instead, which is what actually distinguishes
+# them — the aurora set is one uploader's batch, not one lucky hash collision.
+: "${DUPE_MAX_DIST:=18}"
+
+# Series check. Commons is full of batch uploads: the same photographer, the same
+# night, "Auroras_1/2/6/7/more_-_panoramio". Stripping digits from the filename
+# collapses those onto one key, which catches what the fingerprints cannot.
+# Applied only to keys with real substance (see SERIES_MIN_CHARS), so that a
+# terse name does not gate off a whole word.
+: "${SERIES_MIN_CHARS:=8}"
+
+# -----------------------------------------------------------------------------
+# Fetch parameters
+# -----------------------------------------------------------------------------
+API="https://commons.wikimedia.org/w/api.php"
+
+# Wikimedia requires a descriptive User-Agent with a contact/project URL and
+# throttles hard without one — this script was rate-limited (HTTP 429) during
+# development using a bare agent string. THROTTLE + the backoff in api() keep
+# a normal run comfortably inside the limits.
+USER_AGENT="saneland-wallpaper-fetch/1.0 (https://github.com/gitaarik/saneland)"
+: "${THROTTLE:=1}"             # seconds between API calls
+: "${MAX_RETRIES:=5}"
+
+# We ask Commons to render each image at this width rather than taking the
+# original. Originals are routinely 7000-17000px and 20MB+; a 4K render is
+# 1-2MB and is what actually gets displayed. MIN_SRC_WIDTH then guarantees the
+# render is a downscale of real detail, never an upscale.
+: "${WIDTH:=3840}"
+: "${MIN_SRC_WIDTH:=$WIDTH}"
+
+# Candidates are judged on a small probe render and only the keepers are pulled
+# at full size. This matters more than it sounds: most nature photography is
+# daylight, so filling the dark pool means measuring and discarding a lot of
+# bright images — an early run spent 188 downloads (~375MB) to keep 12. At the
+# probe width that same search costs a few megabytes.
+#
+# Accuracy is unaffected: measure() reduces to 320px before computing anything,
+# so it never saw the 4K pixels either.
+: "${PROBE_WIDTH:=400}"
+
+# Small pause between probe downloads. Cheaper than the alternative: without it
+# a long run trips the image CDN's rate limit and then spends its retry budget
+# recovering, image after image.
+: "${PROBE_THROTTLE:=0.15}"
+
+# Subject deny-list. "Landscape" on Commons includes the built environment —
+# a test run came back with a château and a village square alongside the
+# mountains. Matched as whole words against the Commons file title (which is
+# where the subject actually is), case-insensitively, and multilingual because
+# Commons titles are: a German photographer names the file Schloss, not castle.
+#
+# Whole words, not substrings, on purpose: "port" as a substring rejects
+# "Porto Lagos Vistonida Lake", which is a perfectly good lake.
+EXCLUDE_WORDS='castle|castillo|schloss|chateau|château|kasteel|palace|palais|palacio
+|church|chapel|kirche|kerk|cathedral|catedral|kathedrale|basilica|abbey|kloster|monastery|convent
+|mosque|moschee|synagogue|temple|tempel|shrine|pagoda
+|city|cities|stadt|ciudad|citta|città|town|village|dorf|pueblo|hamlet|suburb
+|street|straße|strasse|avenue|plaza|square|market|markt
+|building|buildings|gebäude|house|houses|haus|huis|casa|villa|cottage|hotel|restaurant
+|museum|library|theatre|theater|stadium|arena|hospital|school|university
+|monument|memorial|statue|fountain|obelisk|tomb|cemetery|graveyard
+|bridge|brücke|puente|viaduct|aqueduct|tunnel|dam|pier|jetty
+|tower|turm|torre|lighthouse|leuchtturm|windmill|mühle|mill|watermill
+|fortress|festung|fort|citadel|ruins|ruine|ruinas|wall|walls
+|station|bahnhof|airport|harbour|harbor|hafen|port|dock|shipyard
+|factory|refinery|mine|quarry|powerplant|reactor|turbine|antenna|mast
+|road|highway|motorway|autobahn|railway|railroad|parking
+|interior|panorama|montage|collage|diagram|map|chart
+|ship|warship|navy|naval|destroyer|frigate|submarine|boat|yacht|ferry|barge|canoe|kayak
+|aircraft|airplane|aeroplane|helicopter|drone|balloon|car|truck|bus|train|locomotive|tram
+|bicycle|motorcycle|tractor|vehicle
+|girl|boy|woman|women|man|men|people|person|child|children|portrait|selfie|crowd
+|dancer|dancing|performing|performance|festival|parade|wedding|ceremony|soldier|player|team
+|aeropuerto|aeroporto|aéroport|flughafen|estación|estacion|gare
+|iglesia|église|eglise|chiesa|duomo|kapelle|ayuntamiento|rathaus
+|coche|voiture|barco|bateau|avion|avión|auto|bmw|mercedes|audi|volkswagen|porsche|ferrari
+|crkva|cerkiew|kostel|kirkja|kirke|kyrka|zamek|hrad|twierdza|twierdzy|kanu|kajak
+|farm|farmhouse|farmstead|barn|silo|greenhouse|vineyard|orchard|plantation
+|fisherman|fishermen|angler|lifebuoy|lifebelt|buoy|rig|platform|drilling|pipeline
+|dog|cat|horse|cow|sheep|tank|military|army|troop|ops|patrol|convoy|roundabout|traffic|crossing
+|cristo|christ|jesus|buddha|estatua|monumento|denkmal'
+# The last three lines are non-English forms that leaked through an
+# English-only list in testing ("Aeropuerto Gibraltar"), plus marques that name
+# a vehicle without ever saying "car" ("Dülmen Dernekamp BMW Mini"). Note what
+# is deliberately NOT there: "puerto"/"porto". They are ordinary components of
+# place names — "Porto Lagos Vistonida Lake" is a lake — and the harbour senses
+# are already covered by harbour/harbor/hafen/dock above.
+
+# Aspect ratio window. Commons landscape categories are full of stitched
+# panoramas (13000x1486 is a real example) that crop to nothing on a monitor.
+# 1.45-1.95 covers 16:10 (1.60) through 16:9 (1.78) with room either side.
+: "${RATIO_MIN:=1.45}"
+: "${RATIO_MAX:=1.95}"
+
+# -----------------------------------------------------------------------------
+# Options
+# -----------------------------------------------------------------------------
+DEST="$HOME/.config/hypr/wallpapers"   # the same path hypr-wallpaper reads
+COUNT=10                               # images to ADD per theme, not a target size
+THEMES=(dark light)
+LICENSE_MODE=free
+DRY=0
+VERBOSE=0
+
+die()  { printf '\033[31merror\033[0m %s\n' "$*" >&2; exit 1; }
+warn() { printf '\033[33mwarn\033[0m  %s\n' "$*" >&2; }
+info() { printf '%s\n' "$*"; }
+dbg()  { (( VERBOSE )) && printf '      %s\n' "$*" >&2 || true; }
+
+# Print the header's Usage block. Located by matching rather than by line
+# number: a fixed range silently truncates the moment the rationale above it
+# gains a paragraph, which is exactly what happened.
+usage() {
+  awk '/^# Usage:/ { f = 1 }
+       f && /^#/   { sub(/^# ?/, ""); print; next }
+       f           { exit }' "$0"
+  exit "${1:-0}"
+}
+
+while (( $# )); do
+  case $1 in
+    -n|--count)       COUNT=${2:?}; shift 2 ;;
+    -d|--dest)        DEST=${2:?}; shift 2 ;;
+    -w|--width)       WIDTH=${2:?}; MIN_SRC_WIDTH=$WIDTH; shift 2 ;;
+    --theme)          case ${2:?} in
+                        dark)  THEMES=(dark) ;;
+                        light) THEMES=(light) ;;
+                        both)  THEMES=(dark light) ;;
+                        *) die "--theme takes dark, light or both" ;;
+                      esac; shift 2 ;;
+    --public-domain)  LICENSE_MODE=pd; shift ;;
+    --dry-run)        DRY=1; shift ;;
+    -v|--verbose)     VERBOSE=1; shift ;;
+    -h|--help)        usage 0 ;;
+    *)                die "unknown option: $1 (try --help)" ;;
+  esac
+done
+
+[[ $COUNT =~ ^[0-9]+$ ]] || die "--count must be a number"
+for cmd in curl jq magick shuf; do
+  command -v "$cmd" >/dev/null || die "missing dependency: $cmd"
+done
+
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+
+# -----------------------------------------------------------------------------
+# Commons API
+# -----------------------------------------------------------------------------
+# One throttled GET with exponential backoff. Commons answers 429 with a plain
+# text body (not JSON), so the HTTP code is checked before anything is parsed —
+# otherwise jq fails with a confusing "invalid numeric literal".
+api() {
+  local attempt=0 delay=2 resp code body
+  while :; do
+    sleep "$THROTTLE"
+    resp=$(curl -sS --max-time 60 -A "$USER_AGENT" -w $'\n%{http_code}' --get "$API" \
+             --data-urlencode 'action=query' \
+             --data-urlencode 'format=json' \
+             --data-urlencode 'formatversion=2' \
+             "$@" 2>/dev/null) || resp=$'\n000'
+    code=${resp##*$'\n'}
+    body=${resp%$'\n'*}
+    [[ $code == 200 ]] && { printf '%s' "$body"; return 0; }
+    attempt=$((attempt + 1))
+    if (( attempt > MAX_RETRIES )); then
+      warn "API gave HTTP $code after $MAX_RETRIES retries"
+      return 1
+    fi
+    dbg "HTTP $code — retrying in ${delay}s"
+    sleep "$delay"
+    delay=$((delay * 2))
+  done
+}
+
+# License gate. Commons hosts only free content, so the default accepts any
+# declared license and simply demands that one IS declared (a handful of files
+# have empty metadata). --public-domain narrows to the subset that carries no
+# attribution obligation at all.
+#
+# Worth being precise about why the default is the broader set: this script
+# downloads to YOUR machine and the repo redistributes nothing, so CC BY-SA is
+# no more burdensome here than CC0 — it is a personal-use copy either way. The
+# strict flag exists for anyone who wants to redistribute what they end up with,
+# and ATTRIBUTION.md is written in both modes regardless.
+license_filter() {
+  if [[ $LICENSE_MODE == pd ]]; then
+    printf '%s' '(.lic | test("^(cc0|pd|public)"; "i"))'
+  else
+    printf '%s' '(.lic != "" and .lic != null and (.lic | ascii_downcase) != "none")'
+  fi
+}
+
+# Pull one category's files with their imageinfo, emit TSV candidates:
+#   thumburl \t title \t license \t artist \t descurl \t category
+harvest() {
+  local cat=$1 json
+  json=$(api --data-urlencode 'generator=categorymembers' \
+             --data-urlencode "gcmtitle=Category:$cat" \
+             --data-urlencode 'gcmtype=file' \
+             --data-urlencode 'gcmlimit=500' \
+             --data-urlencode 'prop=imageinfo' \
+             --data-urlencode 'iiprop=url|size|mime|extmetadata' \
+             --data-urlencode "iiurlwidth=$PROBE_WIDTH") || return 0
+
+  # The deny-list is written across several lines for readability; strip the
+  # newlines so it reaches jq as one alternation group.
+  local excl
+  excl=$(printf '%s' "$EXCLUDE_WORDS" | tr -d '\n')
+
+  printf '%s' "$json" | jq -r --argjson minw "$MIN_SRC_WIDTH" \
+      --argjson rmin "$RATIO_MIN" --argjson rmax "$RATIO_MAX" \
+      --arg excl "$excl" --arg cat "$cat" '
+    (.query.pages // [])[]
+    # The page title is the real, decoded filename ("Dülmen, Brücke am
+    # Herzteich.jpg"). descriptionurl is the same name percent-encoded, and
+    # matching against THAT silently defeated the deny-list: "Brücke" arrives as
+    # "Br%C3%BCcke", so the bridge rule never fired and a bridge got kept.
+    | (.title // "") as $page
+    | (.imageinfo // [])[0] // empty
+    | {
+        thumb: (.thumburl // ""),
+        w: (.width // 0), h: (.height // 1), mime: (.mime // ""),
+        lic:  (.extmetadata.License.value // ""),
+        art:  (.extmetadata.Artist.value // "unknown"),
+        desc: (.descriptionurl // ""),
+        name: ($page | sub("^File:"; ""))
+      }
+    | select(.thumb != "" and .w >= $minw)
+    # .mime is bound first: inside the pipe `.` would be the array, not the record.
+    | select(.mime as $m | ["image/jpeg","image/png","image/webp"] | index($m))
+    | select((.w / .h) >= $rmin and (.w / .h) <= $rmax)
+    | select('"$(license_filter)"')
+    # Subject gate, on the decoded name. Everything that is not a letter becomes
+    # a space so that word boundaries land where a reader would put them.
+    | (.name | ascii_downcase | gsub("[^\\p{L}]+"; " ")) as $words
+    # German glues its nouns together, so "Mainbrücke" never word-matches
+    # "brücke" and a city bridge sailed through. These roots are matched as word
+    # ENDINGS as well. Kept deliberately short and unambiguous: -burg, -stadt,
+    # -dorf and -haus are excluded because they are ordinary components of place
+    # names, and rejecting every photo taken near Freiburg is worse than keeping
+    # the occasional bridge.
+    | select($words | test("[a-zà-ÿ]*(brucke|brücke|kirche|schloss|bahnhof|rathaus|denkmal|leuchtturm)\\b") | not)
+    # The trailing (s|es)? is not a nicety. Matching bare words let
+    # "Boats on the Mekong" through against a list containing "boat" — the
+    # deny-list was quietly half-blind to every plural in it.
+    | select($words | test("\\b(" + $excl + ")(s|es)?\\b") | not)
+    # Require a name that actually describes something: at least two words of
+    # three-plus letters. Institutional dumps arrive as pure serials
+    # ("170905-N-UY653-014"), and a test run pulled a warship out of the aurora
+    # category that way — no deny-list can catch a name with no words in it.
+    | select([$words | scan("\\p{L}{3,}")] | length >= 2)
+    # Artist is an HTML fragment (anchors, spans). Flatten to plain text so it
+    # can sit in a markdown table without smuggling markup in.
+    | .art |= (gsub("<[^>]*>"; "") | gsub("[\\t\\n\\r]"; " ") | gsub("  +"; " ") | ltrimstr(" ") | rtrimstr(" "))
+    | [.thumb, .name, .lic, .art, .desc, $cat]
+    | @tsv
+  ' 2>/dev/null || true
+}
+
+# fetch_image URL OUT — download and prove it is actually an image.
+#
+# Not paranoia: `curl -o` writes the response body whatever the status, and
+# Wikimedia answers a thumbnail it could not render with a 4KB HTML error page.
+# An early version trusted the exit code and wrote four "Wikimedia Error" pages
+# into the pool as .jpg files, which awww then silently refused to display.
+#
+# Retrying is worth it rather than skipping straight away: the usual cause is the
+# 4K render not being cached yet, and the request that times out is also the one
+# that triggers the render, so the next attempt tends to succeed.
+fetch_image() {
+  local url=$1 out=$2 attempt=0 delay=3 code
+  while :; do
+    code=$(curl -sS --max-time 180 -A "$USER_AGENT" -w '%{http_code}' -o "$out" "$url" 2>/dev/null) || code=000
+    if [[ $code == 200 ]] && [[ -s $out ]] && magick identify -quiet "$out" &>/dev/null; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    if (( attempt > 3 )); then
+      rm -f "$out"
+      return 1
+    fi
+    dbg "render not ready (HTTP $code) — retrying in ${delay}s"
+    sleep "$delay"
+    delay=$((delay * 2))
+  done
+}
+
+# -----------------------------------------------------------------------------
+# Fingerprinting
+# -----------------------------------------------------------------------------
+# Both hashes reduce the image to an 8x8 grid, so they read the same off a 500px
+# probe as off the 4K render — which is what lets a candidate be compared to the
+# pool before its full size is ever downloaded.
+#
+#   average-hash    : each cell brighter than the frame mean?
+#   difference-hash : each cell brighter than its right-hand neighbour?
+#
+# sig FILE -> "<ahash> <dhash>", both 64 chars of 0/1
+sig() {
+  local a d
+  a=$(magick "$1" -resize 8x8! -colorspace Gray -depth 8 txt:- 2>/dev/null | awk '
+    /^#/ { next }
+    { p = index($0, "("); if (p == 0) next
+      r = substr($0, p + 1); q = index(r, ")"); v[n++] = substr(r, 1, q - 1) + 0 }
+    END { if (n < 64) exit 1
+          s = 0; for (i = 0; i < n; i++) s += v[i]; m = s / n
+          o = ""; for (i = 0; i < n; i++) o = o (v[i] > m ? "1" : "0"); print o }')
+  d=$(magick "$1" -resize 9x8! -colorspace Gray -depth 8 txt:- 2>/dev/null | awk '
+    /^#/ { next }
+    { p = index($0, "("); if (p == 0) next
+      r = substr($0, p + 1); q = index(r, ")"); v[n++] = substr(r, 1, q - 1) + 0 }
+    END { if (n < 72) exit 1
+          o = ""
+          for (y = 0; y < 8; y++) for (x = 0; x < 8; x++)
+            o = o (v[y * 9 + x] > v[y * 9 + x + 1] ? "1" : "0")
+          print o }')
+  [[ ${#a} == 64 && ${#d} == 64 ]] || return 1
+  printf '%s %s' "$a" "$d"
+}
+
+# Fingerprint whatever is already in the pools, so a re-run cannot re-add a
+# near-copy of something fetched last time. Cached by name+size in the pool
+# directory: rehashing a few hundred 4K images on every run would cost more than
+# the fetching does.
+HASHFILE="$DEST/.wallpaper-hashes"
+
+# Every filename ever kept, whether or not it is still in the pool.
+#
+# Without this the pool is the only memory, so deleting an image you disliked
+# invites it straight back on the next run — which is exactly what happened to a
+# rig under the aurora that no title filter can recognise. Curating by `rm`
+# should stick, so a name here is never fetched again. To genuinely start over,
+# delete this file.
+SEENFILE="$DEST/.wallpaper-seen"
+declare -A seen_names=()
+if [[ -r $SEENFILE ]]; then
+  while IFS= read -r line; do
+    [[ -n $line ]] && seen_names["$line"]=1
+  done < "$SEENFILE"
+fi
+declare -A seen_series=()
+load_pool_signatures() {
+  local -A cache=()
+  local name size a d f s k fresh=0
+  if [[ -r $HASHFILE ]]; then
+    while IFS=$'\t' read -r name size a d; do
+      [[ -n ${name:-} ]] && cache["$name:$size"]="$a $d"
+    done < "$HASHFILE"
+  fi
+  : > "$TMP/sigs.txt"
+  : > "$TMP/newhashes"
+  for t in "${THEMES[@]}"; do
+    [[ -d "$DEST/$t" ]] || continue
+    for f in "$DEST/$t"/*; do
+      [[ -f $f ]] || continue
+      name="$t/$(basename "$f")"
+      [[ $(basename "$f") == .gitkeep ]] && continue
+      size=$(stat -c%s "$f" 2>/dev/null) || continue
+      s=${cache["$name:$size"]:-}
+      if [[ -z $s ]]; then
+        s=$(sig "$f") || continue
+        fresh=$((fresh + 1))
+      fi
+      printf '%s\n' "$s" >> "$TMP/sigs.txt"
+      printf '%s\t%s\t%s\n' "$name" "$size" "${s/ /$'\t'}" >> "$TMP/newhashes"
+      k=$(series_key "$(basename "$f")")
+      [[ -n $k ]] && seen_series["$k"]=1
+    done
+  done
+  (( DRY )) || mv "$TMP/newhashes" "$HASHFILE" 2>/dev/null || true
+  (( fresh )) && info "Fingerprinted $fresh pool image(s) not seen before."
+  return 0
+}
+
+# series_key NAME — the filename with digits and punctuation removed, so every
+# member of a batch upload maps to the same string. Empty when the result is too
+# thin to be meaningful.
+series_key() {
+  local k
+  k=$(printf '%s' "${1%.*}" | tr 'A-Z' 'a-z' | sed 's/[^a-z]\+/ /g; s/^ //; s/ $//')
+  (( ${#k} >= SERIES_MIN_CHARS )) || { printf ''; return; }
+  printf '%s' "$k"
+}
+
+# is_dupe AHASH DHASH — true when the candidate is within DUPE_MAX_DIST of
+# anything already known (pool or kept earlier in this run).
+is_dupe() {
+  [[ -s "$TMP/sigs.txt" ]] || return 1
+  awk -v a="$1" -v d="$2" -v lim="$DUPE_MAX_DIST" '
+    { da = 0; for (i = 1; i <= 64; i++) if (substr(a, i, 1) != substr($1, i, 1)) da++
+      dd = 0; for (i = 1; i <= 64; i++) if (substr(d, i, 1) != substr($2, i, 1)) dd++
+      if (da + dd <= lim) { found = 1; exit } }
+    END { exit(found ? 0 : 1) }' "$TMP/sigs.txt"
+}
+
+# -----------------------------------------------------------------------------
+# Measurement
+# -----------------------------------------------------------------------------
+# One decode of the downloaded file into a small colour thumbnail, then every
+# statistic off that — measuring the full 4K frame repeatedly is pure waste when
+# a 320px reduction gives the same luminance distribution.
+#
+# Echoes: mean std p_dark p_bright centre_mean hue
+measure() {
+  local img=$1 mean std pd pb cm r g b
+  magick "$img" -resize 320x -strip "PNG24:$TMP/c.png" 2>/dev/null || return 1
+  magick "$TMP/c.png" -colorspace Gray "$TMP/g.png" 2>/dev/null || return 1
+
+  read -r mean std < <(magick "$TMP/g.png" -format '%[fx:mean] %[fx:standard_deviation]' info:)
+  # -threshold maps everything above the cut to white; mean of the result is
+  # therefore the fraction of the frame above it. Negated, the fraction below.
+  pd=$(magick "$TMP/g.png" -threshold 6%  -negate -format '%[fx:mean]' info:)
+  pb=$(magick "$TMP/g.png" -threshold 94%         -format '%[fx:mean]' info:)
+  cm=$(magick "$TMP/g.png" -gravity center -crop "$CENTRE_CROP+0+0" +repage \
+         -format '%[fx:mean]' info:)
+
+  # Hue of the average colour — well-defined, unlike an arithmetic mean of a
+  # circular hue channel, and enough to bucket an image into a colour family.
+  read -r r g b < <(magick "$TMP/c.png" -resize 1x1! -format '%[fx:255*u.r] %[fx:255*u.g] %[fx:255*u.b]' info:)
+  local hue
+  hue=$(awk -v r="$r" -v g="$g" -v b="$b" 'BEGIN{
+    mx=(r>g?(r>b?r:b):(g>b?g:b)); mn=(r<g?(r<b?r:b):(g<b?g:b)); d=mx-mn;
+    if (d==0) h=0;
+    else if (mx==r) h=60*((((g-b)/d)%6+6)%6);
+    else if (mx==g) h=60*(((b-r)/d)+2);
+    else            h=60*(((r-g)/d)+4);
+    if (h<0) h+=360; printf "%d", h }')
+
+  printf '%s %s %s %s %s %s' "$mean" "$std" "$pd" "$pb" "$cm" "$hue"
+}
+
+# classify MEAN STD P_DARK P_BRIGHT CENTRE -> "dark" | "light" | "reject:<why>"
+classify() {
+  awk -v mean="$1" -v std="$2" -v pd="$3" -v pb="$4" -v cm="$5" \
+      -v dmin="$DARK_MEAN_MIN" -v dmax="$DARK_MEAN_MAX" \
+      -v dpb="$DARK_PBRIGHT_MAX" -v dpd="$DARK_PDARK_MAX" -v dcm="$DARK_CMEAN_MAX" \
+      -v lmin="$LIGHT_MEAN_MIN" -v lmax="$LIGHT_MEAN_MAX" \
+      -v lpd="$LIGHT_PDARK_MAX" -v lpb="$LIGHT_PBRIGHT_MAX" \
+      -v smin="$STD_MIN" 'BEGIN{
+    if (std < smin)                { print "reject:flat (std " std ")"; exit }
+    if (mean >= dmin && mean <= dmax) {
+      if (pb > dpb) { print "reject:blown highlights (" pb ")"; exit }
+      if (pd > dpd) { print "reject:crushed (" pd ")";          exit }
+      if (cm > dcm) { print "reject:bright centre (" cm ")";    exit }
+      print "dark"; exit
+    }
+    if (mean >= lmin && mean <= lmax) {
+      if (pd > lpd) { print "reject:crushed blacks (" pd ")";   exit }
+      if (pb > lpb) { print "reject:blown highlights (" pb ")"; exit }
+      print "light"; exit
+    }
+    if (mean < dmin) print "reject:too dark (" mean ")";
+    else if (mean > lmax) print "reject:too bright (" mean ")";
+    else print "reject:between themes (" mean ")";
+  }'
+}
+
+# -----------------------------------------------------------------------------
+# Collect candidates
+# -----------------------------------------------------------------------------
+info "Gathering candidates from ${#CATEGORIES[@]} Commons categories…"
+: > "$TMP/candidates.tsv"
+for cat in "${CATEGORIES[@]}"; do
+  n_before=$(wc -l < "$TMP/candidates.tsv")
+  harvest "$cat" >> "$TMP/candidates.tsv"
+  n_after=$(wc -l < "$TMP/candidates.tsv")
+  got=$((n_after - n_before))
+  if (( got == 0 )); then
+    warn "no usable files in Category:$cat (renamed or emptied upstream?)"
+  else
+    info "  $got  $cat"
+  fi
+done
+
+# Dedupe by URL, then shuffle so repeat runs explore different images rather
+# than re-testing the same alphabetical head of every category.
+sort -u -t$'\t' -k1,1 "$TMP/candidates.tsv" | shuf > "$TMP/pool.tsv"
+total=$(wc -l < "$TMP/pool.tsv")
+(( total > 0 )) || die "no candidates survived filtering — is the network up?"
+info "$total candidates after resolution/ratio/license filtering."
+load_pool_signatures
+info ""
+
+# -----------------------------------------------------------------------------
+# Download, measure, place
+# -----------------------------------------------------------------------------
+want_dark=0 want_light=0
+for t in "${THEMES[@]}"; do
+  [[ $t == dark  ]] && want_dark=$COUNT
+  [[ $t == light ]] && want_light=$COUNT
+done
+got_dark=0 got_light=0
+declare -A hue_count=()
+declare -A cat_count=()
+declare -a kept_rows=()
+tested=0 skipped=0
+
+# Per-run caps: one hue family cannot come back as ten blue lakes, and one
+# category cannot come back as ten auroras.
+hue_cap=$(awk -v c="$COUNT" -v s="$HUE_SHARE_MAX"      'BEGIN{ v=int(c*s); print (v<2?2:v) }')
+cat_cap=$(awk -v c="$COUNT" -v s="$CATEGORY_SHARE_MAX" 'BEGIN{ v=int(c*s); print (v<2?2:v) }')
+
+# Not under --dry-run: a run that promises to write nothing should not leave
+# directories behind either.
+if (( ! DRY )); then
+  for t in "${THEMES[@]}"; do
+    mkdir -p "$DEST/$t"
+  done
+fi
+
+while IFS=$'\t' read -r thumb title lic artist desc srccat; do
+  (( got_dark >= want_dark && got_light >= want_light )) && break
+  [[ -n $thumb ]] || continue
+
+  # Category quota, checked BEFORE spending a download. Which theme an image
+  # belongs to is only known after measuring it, so the pre-download test is the
+  # loose one — the category is exhausted across every theme being filled — and
+  # the exact per-theme cap is applied after the verdict is in.
+  if (( ${cat_count[$srccat]:-0} >= cat_cap * ${#THEMES[@]} )); then
+    dbg "category quota full ($srccat) — $title"
+    continue
+  fi
+
+  # Filename: transliterate first, then sanitise. Dropping non-ASCII bytes
+  # outright turns "Dülmen" into "Dlmen"; //TRANSLIT gives "Dulmen". A title with
+  # no Latin content at all (Commons has plenty) transliterates to nothing, which
+  # the letter check below catches and replaces with a hash.
+  base=$(printf '%s' "$title" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || printf '%s' "$title")
+  base=$(printf '%s' "$base" | sed 's/[^A-Za-z0-9._-]/_/g; s/__*/_/g; s/^_//; s/_$//')
+  ext=${base##*.}
+  [[ $ext =~ ^(jpg|jpeg|png|webp)$ ]] || ext=jpg
+  # Fall back on LETTERS, not length: a Thai title transliterates to "01-", which
+  # is three characters of nothing. A hashed name at least stays unique.
+  stem=${base%.*}
+  letters=${stem//[^A-Za-z]/}
+  (( ${#letters} >= 3 )) || stem="commons-$(printf '%s' "$title" | sha1sum | cut -c1-12)"
+  fname="${stem:0:80}.$ext"
+
+  if [[ -e "$DEST/dark/$fname" || -e "$DEST/light/$fname" || -n ${seen_names[$fname]:-} ]]; then
+    skipped=$((skipped + 1)); continue
+  fi
+
+  # Through fetch_image, not a bare curl. Sustained probing trips Wikimedia's
+  # rate limiting — measured, it serves ~45 images back-to-back and then starts
+  # refusing — and a bare `curl -o` writes the refusal to disk as if it were a
+  # photo. Those became "unreadable" and were silently dropped, so a 700-probe
+  # run was discarding good candidates by the dozen. fetch_image checks the
+  # status, checks the file really decodes, and backs off before retrying.
+  sleep "$PROBE_THROTTLE"
+  fetch_image "$thumb" "$TMP/probe" || { dbg "probe unavailable: $title"; continue; }
+  tested=$((tested + 1))
+
+  stats=$(measure "$TMP/probe") || { dbg "unreadable: $title"; continue; }
+  read -r mean std pd pb cm hue <<<"$stats"
+  verdict=$(classify "$mean" "$std" "$pd" "$pb" "$cm")
+
+  # Luminance measures DIM, not NIGHT, and the difference is the whole character
+  # of the dark theme. A fern forest under closed canopy, a cave interior, a
+  # waterfall in a shaded gorge — all sit comfortably under DARK_MEAN_MAX while
+  # being unmistakably daytime photographs. Half of a 36-image dark pool built on
+  # luminance alone turned out to be caves and green woodland.
+  #
+  # No pixel statistic separates them reliably, but the source category does:
+  # whether a photograph was taken at night is a fact about the photograph, and
+  # Commons has already sorted it. So dark/ draws only from NIGHT_CATEGORIES, and
+  # measurement still decides which of those are actually dark enough.
+  if [[ $verdict == dark && -z ${IS_NIGHT_CAT[$srccat]:-} ]]; then
+    dbg "dim, but a daytime subject ($srccat) — $title"
+    continue
+  fi
+
+  case $verdict in
+    dark)  [[ $want_dark  -gt 0 && $got_dark  -lt $want_dark  ]] || { dbg "dark full: $title"; continue; } ;;
+    light) [[ $want_light -gt 0 && $got_light -lt $want_light ]] || { dbg "light full: $title"; continue; } ;;
+    *)     dbg "${verdict#reject:} — $title"; continue ;;
+  esac
+
+  if (( ${cat_count[$verdict:$srccat]:-0} >= cat_cap )); then
+    dbg "category quota full ($verdict/$srccat) — $title"
+    continue
+  fi
+
+  # Same batch upload as something already held? Cheapest check of the lot, and
+  # it catches the repeats the fingerprints provably cannot.
+  ckey=$(series_key "$fname")
+  if [[ -n $ckey && -n ${seen_series[$ckey]:-} ]]; then
+    dbg "same series as one already in the pool ($ckey) — $title"
+    continue
+  fi
+
+  # Checked on the probe, before paying for the 4K render.
+  if csig=$(sig "$TMP/probe"); then
+    read -r cah cdh <<<"$csig"
+    if is_dupe "$cah" "$cdh"; then
+      dbg "near-duplicate of something already in the pool — $title"
+      continue
+    fi
+  else
+    csig=""
+    dbg "could not fingerprint, keeping without a duplicate check — $title"
+  fi
+
+  bucket=$(( hue / 60 ))
+  if (( ${hue_count[$verdict:$bucket]:-0} >= hue_cap )); then
+    dbg "hue quota ${bucket} full — $title"
+    continue
+  fi
+
+  # It passed on the probe, so now buy the real thing. Commons thumbnail URLs
+  # carry the render width as a path segment ("/500px-Foo.jpg"), so the full-size
+  # URL is the probe URL with that segment rewritten.
+  #
+  # The width in that segment is read back from the URL rather than assumed to be
+  # PROBE_WIDTH: Commons snaps a requested width up to its own bucket sizes, and
+  # asking for 400 returns a 500px render. Hardcoding the requested value matched
+  # nothing and silently rejected every candidate in testing.
+  if [[ $thumb =~ /([0-9]+)px- ]]; then
+    full=${thumb/\/${BASH_REMATCH[1]}px-//${WIDTH}px-}
+  else
+    dbg "unexpected thumbnail URL shape, skipping: $title"
+    continue
+  fi
+
+  if (( DRY )); then
+    info "  would keep [$verdict] $fname  (mean=$mean p_dark=$pd p_bright=$pb hue=$hue)"
+  else
+    fetch_image "$full" "$TMP/full" || { warn "could not fetch full size, skipping: $title"; continue; }
+    mv "$TMP/full" "$DEST/$verdict/$fname"
+    info "  + [$verdict] $fname  (mean=$mean hue=$hue)"
+    # Record against the real file, so the next run reuses it from cache.
+    if [[ -n $csig ]]; then
+      printf '%s\t%s\t%s\n' "$verdict/$fname" "$(stat -c%s "$DEST/$verdict/$fname")" \
+        "${csig/ /$'\t'}" >> "$HASHFILE"
+    fi
+    printf '%s\n' "$fname" >> "$SEENFILE"
+  fi
+  seen_names["$fname"]=1
+
+  # Guard the rest of THIS run too, dry or not: two frames of the same scene can
+  # easily both be sitting in the candidate list.
+  [[ -n $csig ]] && printf '%s\n' "$csig" >> "$TMP/sigs.txt"
+  [[ -n $ckey ]] && seen_series["$ckey"]=1
+
+  hue_count[$verdict:$bucket]=$(( ${hue_count[$verdict:$bucket]:-0} + 1 ))
+  cat_count[$verdict:$srccat]=$(( ${cat_count[$verdict:$srccat]:-0} + 1 ))
+  cat_count[$srccat]=$(( ${cat_count[$srccat]:-0} + 1 ))
+  kept_rows+=("$verdict"$'\t'"$fname"$'\t'"$lic"$'\t'"$artist"$'\t'"$desc")
+  [[ $verdict == dark  ]] && got_dark=$((got_dark + 1))
+  [[ $verdict == light ]] && got_light=$((got_light + 1))
+done < "$TMP/pool.tsv"
+
+# -----------------------------------------------------------------------------
+# Attribution
+# -----------------------------------------------------------------------------
+# Written for every keep, in both license modes. Under CC BY-SA this is the
+# obligation; under CC0 it is simply courtesy and a record of where a file came
+# from — useful later when you want more like it. Git-ignored along with the
+# images themselves.
+ATTR="$DEST/ATTRIBUTION.md"
+if (( ! DRY )) && (( ${#kept_rows[@]} )); then
+  if [[ ! -f $ATTR ]]; then
+    {
+      printf '# Wallpaper attribution\n\n'
+      printf 'Images fetched from [Wikimedia Commons](https://commons.wikimedia.org)\n'
+      printf 'by `wallpaper-fetch`. Each row links to the file page, which carries the\n'
+      printf 'authoritative license text.\n\n'
+      printf '| Theme | File | License | Author | Source |\n'
+      printf '|---|---|---|---|---|\n'
+    } > "$ATTR"
+  fi
+  for row in "${kept_rows[@]}"; do
+    IFS=$'\t' read -r t f l a d <<<"$row"
+    printf '| %s | `%s` | %s | %s | [file page](%s) |\n' "$t" "$f" "$l" "${a:-unknown}" "$d" >> "$ATTR"
+  done
+fi
+
+# -----------------------------------------------------------------------------
+# Summary
+# -----------------------------------------------------------------------------
+info ""
+info "Tested $tested downloads; kept $got_dark dark, $got_light light."
+(( skipped )) && info "Skipped $skipped already present."
+if (( got_dark < want_dark || got_light < want_light )); then
+  warn "Short of the target — the pool ran dry. Re-run to sample more candidates,"
+  warn "or loosen a threshold (e.g. DARK_MEAN_MAX=0.35 wallpaper-fetch)."
+fi
+if (( ! DRY )) && (( ${#kept_rows[@]} )); then
+  info "Attribution appended to $ATTR"
+  info "Apply now with: hypr-wallpaper"
+fi

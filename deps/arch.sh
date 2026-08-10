@@ -40,6 +40,7 @@ declare -A PKG=(
   [nightlight-hyprsunset]="hyprsunset"
   [screenshot-hyprshot]="hyprshot"
   [annotate-satty]="satty"
+  [cli-imagemagick]="imagemagick"
   [greeter-greetd]="greetd"
   [greeter-regreet]="greetd-regreet"
   [greeter-hyprpaper]="hyprpaper"

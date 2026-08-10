@@ -27,6 +27,7 @@ declare -A PKG=(
   [cli-brightnessctl]="brightnessctl"
   [cli-rfkill]="rfkill"
   [cli-libnotify]="libnotify-bin"
+  [cli-imagemagick]="imagemagick"
   [icons-papirus]="papirus-icon-theme"
   [font-jetbrains-nerd]="fonts-jetbrains-mono"   # NOT the Nerd-patched build; install that manually
 )

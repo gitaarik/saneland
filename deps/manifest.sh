@@ -21,6 +21,7 @@ CORE_DEPS=(
 OPTIONAL_DEPS=(
   lock-hyprlock idle-hypridle nightlight-hyprsunset
   screenshot-hyprshot annotate-satty
+  cli-imagemagick
   greeter-greetd greeter-regreet greeter-hyprpaper
 )
 
@@ -54,6 +55,7 @@ declare -A DEP_DESC=(
   [nightlight-hyprsunset]="hyprsunset color temperature"
   [screenshot-hyprshot]="hyprshot screenshots"
   [annotate-satty]="satty screenshot annotation"
+  [cli-imagemagick]="ImageMagick (only for wallpaper-fetch, which measures candidate images)"
   [greeter-greetd]="greetd login daemon (only for greeter/install.sh)"
   [greeter-regreet]="ReGreet login UI (only for greeter/install.sh)"
   [greeter-hyprpaper]="hyprpaper — paints the login screen's one static image (only for greeter/install.sh)"

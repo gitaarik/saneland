@@ -21,10 +21,21 @@
 /local/*
 !/local/README.md
 
-# User-supplied wallpaper images (drop your own in — see wallpapers/README.md)
+# User-supplied wallpaper images (drop your own in, or run wallpaper-fetch —
+# see wallpapers/README.md). No imagery is ever tracked here: it is someone
+# else's copyright, and the pools are machine state, not source.
 /wallpapers/dark/*
 /wallpapers/light/*
 !/wallpapers/*/.gitkeep
+# Credits for whatever wallpaper-fetch pulled down — describes your local pool,
+# so it follows the images rather than the repo.
+/wallpapers/ATTRIBUTION.md
+# Perceptual fingerprints of the local pool, so re-runs don't re-add near-copies.
+# Pure cache, rebuilt from the images on demand.
+/wallpapers/.wallpaper-hashes
+# Ledger of every image ever fetched, so deleting one you disliked makes it stay
+# gone. Not a cache — losing this lets rejects come back.
+/wallpapers/.wallpaper-seen
 
 # OS / editor cruft
 *.swp

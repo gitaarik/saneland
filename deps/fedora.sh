@@ -42,6 +42,7 @@ declare -A PKG=(
   [nightlight-hyprsunset]="hyprsunset"        # COPR
   [screenshot-hyprshot]="hyprshot"            # verify (may need manual)
   [annotate-satty]="satty"                    # verify (may need cargo/manual)
+  [cli-imagemagick]="ImageMagick"
   [greeter-greetd]="greetd"                   # verify (may need COPR)
   [greeter-regreet]="regreet"                 # verify (may need COPR/cargo)
   [greeter-hyprpaper]="hyprpaper"             # COPR

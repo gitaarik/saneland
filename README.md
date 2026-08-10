@@ -29,7 +29,9 @@ one-command **light/dark theme switcher** that repaints the whole session.
 - **One-command theming** — `theme dark` / `theme light` flips the eww bar,
   swaync, GTK, rofi and the wallpaper together via a symlink-swap pattern.
 - **Wallpaper rotation** with per-theme image pools, crossfading between images
-  (awww).
+  (awww) — plus `wallpaper-fetch` to fill an empty pool from Wikimedia Commons,
+  sorting each image into dark/ or light/ by measuring it rather than trusting
+  its category.
 - **Quality-of-life Hyprland scripts** — MRU Alt-Tab, window snapping /
   centering / maximize-toggle, scroll-to-switch workspaces, brightness &
   battery helpers.
@@ -49,7 +51,7 @@ config/          # → ~/.config/*  (whole-dir symlinks)
   gtk-3.0/ gtk-4.0/   # GTK app theming, so Firefox/dialogs follow light/dark
 bin/             # → ~/.local/bin/*  (per-file symlinks): hypr-* helpers, theme, hyprsig …
 greeter/         # → /etc/greetd  (OPTIONAL, needs root): the login screen
-wallpapers/      # drop your own images into dark/ and light/
+wallpapers/      # drop your own images into dark/ and light/ (or run wallpaper-fetch)
 docs/            # ARCHITECTURE.md — the non-obvious design notes & gotchas
 install.sh       # symlinks everything into place (backs up what's there)
 ```
@@ -83,6 +85,7 @@ binding/autostart if missing):
 - `hyprbars` — window title bars (compiled plugin, see below)
 - `hyprsunset` — night-light color temperature (autostarted)
 - `hyprshot` + `satty` — screenshot capture & annotation (Print-key binds)
+- `imagemagick` — only for `wallpaper-fetch`, which measures candidate images
 
 ### Distro support
 
@@ -130,7 +133,10 @@ Then:
    hyprpm add https://github.com/hyprwm/hyprland-plugins
    hyprpm enable hyprbars
    ```
-3. Drop wallpapers into `wallpapers/dark/` and `wallpapers/light/`.
+3. Drop wallpapers into `wallpapers/dark/` and `wallpapers/light/` — or, for a
+   cold start, `wallpaper-fetch` pulls freely-licensed nature photography from
+   Wikimedia Commons and sorts it into the two pools by measured luminance
+   (see `wallpapers/README.md`).
 4. Log into the **Hyprland (uwsm-managed)** session (the uwsm wrapper is what
    activates `graphical-session.target`, which the desktop portals gate on),
    or in a running session: `hyprctl reload && eww reload`.
