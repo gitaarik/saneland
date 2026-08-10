@@ -89,7 +89,9 @@ Two things it does that a plain download loop doesn't:
   twice (average-hash and difference-hash) and compared against the pool before
   its full size is downloaded. Commons batch uploads are caught separately, by
   collapsing digits out of the filename: `Auroras_1/2/6/7_-_panoramio` is one
-  photographer's night, not five wallpapers.
+  photographer's night, not five wallpapers. Those filename keys come from
+  `.wallpaper-seen` as well as from the pools, so throwing one member of a batch
+  out takes its siblings with it rather than inviting them in one at a time.
 
 Re-running is safe: files already in the pool are skipped, and each run samples
 a different shuffle, so it tops up rather than repeating itself.

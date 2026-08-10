@@ -640,6 +640,18 @@ load_pool_signatures() {
       [[ -n $k ]] && seen_series["$k"]=1
     done
   done
+
+  # Series keys come from the LEDGER too, not only from what is still in the
+  # pools. Taking them from the pools alone means pruning an image also forgets
+  # its siblings, so the batch upload you just rejected walks back in one frame
+  # at a time: deleting Ceske_Budejovice_88 let Ceske_Budejovice_92 — the same
+  # town square, the same evening — through on the very next run. The ledger
+  # already remembers every name ever fetched, rejected ones included, which is
+  # exactly the memory this needs.
+  for name in "${!seen_names[@]}"; do
+    k=$(series_key "$name")
+    [[ -n $k ]] && seen_series["$k"]=1
+  done
   (( DRY )) || mv "$TMP/newhashes" "$HASHFILE" 2>/dev/null || true
   (( fresh )) && info "Fingerprinted $fresh pool image(s) not seen before."
   return 0
