@@ -32,6 +32,38 @@ set -uo pipefail
 # for later syncs — the daemon is already up by then.
 export LC_TIME=en_GB.UTF-8
 
+# Kill every eww daemon and don't return until they are actually gone.
+#
+# The waiting is the point. A daemon that is unreachable because it is WEDGED —
+# rather than absent — is also a daemon that is not processing signals, so its
+# SIGTERM sits pending while a replacement comes up beside it: two daemons, two
+# full sets of bars, and the older set unreachable by any `eww close`. Hence
+# SIGKILL for anything that won't leave, which no amount of wedging can ignore.
+#
+# It also orders the socket correctly. eww unlinks the socket path on the way
+# out, so a straggler dying AFTER its replacement bound would take the new
+# daemon's socket with it, leaving a live daemon that nothing can reach — a
+# doubled bar that outlives the thing meant to clean it up.
+#
+# `pkill -x` matches the process name exactly, so it cannot hit this script (or
+# `eww-bars.sh`'s own bash). Short-lived eww clients can be caught in the
+# crossfire, but they were failing anyway: we only get here when the daemon
+# does not answer.
+stop_daemons() {
+  local i
+  pgrep -x eww &>/dev/null || return 0
+  pkill -x eww
+  for (( i = 0; i < 30; i++ )); do           # up to 3s to go quietly
+    pgrep -x eww &>/dev/null || return 0
+    sleep 0.1
+  done
+  pkill -KILL -x eww
+  for (( i = 0; i < 20; i++ )); do           # up to 2s more
+    pgrep -x eww &>/dev/null || return 0
+    sleep 0.1
+  done
+}
+
 # Bring up exactly ONE eww daemon, and don't return until it answers.
 #
 # This has to happen before the open loop, because eww auto-starts a daemon for
@@ -45,15 +77,26 @@ export LC_TIME=en_GB.UTF-8
 # the monitor comes back with reserved=60).
 #
 # If a daemon is running but unreachable — the state that bug leaves behind, or
-# a crash that took the socket with it — kill it first. Its bar surfaces are
-# unreachable too, so nothing else will ever clean them up. `pkill -x` matches
-# the process name exactly, so it can't hit this script. Short-lived eww
-# clients could be caught in the crossfire, but they were failing anyway: we
-# only get here when the daemon does not answer.
+# a crash that took the socket with it — stop_daemons clears it first. Its bar
+# surfaces are unreachable too, so nothing else will ever clean them up.
+#
+# A daemon that answers is only trustworthy if it is the ONLY one: a second
+# process means a previous restart left a straggler, whose bars answer to
+# nobody and so would never be counted or closed below. One config, one daemon
+# — nothing but this script ever starts one — so treat any surplus as the
+# wreckage it is and reset.
+#
+# The count matches on the COMMAND LINE, not the process name, because eww's
+# client is the same binary as its daemon: with `pgrep -x eww` any momentary
+# `eww open`/`eww logs` reads as a second daemon, and a perfectly healthy bar
+# gets torn down because a popup script happened to be mid-click. The tradeoff
+# is that a daemon eww auto-started for a client keeps that client's command
+# line and so isn't counted — which only costs this self-heal a case it would
+# otherwise catch, and never kills anything it shouldn't.
 ensure_daemon() {
   local i
-  eww ping &>/dev/null && return 0
-  pkill -x eww && sleep 0.3
+  [[ $(pgrep -xcf 'eww daemon') == 1 ]] && eww ping &>/dev/null && return 0
+  stop_daemons
   eww daemon &>/dev/null
   for (( i = 0; i < 50; i++ )); do          # up to 5s
     eww ping &>/dev/null && return 0
