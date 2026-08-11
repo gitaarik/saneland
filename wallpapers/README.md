@@ -66,6 +66,7 @@ wallpaper-fetch -n 25            # ask for more
 wallpaper-fetch --theme dark     # only the dark theme's pools (dark/, dusk/)
 wallpaper-fetch --phase twilight # only dawn/ and dusk/
 wallpaper-fetch --phase main     # only dark/ and light/, skip the twilight pools
+wallpaper-fetch --only nebula    # only categories matching a pattern
 wallpaper-fetch --dry-run        # report what it would keep, write nothing
 ```
 

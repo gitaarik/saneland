@@ -45,6 +45,7 @@
 #   wallpaper-fetch --theme dark       only the dark theme's pools (dark/, dusk/)
 #   wallpaper-fetch --phase twilight   only dawn/ and dusk/
 #   wallpaper-fetch --phase main       only dark/ and light/, no twilight
+#   wallpaper-fetch --only nebula      only categories matching a pattern
 #   wallpaper-fetch --public-domain    CC0 / public-domain only (much smaller pool)
 #   wallpaper-fetch --dry-run          report what it would keep, write nothing
 #
@@ -97,6 +98,28 @@ NIGHT_CATEGORIES=(
   # armoured vehicle — "taken at night" is not the same claim as "of the night".
   # NOT "Stars" or "Full moon" either: both are the sky with nothing under it.
 )
+
+# Deep sky. Telescope frames rather than photographs of a place, and the one
+# corner of "space" that suits a desktop: a nebula is a soft even cloud with no
+# hard edge and nothing in it that asks to be looked at, which is most of what a
+# calm background needs. They count as night subjects, so they can only fill
+# dark/, and CATEGORY_SHARE_MAX keeps them a minority of any run — the earlier
+# lesson that a sky-only pool reads as an observatory gallery still holds.
+#
+# Deliberately absent: "Galaxies" and "Planetary nebulae", which are a small
+# bright object on a large black field. DARK_PDARK_MAX would throw most of them
+# out anyway (a frame that is 45% near-black is not a wallpaper, it is a poster),
+# and the ones that survive would have exactly the hard bright centre this is
+# supposed to avoid.
+DEEPSKY_CATEGORIES=(
+  "Nebulae"
+  "Emission nebulae"
+  "Reflection nebulae"
+  "Dark nebulae"
+  "Supernova remnants"
+  "Images of the James Webb Space Telescope"
+)
+NIGHT_CATEGORIES+=("${DEEPSKY_CATEGORIES[@]}")
 
 # Daylight subjects. These can only ever land in light/.
 CATEGORIES=(
@@ -397,6 +420,7 @@ while (( $# )); do
                         dusk) die "dusk/ is the dark theme's twilight — use: --phase twilight --theme dark" ;;
                         *) die "--phase takes night, day, twilight, main or all" ;;
                       esac; shift 2 ;;
+    --only)           ONLY_RE=${2:?}; shift 2 ;;
     --public-domain)  LICENSE_MODE=pd; shift ;;
     --dry-run)        DRY=1; shift ;;
     -v|--verbose)     VERBOSE=1; shift ;;
@@ -743,6 +767,16 @@ classify() {
 # -----------------------------------------------------------------------------
 # Collect candidates
 # -----------------------------------------------------------------------------
+# --only narrows the harvest to categories matching a pattern, for topping up
+# one kind of image on purpose. Without it a minority subject can never win: the
+# per-category cap that stops a run coming back as ten auroras also stops a run
+# coming back as ten nebulae when ten nebulae is exactly what was wanted. The
+# cap is per RUN, so the way to fill a niche is a run that is only that niche.
+if [[ -n ${ONLY_RE:-} ]]; then
+  mapfile -t CATEGORIES < <(printf '%s\n' "${CATEGORIES[@]}" | grep -iE "$ONLY_RE" || true)
+  (( ${#CATEGORIES[@]} )) || die "--only '$ONLY_RE' matched no category"
+fi
+
 info "Gathering candidates from ${#CATEGORIES[@]} Commons categories…"
 : > "$TMP/candidates.tsv"
 for cat in "${CATEGORIES[@]}"; do
