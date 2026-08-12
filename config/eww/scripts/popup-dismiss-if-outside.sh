@@ -1,17 +1,45 @@
 #!/usr/bin/env bash
 #
-# Dismiss an eww popup window ONLY if the cursor is outside of any open
-# overlay layer-shell surface (i.e. the popup itself).
+# Dismiss eww popups on a click OUTSIDE them. Bound permanently in
+# hyprland.conf:
 #
-# Used as the action for the Hyprland `bindrn` mouse:272 hook armed by
-# popup-toggle.sh, so that clicks INSIDE the popup (toggling mute,
-# dragging the volume slider, etc.) don't also dismiss it.
+#   bindrn = , mouse:272, exec, ~/.config/eww/scripts/popup-dismiss-if-outside.sh
 #
-# Usage: popup-dismiss-if-outside.sh <window-name>
+# Usage:
+#   popup-dismiss-if-outside.sh                 whichever popup is open
+#   popup-dismiss-if-outside.sh <window-name>   that popup only
+#
+# `bindrn` is release + non-consuming: the click still reaches whatever is under
+# the cursor, so dismissing a menu doesn't swallow the click that did it.
+#
+# This runs on EVERY left-click release in the session, so the order of the
+# checks is the design. Cheapest first:
+#
+#   1. marker file        ~1ms   — no popup can be open without it
+#   2. eww active-windows ~14ms  — the authority on what is open
+#   3. cursor vs layers   ~73ms  — only worth asking once we know there IS a popup
+#
+# It used to be bound only while a popup was open, which meant arming and
+# unbinding a global keybind from concurrent short-lived scripts — the source of
+# every stuck-popup bug in this system. Being always bound costs step 1 per click
+# and removes the entire class. See the header of popup-dismiss.sh.
 
 set -uo pipefail
+# shellcheck source=/dev/null
+source "$HOME/.config/eww/scripts/popup-lib.sh"
 
-window=${1:?missing window name}
+window=${1:-}
+
+popups_possible || exit 0
+
+# The marker over-approximates, so confirm with eww before paying for the cursor
+# test. Finding nothing here also clears the marker, which is how a stale one
+# heals — an eww daemon restart (a monitor hotplug does one, see ensure_daemon in
+# eww-bars.sh) takes every popup down without anything running a dismiss.
+if [[ -z $(open_popups) ]]; then
+  clear_marker_if_empty
+  exit 0
+fi
 
 # `hyprctl cursorpos` prints "X, Y". Strip the comma, read two ints.
 read -r cx cy <<< "$(hyprctl cursorpos | tr -d ',')"
@@ -34,6 +62,19 @@ for mon, info in data.items():
             print("yes"); sys.exit(0)
 ' "$cx" "$cy")
 
-if [[ -z $inside ]]; then
-  "$HOME"/.config/eww/scripts/popup-dismiss.sh "$window"
+if [[ -n $inside ]]; then
+  popup_log "click at $cx,$cy is inside a popup — keeping it open"
+  exit 0
+fi
+
+popup_log "click at $cx,$cy is outside"
+
+# Everything past the cursor test is popup-dismiss.sh's job, so the rules about
+# WHICH popups go — and how young is too young — live in one place and can be
+# tested without a mouse.
+dismiss=$HOME/.config/eww/scripts/popup-dismiss.sh
+if [[ -n $window ]]; then
+  "$dismiss" "$window"
+else
+  "$dismiss" --settled
 fi

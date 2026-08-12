@@ -33,13 +33,17 @@
 ;; popup and opens the new one in a single click.
 ;;
 ;; None of these popups accept typed input, so losing the grab costs
-;; nothing. Escape routes are all grab-independent and still armed by
-;; popup-toggle.sh: a click-outside dismiss (`mouse:272` bindrn +
-;; `popup-dismiss-if-outside.sh`), a focus-change dismiss (clicking another
-;; window fires `activewindow`), and an Esc keybind — a *global* `hyprctl
-;; bind` that Hyprland evaluates before key delivery regardless of focus
-;; (eww has no key handler of its own). popup-dismiss.sh tears the Esc bind
-;; and mouse bind down again on close.
+;; nothing. Dismissal is grab-independent: a click-outside dismiss
+;; (`mouse:272` bindrn + `popup-dismiss-if-outside.sh`), a focus-change
+;; dismiss (clicking another window fires `activewindow`), and an Escape
+;; keybind, which has to be a *global* Hyprland bind because eww has no key
+;; handler of its own and these surfaces never hold the keyboard.
+;;
+;; Both binds live in hyprland.conf and are registered ONCE for the session —
+;; nothing arms or unbinds them. They name no window either; they dismiss
+;; whatever is open. Arming them per-popup meant syncing global compositor
+;; state with per-window state from concurrent scripts, which is where every
+;; stuck-popup bug came from. See the header of popup-dismiss.sh.
 (defwindow start-popup
   :monitor 0
   :geometry (geometry :x "0px" :y "0px"

@@ -4,35 +4,40 @@
 #
 # Usage: popup-toggle.sh <window-name>
 #
-# When opening, two close-triggers are armed; both funnel into
-# popup-dismiss.sh so they're idempotent and safe to fire concurrently:
+# Three things close a popup, all of them funnelling into popup-dismiss.sh so
+# they are idempotent and safe to fire concurrently:
 #
-#   1. A Hyprland events-socket listener — closes on the first
-#      `activewindow` event, which fires whenever focus shifts to a
-#      different tiled window (mouse click that changes focus, or any
-#      keyboard navigation).
+#   1. A Hyprland `bindrn` on mouse:272 (release, non-consuming) — fires on ANY
+#      left-click release, even when the focused window doesn't change (e.g.
+#      clicking a single fullscreen window). The `n` flag means the click still
+#      propagates to whatever's under the cursor, so the user's click is not
+#      stolen. It runs popup-dismiss-if-outside.sh, which checks the cursor
+#      against the popup's layer-shell bounds so clicks INSIDE the popup (mute
+#      toggle, slider drag) don't dismiss it.
 #
-#   2. A Hyprland `bindrn` on mouse:272 (release, non-consuming) — fires
-#      on ANY left-click release, even when the focused window doesn't
-#      change (e.g. clicking a single fullscreen window). The `n` flag
-#      means the click still propagates to whatever's under the cursor,
-#      so the user's click is not stolen. The bind invokes
-#      popup-dismiss-if-outside.sh which checks the cursor against the
-#      popup's layer-shell bounds, so clicks INSIDE the popup (mute
-#      toggle, slider drag, etc.) don't also dismiss it.
+#   2. A Hyprland bind on Escape, running popup-dismiss.sh --if-open.
 #
-# The bindrn is registered after a 0.4s delay so that the user's own
-# initial open-click release doesn't immediately re-close the popup.
+#   3. A Hyprland events-socket listener — closes on the first `activewindow`
+#      event, which fires whenever focus shifts to a different tiled window.
 #
-# Listener PID is stored per-window in $XDG_RUNTIME_DIR so multiple
-# popups don't trample each other.
+# THIS SCRIPT ARMS NOTHING. (1) and (2) are registered once, permanently, in
+# hyprland.conf; they cost ~1ms per click when no popup is open and are never
+# touched again. They used to be armed here on open and unbound on close, which
+# is the same thing as keeping global compositor state in sync with per-window
+# state from concurrent short-lived scripts — the source of every stuck-popup
+# bug this system has had. See the header of popup-dismiss.sh.
+#
+# Only (3) is per-window, because it is a process this script owns and can kill;
+# its PID is stored per-window in $XDG_RUNTIME_DIR so multiple popups don't
+# trample each other.
 
 set -uo pipefail
+# shellcheck source=/dev/null
+source "$HOME/.config/eww/scripts/popup-lib.sh"
 
 window=${1:?missing window name}
-pid_file=${XDG_RUNTIME_DIR:-/tmp}/eww-popup-listener-$window.pid
+pid_file=$runtime/eww-popup-listener-$window.pid
 dismiss=$HOME/.config/eww/scripts/popup-dismiss.sh
-dismiss_if_outside=$HOME/.config/eww/scripts/popup-dismiss-if-outside.sh
 
 if eww active-windows 2>/dev/null | grep -q "^$window:"; then
   "$dismiss" "$window"
@@ -75,7 +80,34 @@ print(0)
 ' "$_cx" "$_cy" 2>/dev/null)
 screen=${screen:-0}
 
-eww open "$window" --screen "$screen"
+# --no-daemonize: if the daemon can't be reached, fail — do NOT let eww fork a
+# second one. `open` is the only subcommand that auto-starts a server, and the
+# daemon it starts inherits THIS script's command line, so the rival is invisible
+# to anything looking for a process called `eww daemon` and owns a full set of
+# bars that no `eww close` can reach (see count_daemons in eww-bars.sh). A popup
+# that doesn't open on a wedged daemon is a click to repeat; a rogue daemon is
+# doubled bars until logout.
+#
+# Raise the marker BEFORE opening, never after. It is what the permanently-bound
+# click and Escape handlers test first, and being early can only cost a wasted
+# check that clears itself — being late would mean a popup on screen that those
+# handlers skip straight past. See popup-lib.sh.
+mark_popups_possible
+trim_popup_log
+
+# Bail out if it didn't open, rather than setting up close-triggers for a popup
+# that isn't there. The marker stays behind, which is harmless: the next click
+# checks eww, finds nothing open, and clears it.
+if ! eww --no-daemonize open "$window" --screen "$screen"; then
+  echo "popup-toggle.sh: $window did not open" >&2
+  popup_log "FAILED to open $window"
+  exit 1
+fi
+popup_log "opened $window on screen $screen"
+# Stamp when it opened, in nanoseconds, so a --settled dismiss can tell that the
+# click it is handling is the one that opened this popup. popup-dismiss.sh
+# removes the stamp when it closes the window.
+stamp_popup "$window"
 # Surface the open popup as a reactive eww var so widgets can gate
 # scroll-to-adjust behavior on "this control's popup is open".
 eww update open-popup="$window" 2>/dev/null || true
@@ -136,21 +168,6 @@ if [[ $window == network-popup ]]; then
     [[ -f $net_pid_file ]] && kill -USR1 "$(<"$net_pid_file")" 2>/dev/null
 fi
 
-( sleep 0.4
-  hyprctl keyword "bindrn" ", mouse:272, exec, $dismiss_if_outside $window" >/dev/null 2>&1
-) &
-disown
-
-# Esc closes the popup. The windows are `:focusable false` (see the focusable
-# note in eww.yuck), so they never hold the keyboard and Esc can't come from
-# the surface — instead we register a global Hyprland `bind` for it. It's a
-# consuming `bind` (not bindrn), so Esc dismisses the popup rather than leaking
-# through to whatever surface is focused. Hyprland evaluates keybinds before
-# delivering keys, so it fires regardless of focus. Registered immediately
-# (unlike the mouse bind there's no open-click to race); popup-dismiss.sh
-# unbinds it.
-hyprctl keyword "bind" ", ESCAPE, exec, $dismiss $window" >/dev/null 2>&1
-
 # Close action lives INSIDE the while loop, not after it. Reason: with
 # `... | while ...; break`, the while subshell exits on break but ncat
 # stays blocked reading from the socket. The bash pipeline only completes
@@ -185,6 +202,9 @@ disown
 # the script finish arming those binds and return — eww then processes the
 # open once its onclick handler is free.
 if [[ $window == start-popup ]]; then
-    eww open start-apps-popup --screen "$screen" >/dev/null 2>&1 &
+    # --no-daemonize for the same reason as the open above — doubly so here,
+    # where the deadlock this defers around is itself a moment of the daemon
+    # not answering, which is exactly when eww would fork the rival.
+    eww --no-daemonize open start-apps-popup --screen "$screen" >/dev/null 2>&1 &
     disown
 fi
