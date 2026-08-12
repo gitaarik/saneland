@@ -64,17 +64,47 @@ stop_daemons() {
   done
 }
 
+# How many eww DAEMONS are running.
+#
+# Counted by whether the process has CHILDREN, not by its command line, because
+# a daemon eww auto-starts for a client keeps that CLIENT's command line. The
+# rogue daemon behind the doubled bar that prompted this was:
+#
+#     eww open bar --id bar-1 --screen 1 --arg mon=DP-5
+#
+# — indistinguishable by name or cmdline from the client that spawned it, so
+# `pgrep -xcf 'eww daemon'` counted it as zero and the self-heal below sailed
+# past a session with two full sets of bars.
+#
+# What is NOT ambiguous is what a daemon does: it runs the bar's defpoll and
+# deflisten scripts as its own children (13 apiece here), while a client —
+# `eww open`, `eww update`, the popups' `eww close` — never spawns anything at
+# all. So children means daemon, and the case the cmdline count was protecting
+# against is still safe: a popup script mid-click is childless and uncounted.
+#
+# A daemon that has just started and holds no windows yet also has no children
+# and so reads as zero. That is the harmless direction to be wrong in — it owns
+# no bars to double.
+count_daemons() {
+  local p n=0
+  for p in $(pgrep -x eww); do
+    [[ -n $(pgrep -P "$p") ]] && (( n++ ))
+  done
+  printf '%s\n' "$n"
+}
+
 # Bring up exactly ONE eww daemon, and don't return until it answers.
 #
-# This has to happen before the open loop, because eww auto-starts a daemon for
-# any command that finds no server. With nothing running yet, `eww open bar-0`
-# and `eww open bar-1` a moment later BOTH start their own daemon — the first
-# hasn't bound the socket by the time the second looks. Each daemon then owns
-# one bar, only the last one to bind is reachable, and `eww close` can never
-# reach the other. Its bar survives every sync forever, and when its monitor is
-# unplugged gtk-layer-shell just moves the surface onto a remaining screen:
-# that is the "two stacked bars after undocking" bug (each reserving 30px, so
-# the monitor comes back with reserved=60).
+# This has to happen before the open loop, which now refuses to start a daemon
+# itself (--no-daemonize) and so opens nothing at all if none is up. It used to
+# be the loop that started one, and that is the whole history of this bug: with
+# nothing running yet, `eww open bar-0` and `eww open bar-1` a moment later BOTH
+# forked their own daemon — the first hadn't bound the socket by the time the
+# second looked. Each daemon then owned one bar, only the last to bind was
+# reachable, and `eww close` could never reach the other. Its bar survived every
+# sync forever, and when its monitor was unplugged gtk-layer-shell just moved
+# the surface onto a remaining screen: the "two stacked bars after undocking"
+# bug (each reserving 30px, so the monitor comes back with reserved=60).
 #
 # If a daemon is running but unreachable — the state that bug leaves behind, or
 # a crash that took the socket with it — stop_daemons clears it first. Its bar
@@ -83,19 +113,15 @@ stop_daemons() {
 # A daemon that answers is only trustworthy if it is the ONLY one: a second
 # process means a previous restart left a straggler, whose bars answer to
 # nobody and so would never be counted or closed below. One config, one daemon
-# — nothing but this script ever starts one — so treat any surplus as the
-# wreckage it is and reset.
+# — and with every `eww open` in the repo carrying --no-daemonize, this function
+# is now the only thing in the session that can start one — so treat any surplus
+# as the wreckage it is and reset.
 #
-# The count matches on the COMMAND LINE, not the process name, because eww's
-# client is the same binary as its daemon: with `pgrep -x eww` any momentary
-# `eww open`/`eww logs` reads as a second daemon, and a perfectly healthy bar
-# gets torn down because a popup script happened to be mid-click. The tradeoff
-# is that a daemon eww auto-started for a client keeps that client's command
-# line and so isn't counted — which only costs this self-heal a case it would
-# otherwise catch, and never kills anything it shouldn't.
+# See count_daemons for why the surplus check can't just count processes named
+# `eww`, or match their command lines.
 ensure_daemon() {
   local i
-  [[ $(pgrep -xcf 'eww daemon') == 1 ]] && eww ping &>/dev/null && return 0
+  [[ $(count_daemons) == 1 ]] && eww ping &>/dev/null && return 0
   stop_daemons
   eww daemon &>/dev/null
   for (( i = 0; i < 50; i++ )); do          # up to 5s
@@ -140,14 +166,19 @@ save_state() {
     > "$bars_state.tmp" && mv "$bars_state.tmp" "$bars_state"
 }
 
-sync_bars() {
-  local n i idx w open names
-  ensure_daemon || return
+# One sync pass. Returns non-zero if any bar failed to open.
+sync_bars_once() {
+  local n i idx w open names failed=0
+  ensure_daemon || return 1     # a daemon that won't come up is worth a retry
   # Connector names sorted by Hyprland id; index i (the GDK --screen index) is
   # the i-th of these. The COUNT drives coverage; the NAME is passed to the bar.
   mapfile -t names < <(hyprctl monitors -j | jq -r 'sort_by(.id) | .[].name')
   n=${#names[@]}
-  [[ $n -gt 0 ]] || return
+  # Explicitly SUCCESS: no monitors means nothing to open, and returning the
+  # failed test's status instead would tell sync_bars the daemon is wedged and
+  # have it kill a perfectly good one — tearing down every bar because hyprctl
+  # happened to answer mid-hotplug.
+  [[ $n -gt 0 ]] || return 0
 
   open=$(eww active-windows 2>/dev/null | cut -d: -f1)
   load_state
@@ -159,8 +190,21 @@ sync_bars() {
       [[ ${bar_mon[$i]:-} == "${names[i]}" ]] && continue   # already right
       eww close "bar-$i"                                    # now a different screen
     fi
-    eww open bar --id "bar-$i" --screen "$i" --arg "mon=${names[i]}"
-    bar_mon[$i]=${names[i]}
+    # --no-daemonize: never answer an unreachable daemon by starting a SECOND
+    # one. `open` is the only eww subcommand that auto-starts a server (ping,
+    # close, update and active-windows all just fail), and that auto-start is
+    # what put two daemons on this machine: the daemon wedges for a moment
+    # during the hotplug, this very line can't reach it, and eww helpfully
+    # forks a rival that binds nothing, answers nothing, and holds a full set
+    # of bars no `eww close` can ever reach. A bar that fails to open is
+    # recoverable — sync_bars restarts the daemon and opens it — where a rogue
+    # daemon is not recoverable at all, so failing here is the better outcome.
+    if eww --no-daemonize open bar --id "bar-$i" --screen "$i" \
+           --arg "mon=${names[i]}"; then
+      bar_mon[$i]=${names[i]}
+    else
+      failed=1                      # leave bar_mon unset: nothing was opened
+    fi
   done
 
   # Close bars with no monitor behind them: the legacy single-instance `bar`
@@ -174,6 +218,23 @@ sync_bars() {
   done < <(grep -E '^bar(-[0-9]+)?$' <<<"$open")
 
   save_state
+  return $failed
+}
+
+# Sync the bars, and if the daemon was too wedged to answer an open, restart it
+# and sync again.
+#
+# This is the other half of --no-daemonize. Refusing to spawn a rival daemon
+# turns "two stacked bars forever" into "one bar missing", which is only an
+# improvement if something then goes and gets the bar — so a failed open is
+# taken as proof the daemon is wedged, and stop_daemons removes it (SIGKILL if
+# it won't go, since a wedged process isn't handling signals either). The
+# retry's ensure_daemon then brings up a fresh one and opens every bar on it.
+sync_bars() {
+  sync_bars_once && return 0
+  echo "eww-bars.sh: a bar did not open; restarting the daemon" >&2
+  stop_daemons
+  sync_bars_once
 }
 
 sync_bars
