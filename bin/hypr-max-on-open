@@ -102,11 +102,80 @@ state_dir=$HYPR_STATE_DIR          # set by hypr-window-lib.sh, which also owns
 cache_file=$state_dir/clients-cache.json   # the per-class geometry files in it
 mkdir -p "$state_dir"
 
-# Short-lived per-address markers so the fullscreen>>1 handler can tell
-# "user maximized a running window" (reroute it) from "window maximized
-# itself as it opened" (already owned by the openwindow branch — leave it).
+# Per-address markers so the fullscreen>>1 handler can tell "user maximized a
+# running window" (reroute it) from "window maximized itself as it opened"
+# (already owned by the openwindow branch — leave it).
+#
+# The marker is held for exactly as long as the openwindow handler is still
+# working on that window, and dropped by that handler when it finishes. It used
+# to be a flat 2-second timer, which is a wall-clock guess at a question that
+# has an exact answer, and it guessed wrong in both directions: apply_and_settle
+# alone can run 2.4s, so the marker could expire while the openwindow branch was
+# still mid-apply, and a client that first asked to be maximized at t+3s found
+# nothing guarding it at all.
 grace_dir=$state_dir/opening
-mkdir -p "$grace_dir"
+
+# How hard each client is arguing about its maximize state. See fight_ok.
+fight_dir=$state_dir/maximize-fights
+
+# Neither survives a restart: both are keyed by window address, and Hyprland
+# reuses addresses.
+rm -rf "$grace_dir" "$fight_dir"
+mkdir -p "$grace_dir" "$fight_dir"
+
+# A run of requests inside this many seconds is one argument; a gap longer than
+# it starts the count over.
+fight_window_secs=10
+fight_limit=3
+
+# May we still convert this window's self-maximize, or is it fighting us?
+#
+#   fight_ok ADDRESS   -> 0 convert it, 1 leave the window alone
+#
+# `set_maximized` is an xdg-shell REQUEST, and a client is entitled to repeat it.
+# Converting one into the stateless maximize used everywhere else here means
+# dropping the state the client just asked for — so a client whose restore-state
+# logic re-asserts whenever it finds itself unmaximized (Thunderbird's
+# event-details popups, and every Electron app with the same bug) asks again, and
+# again, for as long as we keep answering. The loop does not close through the
+# event stream; dispatching state 0 fires fullscreen>>0, which this branch
+# ignores. It closes through the CLIENT, and it cannot be won: the compositor
+# can't refuse the request (`suppressevent maximize` is not a windowrule field
+# in 0.56.2 — rejected under both the old `class:` and the new `match:` syntax,
+# with nothing replacing it) and the client never gets tired.
+#
+# So don't try to win it. Convert the first few requests, and if they keep
+# coming, yield: the window is left in Hyprland's native maximized state, which
+# is the same rectangle and merely flashes on mod+Tab — the thing this reroute
+# exists to avoid, and a far smaller price than a window flickering between two
+# sizes and walking off the screen.
+#
+# This is the reflex maximize_checked and policy_learn already have for a client
+# that won't be talked into a geometry — try, notice it isn't working, back off —
+# applied to state instead of size. It stays out of the policy file, though: the
+# class is usually fine to auto-maximize and it is one DIALOG that argues, so
+# demoting the class would only break the app's real window.
+#
+# Per address rather than per class, and file-backed rather than in a variable,
+# because every handler here runs in its own subshell.
+fight_ok() {
+    local addr=$1 f=$fight_dir/$addr now last=0 count=0
+    now=${EPOCHSECONDS:-$(date +%s)}
+    [[ -f $f ]] && read -r last count < "$f"
+    [[ $last  =~ ^[0-9]+$ ]] || last=0
+    [[ $count =~ ^[0-9]+$ ]] || count=0
+
+    (( now - last > fight_window_secs )) && count=0
+    (( count += 1 ))
+    printf '%s %s\n' "$now" "$count" > "$f"
+
+    # Say so once, on the way past the limit, so this is greppable in the
+    # Hyprland log instead of being a silent nothing-happens.
+    (( count == fight_limit + 1 )) && echo \
+        "hypr-max-on-open: $addr keeps re-asserting maximize; leaving it natively maximized" >&2
+
+    (( count <= fight_limit ))
+}
 
 # Touched by the monitoradded/monitorremoved handler. Unplug an output and
 # Hyprland moves every workspace on it to a surviving screen, resizing the
@@ -461,7 +530,55 @@ persist_geometry() {
     hypr_save_geometry "$class" "${wh%%x*}" "${wh##*x}" "${xy%%+*}" "${xy##*+}" "$mon"
 }
 
-# Background poller. Two jobs:
+# ---------------------------------------------------------------------------
+# Reachability
+# ---------------------------------------------------------------------------
+# How much of a window has to be on a screen for you to be able to get at it:
+# enough to see, and enough to grab with mod+drag. Deliberately small — this is
+# a rescue and not a placement, and it should only ever fire for a window that
+# could not be reached at all.
+reachable_w=100
+reachable_h=40
+
+# Pull a window back onto its own screen if it can no longer be reached.
+#
+#   rescue_offscreen ADDR X Y W H WORK_X WORK_Y WORK_W WORK_H
+#
+# Returns 0 if it moved the window, 1 if it was already reachable.
+#
+# An invariant rather than a fix for any one bug: nothing automatic in here may
+# leave a window somewhere you cannot get to it. apply_saved_geometry already
+# clamps the one geometry IT applies — a v2 entry saved on a 4K screen would
+# otherwise come back off the side of the laptop — but that is one of many
+# places a window's position gets set. Hyprland's own restore-after-unmaximize
+# is another, a client placing itself is another, a monitor going away is
+# another, and so is the next bug of this shape. Checking the RESULT rather than
+# every writer covers all of them at once, and costs nothing to run: the poller
+# already holds every window's geometry.
+#
+# The correction is the smallest one that works, so a window you dragged half
+# off the right edge on purpose stays exactly where you put it — it is still
+# reachable, so this never fires. Only the position moves, never the size.
+#
+# Horizontally a window may hang off either edge as long as `reachable_w` of it
+# is still on screen. Vertically the TOP edge has to be on screen: that is where
+# the title bar and the resize handles are, and a window whose top is above the
+# work area cannot be grabbed at all, however much of its body shows.
+rescue_offscreen() {
+    local addr=$1 x=$2 y=$3 w=$4 h=$5 ax=$6 ay=$7 aw=$8 ah=$9
+    local nx=$x ny=$y
+
+    (( nx < ax + reachable_w - w  )) && nx=$(( ax + reachable_w - w ))
+    (( nx > ax + aw - reachable_w )) && nx=$(( ax + aw - reachable_w ))
+    (( ny < ay                    )) && ny=$ay
+    (( ny > ay + ah - reachable_h )) && ny=$(( ay + ah - reachable_h ))
+
+    (( nx == x && ny == y )) && return 1
+    hyprctl dispatch movewindowpixel "exact $nx $ny,address:$addr" >/dev/null
+    return 0
+}
+
+# Background poller. Three jobs:
 #
 #   1. Refresh the clients cache every 2s, so the closewindow handler has
 #      something to look up after Hyprland has already dropped the window.
@@ -469,6 +586,8 @@ persist_geometry() {
 #   2. Notice geometry changes and persist them, so a mod+c or a drag-resize
 #      sticks straight away instead of only when the window closes. Hyprland's
 #      event socket has no resize event — polling is the only way to see one.
+#
+#   3. Enforce the reachability invariant above on every window it sees.
 #
 # A change is written only after it has held still for two consecutive ticks
 # (~4s), so a drag in progress or a quick mod+m there-and-back isn't recorded.
@@ -480,7 +599,7 @@ persist_geometry() {
 # tick; a long uptime would otherwise accumulate an entry per window ever
 # opened.
 (
-    declare -A base pend cur
+    declare -A base pend cur warea
     while sleep 2; do
         snap=$(hyprctl -j clients 2>/dev/null) || continue
         printf '%s' "$snap" > "$cache_file.tmp" && mv "$cache_file.tmp" "$cache_file"
@@ -488,10 +607,37 @@ persist_geometry() {
         settling=0
         monitors_settling && settling=1        # once per tick, not per window
 
+        # Work areas for the reachability check, keyed by the same monitor id
+        # `hyprctl clients` reports for a window — one query per tick, rather
+        # than a hypr_work_area call per window. hyprctl's own scale is good
+        # enough here, where hypr_work_area prefers wlr-randr's exact one: a few
+        # px either way cannot change whether 100px of a window is on screen.
+        warea=()
+        while IFS=$'\t' read -r id wx wy ww wh; do
+            [[ -n $id ]] && warea[$id]="$wx $wy $ww $wh"
+        done < <(hyprctl -j monitors 2>/dev/null | jq -r '.[]
+            | [ .id, (.x + .reserved[0]), (.y + .reserved[1]),
+                ((.width  / .scale) - .reserved[0] - .reserved[2] | floor),
+                ((.height / .scale) - .reserved[1] - .reserved[3] | floor) ] | @tsv')
+
         cur=()
-        while IFS=$'\t' read -r a cls ttl geom mon count; do
+        while IFS=$'\t' read -r a cls ttl geom mon count float fs mapped x y w h; do
             [[ -z $a ]] && continue
             cur[$a]=1
+
+            # Reachability first, and `continue` on a rescue, so the geometry
+            # that goes on to be remembered is the corrected one rather than the
+            # one nobody chose. Floating, mapped and non-fullscreen only: a
+            # tiled window's position belongs to the layout and a fullscreen
+            # one's to Hyprland, and both would only be fought here. Never while
+            # the monitors are settling — a window hanging off a screen that is
+            # being removed is about to be moved by Hyprland anyway.
+            if (( ! settling )) && [[ $float == true && $fs == 0 && $mapped == true ]] \
+                && [[ -n ${warea[$mon]:-} ]] \
+                && rescue_offscreen "$a" "$x" "$y" "$w" "$h" ${warea[$mon]}; then
+                continue
+            fi
+
             if [[ -z ${base[$a]:-} ]]; then base[$a]=$geom; continue; fi
             # Adopt silently: whatever Hyprland just did to this window becomes
             # the baseline, so nothing is written now AND nothing is written
@@ -506,7 +652,9 @@ persist_geometry() {
             (map(.class) | group_by(.) | map({key: .[0], value: length}) | from_entries) as $n
             | .[] | [ .address, .class, .title,
                       "\(.size[0])x\(.size[1])+\(.at[0])+\(.at[1])",
-                      .monitor, $n[.class] ] | @tsv' <<<"$snap")
+                      .monitor, $n[.class],
+                      .floating, .fullscreen, .mapped,
+                      .at[0], .at[1], .size[0], .size[1] ] | @tsv' <<<"$snap")
 
         for a in "${!base[@]}"; do
             [[ -n ${cur[$a]:-} ]] || unset 'base[$a]' 'pend[$a]'
@@ -546,16 +694,24 @@ while IFS= read -r line <&3; do
             class=${class%%,*}
             addr_full="0x${addr}"
 
-            # Mark as freshly opened so a self-maximize-on-open (Thunderbird
-            # popups) isn't re-handled by the fullscreen branch. Cleared after
-            # 2s so a genuine user maximize later on is not suppressed.
-            touch "$grace_dir/$addr_full"
-            ( sleep 2; rm -f "$grace_dir/$addr_full" ) &
-
             verdict=$(hypr_policy_for "$class")
             [[ $verdict == never ]] && continue
 
+            # Mark as freshly opened so a self-maximize-on-open (Thunderbird
+            # popups) isn't also handled by the fullscreen branch while this one
+            # still has the window. Dropped by the subshell's own EXIT trap —
+            # the marker means "the openwindow handler is busy with this
+            # window", so the handler is the only thing that knows when it
+            # stops being true.
+            touch "$grace_dir/$addr_full"
+
+            # Belt and braces: if that subshell ever wedged, the marker would
+            # suppress the fullscreen branch for this address forever. Nothing
+            # in there can block for anything like 30s.
+            ( sleep 30; rm -f "$grace_dir/$addr_full" ) &
+
             (
+                trap 'rm -f "$grace_dir/$addr_full"' EXIT
                 sleep 0.05
 
                 # Not a main window -> leave it exactly as it asked to be.
@@ -615,13 +771,42 @@ while IFS= read -r line <&3; do
                 # Don't fight the openwindow branch over a self-maximize-on-open.
                 [[ -e $grace_dir/$addr ]] && exit 0
 
-                # Drop the native maximize state, then apply the custom,
-                # stateless work-area maximize + stripped chrome (== mod+m).
-                # Dispatching state 0 fires fullscreen>>0, which this branch
-                # ignores, so there's no feedback loop.
+                # ...and don't fight the client either. A window that keeps
+                # asking to be maximized gets to stay maximized; see fight_ok.
+                fight_ok "$addr" || exit 0
+
+                # Drop the native maximize state, then give the window the
+                # custom, stateless work-area maximize + stripped chrome
+                # (== mod+m). Dispatching state 0 fires fullscreen>>0, which
+                # this branch ignores, so we never answer our own event.
                 hyprctl dispatch fullscreenstate "0 0,address:$addr" >/dev/null
                 sleep 0.05
-                hypr_set_max "$addr"
+
+                # Only WRITE a geometry that isn't already there. Hyprland's
+                # native maximize is the work area too, so a window arriving
+                # here is usually wearing the exact rectangle we would apply —
+                # and re-applying it is not free. Every resize/move here races
+                # Hyprland's own restore-after-unmaximize over the same numbers,
+                # and the two do not agree on whether the box includes the
+                # hyprbars title bar. One round of that is invisible; a client
+                # that re-asserts maximize several times a second turns it into
+                # a drift that accumulates instead of cancelling, and the window
+                # walks off the screen. The chrome is idempotent, so it is
+                # applied either way — it is the part that actually differs from
+                # what the native maximize leaves behind.
+                #
+                # This does NOT stop the argument, because the client's request
+                # genuinely changed the state each time and there is nothing to
+                # be idempotent ABOUT. Not writing pixels only makes the
+                # argument harmless to look at. fight_ok is what ends it.
+                read -r cw ch < <(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr" \
+                    '.[] | select(.address == $a) | "\(.size[0]) \(.size[1])"')
+                if [[ -n ${cw:-} && $cw != null ]] && hypr_work_area_for "$addr" \
+                    && hypr_fills_work_area "$cw" "$ch"; then
+                    hyprctl --batch "$(hypr_chrome "$addr" max)" >/dev/null
+                else
+                    hypr_set_max "$addr"
+                fi
             ) &
             ;;
 
@@ -725,6 +910,11 @@ while IFS= read -r line <&3; do
             # Format: closewindow>>ADDRESS
             addr=${line#closewindow>>}
             addr_full="0x${addr}"
+
+            # Both are keyed by address and Hyprland reuses addresses, so they
+            # go the moment the window does — before any of the `continue`s
+            # below can skip past it.
+            rm -f "$grace_dir/$addr_full" "$fight_dir/$addr_full"
 
             # Try a live query first — closewindow often fires before
             # Hyprland drops the window from its client list, giving us
