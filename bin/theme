@@ -47,7 +47,11 @@ fi
 # on only one monitor.
 if [[ -d ~/.config/eww ]] && pgrep -x eww >/dev/null; then
     (cd ~/.config/eww/ && ln -sf "eww-$COLOR_SCHEME.scss" eww.scss)
-    setsid -f bash -c 'eww kill &>/dev/null; sleep 0.2; ~/.config/eww/scripts/eww-bars.sh &>/dev/null' &>/dev/null
+    # stderr goes to a log, not /dev/null. eww-bars.sh is the only thing that
+    # can say "eww daemon did not come up", and discarding that is why a failed
+    # respawn used to leave no bar AND no explanation — the switch looked like
+    # it had worked. stdout stays discarded; only the complaints are kept.
+    setsid -f bash -c 'eww kill &>/dev/null; sleep 0.2; ~/.config/eww/scripts/eww-bars.sh >/dev/null 2>>"${XDG_RUNTIME_DIR:-/tmp}/eww-bars.log"' &>/dev/null
 fi
 
 # --- Hyprland — flip the theme-aware border palette symlink, then reload ---

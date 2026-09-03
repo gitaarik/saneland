@@ -124,7 +124,13 @@ ensure_daemon() {
   [[ $(count_daemons) == 1 ]] && eww ping &>/dev/null && return 0
   stop_daemons
   eww daemon &>/dev/null
-  for (( i = 0; i < 50; i++ )); do          # up to 5s
+  # 15s, where this used to allow 5. A cold start has to bring up GTK, compile
+  # the SCSS and bind the socket, and GTK statfs()es every mount in
+  # /proc/mounts on the way — so a loaded machine, or a network mount that is
+  # slow to answer, can push the first ping past 5s. Giving up early is not
+  # harmless: sync_bars retries once and then leaves the session with no bar at
+  # all, which is how a `theme` switch lost the bar outright.
+  for (( i = 0; i < 150; i++ )); do         # up to 15s
     eww ping &>/dev/null && return 0
     sleep 0.1
   done
@@ -239,6 +245,38 @@ sync_bars() {
 
 sync_bars
 
+# Re-open bars that went missing WITHOUT a monitor event.
+#
+# The watcher only ever woke on monitoradded/monitorremoved, which misses the
+# way the bar actually goes missing in practice: `theme` restarts the daemon on
+# every palette switch, and a restart that loses the race in ensure_daemon —
+# the daemon blocked on something slow during startup and missed the ping
+# window — ends with a live daemon holding no windows at all. The monitor list
+# never changed, so nothing ever asked for the bar again and it stayed gone
+# until the next hotplug or a hand-run of this script.
+#
+# The case that prompted this: a dead sshfs mount under $HOME. GTK statfs()es
+# every mount at startup, so the fresh daemon blocked in the kernel on the
+# unreachable NAS, came up long after sync_bars had given up, and sat there
+# empty. Fixing the mount stops the wedge; this stops a wedge from being
+# permanent.
+#
+# Cheap enough for an idle tick: two reads and a string compare when all is well.
+heal_bars() {
+  local n open i
+  n=$(hyprctl monitors -j 2>/dev/null | jq -r 'length' 2>/dev/null)
+  [[ $n =~ ^[0-9]+$ ]] || return 0    # hyprctl mid-hotplug, or no compositor
+  (( n > 0 )) || return 0
+  open=$(eww active-windows 2>/dev/null | cut -d: -f1)
+  for (( i = 0; i < n; i++ )); do
+    if ! grep -qx "bar-$i" <<<"$open"; then
+      echo "eww-bars.sh: bar-$i is missing; re-syncing" >&2
+      sync_bars
+      return 0
+    fi
+  done
+}
+
 if [[ ${1:-} == --watch ]]; then
   # Re-sync whenever Hyprland reports a monitor change. Same socket2 + ncat
   # pattern as popup-toggle.sh's dismiss listener. The short sleep lets GDK
@@ -254,12 +292,33 @@ if [[ ${1:-} == --watch ]]; then
   trap 'kill $ncat_pid 2>/dev/null' EXIT
   trap 'exit' INT TERM
 
-  while IFS= read -r line <&3; do
-    case "$line" in
-      monitoradded*|monitorremoved*)
-        sleep 0.5
-        sync_bars
-        ;;
-    esac
+  # The heal check is driven by ELAPSED TIME, not by `read` timing out.
+  # socket2 carries every window and workspace event, so on a machine in use
+  # `read` almost never reaches its timeout — hanging the check off the timeout
+  # alone means it fires only when the desktop sits completely idle, which is
+  # exactly when nobody is looking at the bar. (Measured: a missing bar was
+  # still missing 90s later while the session was in use.) The -t is still
+  # needed for the opposite case — an idle session would otherwise block in
+  # `read` forever and never check at all.
+  heal_every=60
+  last_heal=$SECONDS
+  while :; do
+    if IFS= read -r -t "$heal_every" line <&3; then
+      case "$line" in
+        monitoradded*|monitorremoved*)
+          sleep 0.5
+          sync_bars
+          last_heal=$SECONDS
+          ;;
+      esac
+    else
+      # >128 is the -t timeout. Anything else is EOF: the compositor is gone
+      # and there is nothing left to watch.
+      (( $? > 128 )) || break
+    fi
+    if (( SECONDS - last_heal >= heal_every )); then
+      heal_bars
+      last_heal=$SECONDS
+    fi
   done
 fi
