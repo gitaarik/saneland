@@ -627,14 +627,31 @@ without that line the node inherits `global` at speed 0 and every step snaps.
 200ms is deliberately short: each event re-aims the goal mid-flight, so a long
 curve keeps travelling after you stop scrolling and reads as lag.
 
-**Touchpad scroll can't reach a bind at all.** `onAxisEvent` only looks at
-events whose source is `WL_POINTER_AXIS_SOURCE_WHEEL`; touchpad scrolling is
-`SOURCE_FINGER` and is never matched against `mouse_up`/`mouse_down`. No bind
-can be written for it. The touchpad uses a trackpad gesture instead —
-`gesture = 2, pinch, mod:SUPER, cursorZoom, 1, live`, a built-in that zooms
-continuously with the pinch, anchored at the cursor. `mod:SUPER` is what keeps
-apps' own pinch-zoom intact, since gesture matching compares the modifier mask
-exactly.
+**Touchpad scroll can't reach a bind at all, and can't reach a gesture
+either.** `onAxisEvent` only looks at events whose source is
+`WL_POINTER_AXIS_SOURCE_WHEEL`; touchpad scrolling is `SOURCE_FINGER`, which in
+the whole tree is read for nothing but the scroll factor and pointer-frame
+deferral. And the gesture system is fed exclusively by libinput's swipe and
+pinch events, never by axis events — while libinput reserves two-finger motion
+for scrolling and only reports swipes from three fingers up. So a
+super+two-finger-scroll zoom is not a config gap, it is an event that neither
+path is offered; the only hook that sees it is the cancellable
+`input.mouse.axis` bus event, i.e. a compiled plugin.
+
+The touchpad uses trackpad gestures instead, in two flavours:
+
+- `gesture = 2, pinch, mod:SUPER, cursorZoom, 1, live` — continuous, tracking
+  the pinch and anchored at the cursor. `mod:SUPER` is what keeps apps' own
+  pinch-zoom intact, since gesture matching compares the modifier mask exactly.
+- `gesture = 3, up|down, cursorZoom, 1.4|0.714, mult` — one step per
+  three-finger vertical swipe, no modifier. `mult` fires when the swipe is
+  recognised (~5px in) rather than on release, which is why it isn't a
+  `dispatcher` gesture calling `hypr-zoom`: `CDispatcherTrackpadGesture`
+  dispatches from `end()`. The factors are inverses so up-then-down lands back
+  on exactly 1:1 via the gesture's own clamp, and swipe direction is raw finger
+  motion, unaffected by `natural_scroll` (that inverts scroll axis events, not
+  gesture deltas). Note `mult` walks every monitor, where the wheel and pinch
+  paths zoom only the one under the cursor.
 
 The seam between the two: the gesture moves the monitor's zoom as compositor
 state without updating `cursor:zoom_factor`, and nothing exposes that value (not

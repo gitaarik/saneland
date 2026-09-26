@@ -38,8 +38,8 @@ one-command **light/dark theme switcher** that repaints the whole session.
   near the horizon. The theme itself never changes on its own.
 - **Quality-of-life Hyprland scripts** — MRU Alt-Tab, window snapping /
   centering / maximize-toggle, scroll-to-switch workspaces, a desktop
-  magnifier on super+scroll (super+pinch on the touchpad), brightness &
-  battery helpers.
+  magnifier on super+scroll (super+pinch or a three-finger swipe on the
+  touchpad), brightness & battery helpers.
 - **No windows lost to a hot-plug** — unplug a screen and its windows merge
   into the same-numbered desktop on the screen that's left, instead of
   stranding themselves on desktops no key can reach. Plug it back in and they
