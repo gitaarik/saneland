@@ -579,6 +579,68 @@ because Hyprland posts `movewindow` from the one function that reassigns a
 window's workspace, so dragging a window across the monitor boundary goes
 through it too.
 
+## Zoom: why super+scroll needed two different mechanisms
+
+The magnifier (`hypr-zoom`, super+scroll) drives Hyprland's own
+`cursor:zoom_factor`. Two compositor details shaped everything around it, and
+both first showed up as the same symptom — the window under the cursor
+scrolling while the screen zoomed.
+
+**`binds:scroll_event_delay` forwards the events it suppresses.** It reads like
+a debounce for scroll binds (default 300ms), but
+`CKeybindManager::onAxisEvent` returns `true` while the timer is unexpired, and
+`CInputManager::onMouseWheel` treats that return value as *pass the event to
+the client*. A bind only consumes an event it actually handled. So at the
+default you get one zoom step per 300ms and every other scroll event is
+delivered to the surface under the cursor. Setting it to `0` is what makes
+super+scroll swallow the wheel; it is safe globally here because the zoom binds
+are the only scroll binds in the config (the bar's scroll-to-switch-workspaces
+is an eww `:onscroll` handler on a layer surface, which never went through this
+timer and keeps its own debounce in `eww/scripts/hypr-scroll.sh`).
+
+**With the delay at 0, one notch is many events.** Keybind dispatch runs per
+axis event, and a high-resolution wheel (`REL_WHEEL_HI_RES`, which libinput
+delivers as v120 fractions) produces roughly 8-15 of them per physical detent.
+So `hypr-zoom` is written for a burst: its step is per event and small
+(~1.05, ≈1.48 per notch), and the work splits into *accumulate* under a lock —
+every copy of the script, because unserialized read-modify-write silently drops
+half the scroll — and *push*, which one copy at a time does while re-reading the
+accumulated value, collapsing a burst into a handful of `hyprctl` calls. One
+serialized `hyprctl` per event was correct but measured 153ms for 16 events,
+i.e. a visible catch-up after every flick. Between bursts (0.5s of quiet, the
+same timeout libinput and Hyprland use for their own scroll accumulators) the
+script re-reads the compositor, so `hyprctl reload`, super+0 or a manual
+`hyprctl keyword` can't leave it zooming from a factor that no longer exists.
+
+**Speed comes from the gap between events, smoothness from the compositor.**
+The same timestamp that decides the re-read is also the velocity signal: the
+step is raised to a boost derived from the gap since the previous event (no
+boost at 25ms or slower, up to 2.5× the exponent at the ~8ms the wheel manages
+flat out), so a flick crosses the range while a slow turn still lands on an
+aimable level. This works because the wheel reports at a fixed rate and encodes
+speed as bigger v120 fractions per report — spinning faster means more events
+per second, not more events per notch. The gliding between levels is none of
+the script's doing: `hyprctl keyword cursor:zoom_factor` assigns to an animated
+variable (`HyprCtl.cpp`, the `zoom_factor` branch), so it is `animation =
+zoomFactor, 1, 2, default` in the animations block that interpolates, and
+without that line the node inherits `global` at speed 0 and every step snaps.
+200ms is deliberately short: each event re-aims the goal mid-flight, so a long
+curve keeps travelling after you stop scrolling and reads as lag.
+
+**Touchpad scroll can't reach a bind at all.** `onAxisEvent` only looks at
+events whose source is `WL_POINTER_AXIS_SOURCE_WHEEL`; touchpad scrolling is
+`SOURCE_FINGER` and is never matched against `mouse_up`/`mouse_down`. No bind
+can be written for it. The touchpad uses a trackpad gesture instead —
+`gesture = 2, pinch, mod:SUPER, cursorZoom, 1, live`, a built-in that zooms
+continuously with the pinch, anchored at the cursor. `mod:SUPER` is what keeps
+apps' own pinch-zoom intact, since gesture matching compares the modifier mask
+exactly.
+
+The seam between the two: the gesture moves the monitor's zoom as compositor
+state without updating `cursor:zoom_factor`, and nothing exposes that value (not
+even `hyprctl monitors`), so the first wheel notch after a pinch jumps to
+whatever the wheel path last knew. super+0 resets either one.
+
 ## hyprbars
 
 Hyprland draws no title bars by default. The `plugin { hyprbars { … } }` block

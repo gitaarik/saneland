@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+#
+# Magnify the output the cursor is on.
+#
+# Usage: hypr-zoom in|out|reset [STEP]
+#
+# Thin wrapper around Hyprland's built-in magnifier (cursor:zoom_factor), which
+# scales a whole OUTPUT around the cursor. Consequences worth knowing before
+# reaching for it:
+#   - It is an output transform, not a window effect, so the eww bar and its
+#     popups are magnified along with the windows. Nothing to opt out of.
+#   - You aim by moving the mouse. There is no region to select, and no way to
+#     zoom somewhere the pointer isn't.
+#   - Hyprland applies it per output, so on a second screen it magnifies the
+#     screen the cursor sits on and leaves the other at 1:1.
+#
+# Bound to super+scroll, with super+0 to snap back to 1:1 (hyprland.conf). The
+# touchpad gets super+pinch instead, via a `gesture` line there — scroll binds
+# never fire for touchpad scroll; see the comment on that gesture.
+#
+# The MOTION between steps is not done here: `hyprctl keyword` assigns to an
+# animated variable inside the compositor (HyprCtl.cpp, the zoom_factor branch),
+# so the smoothness is whatever `animation = zoomFactor, …` says in
+# hyprland.conf. This script only ever names a target.
+#
+# Steps are MULTIPLICATIVE (× / ÷ STEP) rather than a fixed increment, for the
+# reason brightness-step spends two bands on: +0.25 is an enormous jump at 1.0
+# and an imperceptible one at 6.0. One ratio covers the whole range instead.
+#
+# STEP IS PER EVENT, NOT PER DETENT, and a high-resolution wheel sends several
+# events per physical detent (the Logitech here has REL_WHEEL_HI_RES; libinput
+# then delivers v120 fractions, typically 8-15 of them per notch, and Hyprland
+# runs this script for every one — binds:scroll_event_delay = 0 in hyprland.conf
+# is deliberate, see the note there). Hence a default well under what a
+# per-notch step would be: ~1.05^8 ≈ 1.48 per notch. A plain non-hi-res wheel
+# gets ONE event per notch and wants roughly 1.4 passed in the bind instead.
+#
+# cursor:zoom_rigid is left at its default (false): the cursor roams inside the
+# magnified view and pans at the edges, which reads better than dragging a
+# cursor-locked viewport around. If you prefer the cursor pinned to the centre,
+# put `cursor { zoom_rigid = true }` in local.conf.
+
+set -uo pipefail
+
+dir=${1:?Usage: hypr-zoom in|out|reset [STEP]}
+step=${2:-1.05}
+max=8               # ~8× is past useful on a 1080p-class panel; it only bounds runaway scrolling
+resync=0.5          # seconds of quiet after which we re-read the compositor (see below)
+
+# Spin the wheel faster and each event counts for more: the step is raised to
+# the power of a boost derived from the gap since the previous event, so a flick
+# crosses the range while a slow turn still lands on a level you can aim at.
+#
+# The gap is a usable speed signal because the wheel reports at a fixed rate and
+# encodes speed as bigger v120 fractions per report: spinning faster means more
+# events per second (up to the report rate), not more events per notch. Measured
+# ends of the range are ~8ms between events flat out and ~125ms turning slowly.
+#
+# KNEE is the gap that earns no boost; anything quicker scales up towards
+# BOOSTMAX, so per-notch zoom runs from step^8 at a crawl to step^(8*BOOSTMAX)
+# at speed. Both are the dials to turn if the feel is wrong.
+knee=0.025
+boostmax=2.5
+
+state=${XDG_RUNTIME_DIR:-/tmp}/hypr-zoom.$UID
+now=$EPOCHREALTIME
+
+# Every event of a burst starts its own copy of this script, so the work is
+# split in two: ACCUMULATE, which every copy does under a lock, and PUSH, which
+# exactly one copy does at a time and which coalesces whatever the others
+# accumulated meanwhile. Unserialized accumulation loses updates outright (two
+# copies read 1.05, both write 1.10, half the scroll evaporates); a serialized
+# hyprctl call per event is correct but slow — 16 events measured 153ms, so a
+# brisk flick spent half a second catching up with the wheel.
+#
+# `-w` rather than an indefinite wait because a lost race is nothing to hang
+# on: the compositor has already swallowed the event, so the worst case is one
+# step that didn't count.
+exec 9>"$state.lock" || exit 0
+flock -w 0.4 9 || exit 0
+
+case "$dir" in
+    reset) new=1 ;;
+    in|out)
+        # Whose idea of the current factor do we trust? Ours, during a burst;
+        # the compositor's, when starting fresh. `hyprctl getoption` is a
+        # round-trip we'd otherwise pay on every one of those 8-15 events per
+        # notch, and it is not even authoritative: the super+pinch gesture
+        # moves the monitor's real zoom WITHOUT updating cursor:zoom_factor
+        # (it's compositor-internal state — nothing exposes it, not even
+        # `hyprctl monitors`). But a stale cache is worse: `hyprctl reload`,
+        # super+0 and any manual `hyprctl keyword` all reset the zoom, and we'd
+        # happily keep zooming from a factor that no longer exists.
+        #
+        # So: re-read after $resync seconds of quiet, i.e. once per gesture
+        # rather than once per event. 0.5s is libinput's own scroll timeout,
+        # the same number Hyprland uses to reset its scroll accumulator. The
+        # same read decides the boost, since a first event has no gap to
+        # measure and so gets none.
+        cur="" gap=""
+        if [[ -r $state ]]; then
+            read -r saved_f saved_t < "$state" || true
+            read -r cur gap < <(awk -v s="${saved_t:-0}" -v n="$now" -v w="$resync" -v f="${saved_f:-}" \
+                                    'BEGIN { if (f != "" && n - s <= w) printf "%s %.6f", f, n - s }')
+        fi
+        if [[ -z $cur ]]; then
+            cur=$(hyprctl getoption -j cursor:zoom_factor | jq -r '.float')
+            gap=""
+        fi
+
+        new=$(awk -v cur="$cur" -v step="$step" -v max="$max" -v dir="$dir" \
+                  -v gap="${gap:-}" -v knee="$knee" -v boostmax="$boostmax" 'BEGIN {
+            boost = 1
+            if (gap != "") {
+                boost = (gap <= 0) ? boostmax : knee / gap
+                if (boost < 1) boost = 1
+                if (boost > boostmax) boost = boostmax
+            }
+            s = step ^ boost
+
+            f = (dir == "in") ? cur * s : cur / s
+            if (f > max) f = max
+            # Snap anything within a step of 1:1 back to exactly 1. Dividing
+            # never lands on 1.0 exactly, and a factor of 1.0001 keeps the
+            # output in magnified mode: scaled by nothing anyone can see, but
+            # still resampled, so text stays faintly soft and never crisps up
+            # again however far you scroll out.
+            if (f < 1.02) f = 1
+            # Print nothing when the value is unchanged (already at a clamp),
+            # so further notches in that direction cost no hyprctl round-trip.
+            if (f != cur) printf "%.4f", f
+        }')
+        [[ -z $new ]] && exit 0
+        ;;
+    *)
+        echo "Usage: $0 in|out|reset [STEP]" >&2
+        exit 1
+        ;;
+esac
+
+printf '%s %s\n' "$new" "$now" > "$state"
+flock -u 9
+
+# PUSH. One pusher at a time; the rest just leave their contribution in the
+# state file and go, because the pusher re-reads it after every write and keeps
+# going until what it wrote is what the file says. A burst of ~8 events per
+# notch therefore costs a handful of hyprctl calls instead of one each, and the
+# zoom trails the wheel by about one round-trip instead of by the whole flick.
+exec 8>"$state.writer" || exit 0
+flock -n 8 || exit 0
+
+pushed=
+while :; do
+    flock -w 0.4 9 || break
+    read -r want _ < "$state" || want=$pushed
+    flock -u 9
+
+    [[ $want == "$pushed" ]] && break
+    hyprctl keyword cursor:zoom_factor "$want" >/dev/null
+    pushed=$want
+done
