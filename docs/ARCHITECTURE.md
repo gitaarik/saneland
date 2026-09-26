@@ -653,8 +653,16 @@ The touchpad uses trackpad gestures instead, in two flavours:
   gesture deltas). Note `mult` walks every monitor, where the wheel and pinch
   paths zoom only the one under the cursor.
 
-The seam between the two: the gesture moves the monitor's zoom as compositor
-state without updating `cursor:zoom_factor`, and nothing exposes that value (not
+**The keyboard binds are spelled `equal`, not `plus`.** Bind matching resolves
+a keycode through an xkb state that `CKeybindManager` creates fresh and never
+feeds modifier updates to, so it always sees the unshifted symbol —
+`$mod SHIFT, plus` can't fire, while `$mod SHIFT, equal` does. They are `binde`
+(repeat) with a per-press step of 1.1, which also lands outside the velocity
+boost: repeats arrive 40ms apart at the default 25/s rate, slower than the 25ms
+knee, so a held key zooms at a constant rate while a flicked wheel accelerates.
+
+The seam between the wheel and the gestures: a gesture moves the monitor's zoom
+as compositor state without updating `cursor:zoom_factor`, and nothing exposes that value (not
 even `hyprctl monitors`), so the first wheel notch after a pinch jumps to
 whatever the wheel path last knew. super+0 resets either one.
 
