@@ -387,6 +387,18 @@ def _keyboard_event_paths():
                 paths.add(os.path.realpath(link))
             except OSError:
                 continue
+    # A remapper like keyd grabs the physical keyboards exclusively (EVIOCGRAB)
+    # and re-emits everything from a uinput device, which gets no by-path /
+    # by-id link. Without this the physical nodes above go silent and we'd
+    # never see Alt released.
+    for name_file in glob.glob("/sys/class/input/event*/device/name"):
+        try:
+            with open(name_file) as f:
+                name = f.read().strip()
+        except OSError:
+            continue
+        if name == "keyd virtual keyboard":
+            paths.add("/dev/input/" + name_file.split("/")[4])
     return sorted(paths)
 
 

@@ -83,6 +83,10 @@ open the keyboard device and falls back to a timer whose guesses are exactly
 what makes MRU order feel "mixed up". Hyprland's `bindr` on `Alt_L` release was
 tried first but doesn't fire reliably in this build.
 
+If a remapper like keyd is running it grabs the physical keyboards exclusively,
+so their nodes go silent; the daemon also opens the `keyd virtual keyboard`
+uinput device (found by name in `/sys/class/input`) to keep seeing Alt.
+
 Empty workspaces are part of the MRU too: switching to an empty desktop pushes a
 `ws:<id>` sentinel, so Alt-Tab toggles between an empty desktop and the last
 window like it toggles two windows.
