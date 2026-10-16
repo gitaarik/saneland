@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+#
+# hypr-gather-windows — move every window onto ONE screen, each keeping its
+# tag. Bound to mod+g as a toggle: plug in the external, press it, and the
+# external becomes the main screen with everything you had open; press it
+# again and it all goes back to the laptop.
+#
+# "Keeping its tag" is in the per-screen sense of hypr-workspace: monitors
+# sorted by Hyprland id, rank r -> offset r*12, so laptop tag 3 (workspace 3)
+# lands on external tag 3 (workspace 15). Windows grouped on a tag stay grouped
+# and are found under the same number key as before.
+#
+# The target screen is then switched to the tag that was showing on the screen
+# you were working on, and focus follows the window you had focused — so the
+# view carries over to the new screen instead of opening on some other tag.
+#
+# Usage:
+#   hypr-gather-windows          toggle: onto the LAST screen (highest id — the
+#                                external, or the newest one if there are two),
+#                                or, when everything is already there, back
+#                                onto the FIRST (the laptop)
+#   hypr-gather-windows last     onto the last screen, never back
+#   hypr-gather-windows first    onto the first screen
+#   hypr-gather-windows here     onto the screen holding the focused window
+#   hypr-gather-windows NAME     onto that connector, e.g. DP-2
+#
+# The way back is "everything onto the laptop", not "each window to where it
+# was": a window that already lived on the external before the first press
+# comes along too. Telling the two apart would need a record of every move,
+# and the use this exists for — the laptop is where everything was — never
+# needs it.
+#
+# Sizes need nothing here: hypr-max-on-open's movewindow handler re-maximizes
+# (or re-snaps) a window that arrives on a screen wearing another screen's
+# work area.
+#
+# Undocking needs nothing either: hypr-adopt-orphans merges the external's
+# tags back into the laptop's when it goes away, and sends them home again
+# when it returns.
+
+set -uo pipefail
+
+# Workspaces per screen. Must match hypr-workspace, hypr-workspace-blocks,
+# hypr-state.sh, hypr-scroll.sh and hypr-adopt-orphans.
+WS_PER_MON=12
+
+monitors=$(hyprctl -j monitors 2>/dev/null) || exit 1
+clients=$(hyprctl -j clients 2>/dev/null) || exit 1
+active=$(hyprctl -j activewindow 2>/dev/null)
+[[ -n $active ]] || active='{}'
+
+# The screen being worked on: the focused window's, else the focused monitor
+# (same rule as hypr-workspace).
+cur=$(jq -r '.monitor // empty' <<<"$active")
+[[ $cur =~ ^[0-9]+$ ]] \
+    || cur=$(jq -r 'map(select(.focused))[0].id // empty' <<<"$monitors")
+
+first=$(jq -r 'min_by(.id).id' <<<"$monitors")
+last=$(jq -r 'max_by(.id).id' <<<"$monitors")
+
+case ${1:-toggle} in
+    toggle)
+        # Anything (outside a special workspace) not on the last screen yet?
+        # Then gather there; otherwise the gather is done, so send it back.
+        stray=$(jq --argjson l "$last" \
+            'map(select(.workspace.id > 0 and .monitor != $l)) | length' <<<"$clients")
+        (( stray > 0 )) && target=$last || target=$first
+        ;;
+    last)  target=$last ;;
+    first) target=$first ;;
+    here) target=$cur ;;
+    *)    target=$(jq -r --arg n "$1" 'map(select(.name == $n))[0].id // empty' <<<"$monitors") ;;
+esac
+[[ $target =~ ^[0-9]+$ ]] || { echo "hypr-gather-windows: no such screen: $1" >&2; exit 1; }
+
+# One jq pass over one snapshot: the moves, the tag to show, the target's name.
+plan=$(jq -n \
+    --argjson monitors "$monitors" \
+    --argjson clients "$clients" \
+    --argjson target "$target" \
+    --argjson cur "${cur:-$target}" \
+    --argjson per "$WS_PER_MON" '
+    ($monitors | sort_by(.id) | map(.id)) as $ranks
+    | (($ranks | index($target)) * $per)  as $off
+    | def tag: ((. - 1) % $per) + 1;
+
+    # Special workspaces (negative ids) stay where they are.
+    {moves: [ $clients[]
+              | select(.workspace.id > 0 and .monitor != $target)
+              | {addr: .address, ws: ($off + (.workspace.id | tag))} ],
+     # The tag that was on screen where you were working, carried over.
+     show: ( ($monitors | map(select(.id == $cur))[0].activeWorkspace.id) as $w
+             | if ($w // 0) > 0 then $off + ($w | tag) else empty end ),
+     name:    ($monitors | map(select(.id == $target))[0].name),
+     curname: ($monitors | map(select(.id == $cur))[0].name)}
+')
+
+moves=$(jq -r '.moves[] | "dispatch movetoworkspacesilent \(.ws),address:\(.addr)"' <<<"$plan")
+show=$(jq -r '.show // empty' <<<"$plan")
+name=$(jq -r '.name' <<<"$plan")
+curname=$(jq -r '.curname // empty' <<<"$plan")
+
+[[ -n $moves ]] || exit 0   # everything is already there
+
+# One batch, so Hyprland applies the whole move as one step. `silent` keeps the
+# view still while the windows go; the view is moved deliberately below.
+batch=$(awk 'NR > 1 { printf " ; " } { printf "%s", $0 } END { print "" }' <<<"$moves")
+hyprctl --batch "$batch" >/dev/null 2>&1
+
+# Show the carried-over tag on the target screen. focusmonitor is the only way
+# to aim a workspace switch at a screen, and it silently no-ops when Hyprland
+# already thinks that screen is focused (e.g. an empty screen holding focus),
+# so step through the current one first.
+if [[ -n $show ]]; then
+    hyprctl --batch "dispatch focusmonitor ${curname:-$name} ; dispatch focusmonitor $name ; dispatch focusworkspaceoncurrentmonitor $show" >/dev/null 2>&1
+fi
+
+# Hand focus back to the window you had — it is on the target screen now.
+addr=$(jq -r '.address // empty' <<<"$active")
+[[ -n $addr ]] && hyprctl dispatch focuswindow "address:$addr" >/dev/null
+exit 0
