@@ -196,6 +196,144 @@ monitors_settling() {
     (( now - mtime < monitor_settle_secs ))
 }
 
+# Every screen's work area as it was last seen, one `NAME X Y W H` per line —
+# including screens that are no longer connected. The movewindow handler spots a
+# window that was maximized or snapped elsewhere by matching its size against
+# some other screen's work area, and the screen a window has just LOST is the
+# one `hyprctl monitors` can no longer tell it about: unplug the external and
+# every window comes across wearing a rectangle of a screen that doesn't exist,
+# matches nothing, and stays too big for the laptop. Kept up to date by the
+# poller, which owns the only place that would notice a change.
+areas_file=$state_dir/work-areas
+
+# Record the work area of every connected screen, keeping the entries of the
+# ones that are gone. Measured with hypr_work_area for its exact scale: the
+# rounded one hyprctl reports is ~4px off on the laptop panel, more than the
+# slack hypr_fills_work_area allows.
+remember_work_areas() {
+    local id name rest
+    local -a lines=()
+    local -A live=()
+    while read -r id; do
+        hypr_work_area "$id" || continue
+        lines+=("$WORK_MON $WORK_X $WORK_Y $WORK_W $WORK_H")
+        live[$WORK_MON]=1
+    done < <(hyprctl -j monitors 2>/dev/null | jq -r '.[].id')
+    (( ${#lines[@]} )) || return 0
+    # The old file is read into the list first, rather than inside the
+    # redirect: the exit status of a filtering loop is whatever its last test
+    # happened to return, which made "did the write work" depend on whether the
+    # last line read was a connected screen — and the mv never ran.
+    if [[ -r $areas_file ]]; then
+        while read -r name rest; do
+            if [[ -n $name && -z ${live[$name]:-} ]]; then
+                lines+=("$name $rest")
+            fi
+        done <"$areas_file"
+    fi
+    printf '%s\n' "${lines[@]}" >"$areas_file.tmp" && mv "$areas_file.tmp" "$areas_file"
+}
+
+# A floating window that was filling — or snapped to a half or quarter of —
+# another screen is given the same rectangle of the one it is on now. See the
+# "On move to another screen" part of the header; the movewindow handler and
+# the post-unplug pass both come through here.
+refit_window() {
+    local addr=$1 client w h x y mon_id here id o horiz vert
+    local dest_w dest_h dest_x dest_y name rest
+    local -a others=()
+    local -A live=()
+
+    client=$(hyprctl -j clients 2>/dev/null \
+        | jq -c --arg a "$addr" '.[]? | select(.address == $a)' 2>/dev/null)
+    [[ -z $client || $client == null ]] && return 0
+
+    # Floating only, and never a real fullscreen: a tiled window's size belongs
+    # to the layout, which re-tiles it on the new screen anyway, and fullscreen
+    # is a state Hyprland re-applies per monitor by itself. Both would only be
+    # fought here.
+    [[ $(jq -r '.floating'   <<<"$client") == true ]] || return 0
+    [[ $(jq -r '.fullscreen' <<<"$client") == 0    ]] || return 0
+
+    w=$(jq -r '.size[0]'  <<<"$client")
+    h=$(jq -r '.size[1]'  <<<"$client")
+    x=$(jq -r '.at[0]'    <<<"$client")
+    y=$(jq -r '.at[1]'    <<<"$client")
+    mon_id=$(jq -r '.monitor' <<<"$client")
+    [[ $mon_id =~ ^[0-9]+$ ]] || return 0   # not on a screen at all
+
+    # `.monitor` is the DESTINATION already: querying clients on the event
+    # itself reports the new screen (verified), so there is nothing to wait for
+    # and no address->monitor map to keep.
+    hypr_work_area "$mon_id" || return 0
+    here=$WORK_MON
+    dest_w=$WORK_W dest_h=$WORK_H dest_x=$WORK_X dest_y=$WORK_Y
+
+    # Already the right size for the screen it is on — maximized here, or
+    # snapped to a half or quarter of here. That covers every move that stayed
+    # on one monitor, and every move between two screens that happen to have
+    # the same work area.
+    hypr_fills_work_area "$w" "$h" && return 0
+    hypr_snap_axes "$w" "$h" && return 0
+
+    # The screens it may have come from: every other connected one, measured
+    # now, then every remembered one that is no longer connected.
+    live[$here]=1
+    while read -r id; do
+        hypr_work_area "$id" || continue
+        live[$WORK_MON]=1
+        [[ $WORK_MON == "$here" ]] && continue
+        others+=("$WORK_MON $WORK_X $WORK_Y $WORK_W $WORK_H")
+    done < <(hyprctl -j monitors 2>/dev/null | jq -r '.[].id')
+    [[ -r $areas_file ]] && while read -r name rest; do
+        [[ -n $name && -z ${live[$name]:-} ]] && others+=("$name $rest")
+    done <"$areas_file"
+
+    # Wearing a rectangle of one of those, so that is what it was until a
+    # moment ago: redo it for this one. hypr_set_max and hypr_set_snap both
+    # re-measure here and restore the matching chrome, which the window is
+    # still carrying.
+    for o in "${others[@]}"; do
+        read -r WORK_MON WORK_X WORK_Y WORK_W WORK_H <<<"$o"
+
+        if hypr_fills_work_area "$w" "$h"; then
+            hypr_set_max "$addr"
+            echo "hypr-max-on-open: refit $addr as maximized ($WORK_MON -> $here)" >&2
+            return 0
+        fi
+
+        # A snap's SIZE says which axis was halved; which SIDE of that axis it
+        # was on has to come from where the window sits, because a left and a
+        # right half are the same rectangle. Hyprland carries a floating window
+        # across at the same offset INTO the monitor and clamps it to fit when
+        # the new screen is smaller (measured: a right half off the 1920 Dell
+        # lands hard against the laptop's right edge), so the centre is compared
+        # against the midline of whichever screen is smaller on that axis — the
+        # source's when the offset survived intact, this one's when the clamp is
+        # what positioned it, and those are the same test.
+        hypr_snap_axes "$w" "$h" || continue
+        horiz='' vert=''
+        if [[ $SNAP_AXIS_X == half ]]; then
+            near_side $(( x + w / 2 - dest_x )) "$WORK_W" "$dest_w" \
+                && horiz=left || horiz=right
+        fi
+        if [[ $SNAP_AXIS_Y == half ]]; then
+            near_side $(( y + h / 2 - dest_y )) "$WORK_H" "$dest_h" \
+                && vert=top || vert=bottom
+        fi
+        hypr_set_snap "$addr" "$horiz" "$vert"
+        echo "hypr-max-on-open: refit $addr as a ${horiz:-full}/${vert:-full} snap of $WORK_MON on $here" >&2
+        return 0
+    done
+
+    # Matches no screen we know of, yet is too big for this one —
+    # nothing sensible to keep there, and maximized is what such a window was.
+    if (( w > dest_w || h > dest_h )); then
+        hypr_set_max "$addr"
+        echo "hypr-max-on-open: refit $addr (${w}x${h}, larger than $here) as maximized" >&2
+    fi
+}
+
 # Is a moved window's centre on the near side of an axis (left / top) rather
 # than the far one (right / bottom)?
 #
@@ -612,13 +750,25 @@ rescue_offscreen() {
         # than a hypr_work_area call per window. hyprctl's own scale is good
         # enough here, where hypr_work_area prefers wlr-randr's exact one: a few
         # px either way cannot change whether 100px of a window is on screen.
-        warea=()
-        while IFS=$'\t' read -r id wx wy ww wh; do
-            [[ -n $id ]] && warea[$id]="$wx $wy $ww $wh"
-        done < <(hyprctl -j monitors 2>/dev/null | jq -r '.[]
+        areas=$(hyprctl -j monitors 2>/dev/null | jq -r '.[]
             | [ .id, (.x + .reserved[0]), (.y + .reserved[1]),
                 ((.width  / .scale) - .reserved[0] - .reserved[2] | floor),
                 ((.height / .scale) - .reserved[1] - .reserved[3] | floor) ] | @tsv')
+        warea=()
+        while IFS=$'\t' read -r id wx wy ww wh; do
+            [[ -n $id ]] && warea[$id]="$wx $wy $ww $wh"
+        done <<<"$areas"
+
+        # The same list doubles as the change detector for areas_file, which is
+        # re-measured only when it differs — so a new screen is recorded within
+        # a tick, and again once its bar has reserved its space. Settling or
+        # not: an unplugged screen is not in the list, so its entry is never
+        # touched, and holding off for the settle window only lost a screen
+        # that had not been connected for long.
+        if [[ -n $areas && $areas != "${seen_areas:-}" ]]; then
+            remember_work_areas
+            seen_areas=$areas
+        fi
 
         cur=()
         while IFS=$'\t' read -r a cls ttl geom mon count float fs mapped x y w h; do
@@ -824,77 +974,27 @@ while IFS= read -r line <&3; do
             # monitor boundary arrives here too, and behaves the same.
             addr_full="0x${line#movewindow>>}"
             addr_full=${addr_full%%,*}
+            refit_window "$addr_full" &
+            ;;
 
+        monitorremoved'>>'*)
+            touch "$settle_file"
+
+            # Not every window that lost its screen is announced by a
+            # movewindow: Hyprland relocates the screen's workspaces wholesale,
+            # and hypr-adopt-orphans only moves the ones left out of range. So
+            # give every floating window the refit once things have settled —
+            # after that pass (0.5s) has put them on their new tags. Ones it
+            # moved have usually been refitted already, and come out of
+            # refit_window untouched.
+            # Inside the settle window, so the poller adopts the new sizes as
+            # Hyprland's doing rather than remembering them as yours.
             (
-                client=$(hyprctl -j clients 2>/dev/null \
-                    | jq -c --arg a "$addr_full" '.[]? | select(.address == $a)' 2>/dev/null)
-                [[ -z $client || $client == null ]] && exit 0
-
-                # Floating only, and never a real fullscreen: a tiled window's
-                # size belongs to the layout, which re-tiles it on the new
-                # screen anyway, and fullscreen is a state Hyprland re-applies
-                # per monitor by itself. Both would only be fought here.
-                [[ $(jq -r '.floating'   <<<"$client") == true ]] || exit 0
-                [[ $(jq -r '.fullscreen' <<<"$client") == 0    ]] || exit 0
-
-                w=$(jq -r '.size[0]'  <<<"$client")
-                h=$(jq -r '.size[1]'  <<<"$client")
-                x=$(jq -r '.at[0]'    <<<"$client")
-                y=$(jq -r '.at[1]'    <<<"$client")
-                mon_id=$(jq -r '.monitor' <<<"$client")
-                [[ $mon_id =~ ^[0-9]+$ ]] || exit 0   # not on a screen at all
-
-                # `.monitor` is the DESTINATION already: querying clients on the
-                # event itself reports the new screen (verified), so there is
-                # nothing to wait for and no address->monitor map to keep.
-                hypr_work_area "$mon_id" || exit 0
-                here=$WORK_MON
-                dest_w=$WORK_W dest_h=$WORK_H dest_x=$WORK_X dest_y=$WORK_Y
-
-                # Already the right size for the screen it is on — maximized
-                # here, or snapped to a half or quarter of here. That covers
-                # every move that stayed on one monitor, and every move between
-                # two screens that happen to have the same work area.
-                hypr_fills_work_area "$w" "$h" && exit 0
-                hypr_snap_axes "$w" "$h" && exit 0
-
-                # Wearing a rectangle of some OTHER screen, so that is what it
-                # was until a moment ago: redo it for this one. hypr_set_max and
-                # hypr_set_snap both re-measure here and restore the matching
-                # chrome, which the window is still carrying.
-                while read -r id; do
-                    hypr_work_area "$id" || continue
-                    [[ $WORK_MON == "$here" ]] && continue
-
-                    if hypr_fills_work_area "$w" "$h"; then
-                        hypr_set_max "$addr_full"
-                        break
-                    fi
-
-                    # A snap's SIZE says which axis was halved; which SIDE of
-                    # that axis it was on has to come from where the window
-                    # sits, because a left and a right half are the same
-                    # rectangle. Hyprland carries a floating window across at
-                    # the same offset INTO the monitor and clamps it to fit when
-                    # the new screen is smaller (measured: a right half off the
-                    # 1920 Dell lands hard against the laptop's right edge), so
-                    # the centre is compared against the midline of whichever
-                    # screen is smaller on that axis — the source's when the
-                    # offset survived intact, this one's when the clamp is what
-                    # positioned it, and those are the same test.
-                    hypr_snap_axes "$w" "$h" || continue
-                    horiz='' vert=''
-                    if [[ $SNAP_AXIS_X == half ]]; then
-                        near_side $(( x + w / 2 - dest_x )) "$WORK_W" "$dest_w" \
-                            && horiz=left || horiz=right
-                    fi
-                    if [[ $SNAP_AXIS_Y == half ]]; then
-                        near_side $(( y + h / 2 - dest_y )) "$WORK_H" "$dest_h" \
-                            && vert=top || vert=bottom
-                    fi
-                    hypr_set_snap "$addr_full" "$horiz" "$vert"
-                    break
-                done < <(hyprctl -j monitors 2>/dev/null | jq -r '.[].id')
+                sleep 1
+                echo "hypr-max-on-open: screen removed; refitting with $(wc -l <"$areas_file" 2>/dev/null || echo 0) known work area(s)" >&2
+                hyprctl -j clients 2>/dev/null \
+                    | jq -r '.[] | select(.floating and .fullscreen == 0 and .mapped) | .address' \
+                    | while read -r a; do refit_window "$a"; done
             ) &
             ;;
 
