@@ -177,6 +177,72 @@ fight_ok() {
     (( count <= fight_limit ))
 }
 
+# Swap a client's own maximize for the stateless work-area one (== mod+m).
+#
+#   adopt_native_max ADDRESS
+#
+# Hyprland's native maximize is a fullscreen mode, and a fullscreen window
+# breaks the stacking everything else here relies on: `alterzorder top` marks
+# the window it raises as allowed over fullscreen and never clears that mark
+# on the others, so once you have focused something else, focusing the
+# maximized window again gives it the keyboard and leaves it underneath.
+# Called by the fullscreen branch, and by the openwindow branch on the way out,
+# for a window that maximized itself while that branch had it — the
+# fullscreen branch stands aside for those, so without that second call
+# nothing would ever convert them (seen as a new kitty that got stuck behind
+# Telegram).
+adopt_native_max() {
+    local addr=$1
+    # eFullscreenMode: 0 none, 1 maximized, 2 fullscreen. Check both
+    # the client-requested and effective fields so the app maximize
+    # is caught however Hyprland records it — but never touch a real
+    # fullscreen (mode 2).
+    local client fc fe cw ch
+    client=$(hyprctl -j clients 2>/dev/null | jq -c --arg a "$addr" '.[] | select(.address == $a)')
+    [[ -n $client ]] || return 0
+    fc=$(jq -r '.fullscreenClient // 0' <<<"$client")
+    fe=$(jq -r '.fullscreen // 0'       <<<"$client")
+    [[ $fc == 2 || $fe == 2 ]] && return 0     # real fullscreen -> leave
+    [[ $fc == 1 || $fe == 1 ]] || return 0     # not a maximize   -> leave
+
+    # ...and don't fight the client either. A window that keeps
+    # asking to be maximized gets to stay maximized; see fight_ok.
+    fight_ok "$addr" || return 0
+
+    # Drop the native maximize state, then give the window the
+    # custom, stateless work-area maximize + stripped chrome
+    # (== mod+m). Dispatching state 0 fires fullscreen>>0, which
+    # the fullscreen branch ignores, so we never answer our own event.
+    hyprctl dispatch fullscreenstate "0 0,address:$addr" >/dev/null
+    sleep 0.05
+
+    # Only WRITE a geometry that isn't already there. Hyprland's
+    # native maximize is the work area too, so a window arriving
+    # here is usually wearing the exact rectangle we would apply —
+    # and re-applying it is not free. Every resize/move here races
+    # Hyprland's own restore-after-unmaximize over the same numbers,
+    # and the two do not agree on whether the box includes the
+    # hyprbars title bar. One round of that is invisible; a client
+    # that re-asserts maximize several times a second turns it into
+    # a drift that accumulates instead of cancelling, and the window
+    # walks off the screen. The chrome is idempotent, so it is
+    # applied either way — it is the part that actually differs from
+    # what the native maximize leaves behind.
+    #
+    # This does NOT stop the argument, because the client's request
+    # genuinely changed the state each time and there is nothing to
+    # be idempotent ABOUT. Not writing pixels only makes the
+    # argument harmless to look at. fight_ok is what ends it.
+    read -r cw ch < <(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr" \
+        '.[] | select(.address == $a) | "\(.size[0]) \(.size[1])"')
+    if [[ -n ${cw:-} && $cw != null ]] && hypr_work_area_for "$addr" \
+        && hypr_fills_work_area "$cw" "$ch"; then
+        hyprctl --batch "$(hypr_chrome "$addr" max)" >/dev/null
+    else
+        hypr_set_max "$addr"
+    fi
+}
+
 # Touched by the monitoradded/monitorremoved handler. Unplug an output and
 # Hyprland moves every workspace on it to a surviving screen, resizing the
 # windows to fit — none of which is a choice you made, but all of which looks
@@ -861,7 +927,7 @@ while IFS= read -r line <&3; do
             ( sleep 30; rm -f "$grace_dir/$addr_full" ) &
 
             (
-                trap 'rm -f "$grace_dir/$addr_full"' EXIT
+                trap 'rm -f "$grace_dir/$addr_full"; adopt_native_max "$addr_full"' EXIT
                 sleep 0.05
 
                 # Not a main window -> leave it exactly as it asked to be.
@@ -909,54 +975,11 @@ while IFS= read -r line <&3; do
                 addr=$(jq -r '.address // empty' <<<"$aw")
                 [[ -z $addr || $addr == null ]] && exit 0
 
-                # eFullscreenMode: 0 none, 1 maximized, 2 fullscreen. Check both
-                # the client-requested and effective fields so the app maximize
-                # is caught however Hyprland records it — but never touch a real
-                # fullscreen (mode 2).
-                fc=$(jq -r '.fullscreenClient // 0' <<<"$aw")
-                fe=$(jq -r '.fullscreen // 0'       <<<"$aw")
-                [[ $fc == 2 || $fe == 2 ]] && exit 0     # real fullscreen -> leave
-                [[ $fc == 1 || $fe == 1 ]] || exit 0     # not a maximize   -> leave
-
                 # Don't fight the openwindow branch over a self-maximize-on-open.
+                # It converts one itself when it lets go of the window.
                 [[ -e $grace_dir/$addr ]] && exit 0
 
-                # ...and don't fight the client either. A window that keeps
-                # asking to be maximized gets to stay maximized; see fight_ok.
-                fight_ok "$addr" || exit 0
-
-                # Drop the native maximize state, then give the window the
-                # custom, stateless work-area maximize + stripped chrome
-                # (== mod+m). Dispatching state 0 fires fullscreen>>0, which
-                # this branch ignores, so we never answer our own event.
-                hyprctl dispatch fullscreenstate "0 0,address:$addr" >/dev/null
-                sleep 0.05
-
-                # Only WRITE a geometry that isn't already there. Hyprland's
-                # native maximize is the work area too, so a window arriving
-                # here is usually wearing the exact rectangle we would apply —
-                # and re-applying it is not free. Every resize/move here races
-                # Hyprland's own restore-after-unmaximize over the same numbers,
-                # and the two do not agree on whether the box includes the
-                # hyprbars title bar. One round of that is invisible; a client
-                # that re-asserts maximize several times a second turns it into
-                # a drift that accumulates instead of cancelling, and the window
-                # walks off the screen. The chrome is idempotent, so it is
-                # applied either way — it is the part that actually differs from
-                # what the native maximize leaves behind.
-                #
-                # This does NOT stop the argument, because the client's request
-                # genuinely changed the state each time and there is nothing to
-                # be idempotent ABOUT. Not writing pixels only makes the
-                # argument harmless to look at. fight_ok is what ends it.
-                read -r cw ch < <(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr" \
-                    '.[] | select(.address == $a) | "\(.size[0]) \(.size[1])"')
-                if [[ -n ${cw:-} && $cw != null ]] && hypr_work_area_for "$addr" \
-                    && hypr_fills_work_area "$cw" "$ch"; then
-                    hyprctl --batch "$(hypr_chrome "$addr" max)" >/dev/null
-                else
-                    hypr_set_max "$addr"
-                fi
+                adopt_native_max "$addr"
             ) &
             ;;
 
