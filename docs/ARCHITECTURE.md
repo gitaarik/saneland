@@ -703,6 +703,47 @@ hyprpm list      # confirm hyprbars is enabled
 `exec-once = hyprpm reload -n` in `hyprland.conf` loads enabled plugins at
 login. Button glyphs need JetBrainsMono Nerd Font.
 
+## Workspace overview (hyprexpo)
+
+`mod+x` (or a four-finger swipe up) opens an exposé: every screen shows its
+own block of 12 tags as a 4x3 grid of live thumbnails. Click a tile to switch,
+drag a window thumbnail onto another tile to move it, Escape to back out. It is
+the `hyprexpo` plugin — from the **sandwichfarm/hyprexpo** fork, since upstream
+dropped it from hyprwm/hyprland-plugins in May 2026 — configured in the
+`plugin { hyprexpo { … } }` block.
+
+Three choices make it fit the per-screen tag scheme instead of fighting it:
+
+- **A fixed grid, empty tags included** (`columns = 4`, `rows = 3`,
+  `skip_empty = 0`, `dynamic_grid = 0`). The tiles then sit where the keys are
+  — 1234 / qwer / asdf — and each tile is labelled with its key
+  (`label_token_map`), not the global workspace id. The plugin's dynamic modes
+  collapse the grid to populated tags, which would move tiles around between
+  openings and break the key ↔ tile mapping.
+- **`workspace_method = center current`**, which bounds a screen's grid to the
+  workspaces that exist on it plus the ids *reserved* for it by
+  `workspace = N, monitor:X` rules. Those are exactly the rules
+  `hypr-workspace-blocks` issues at runtime ("Which screen a workspace block
+  belongs to" above), so a 12-tile grid over a 12-id range is pinned to the
+  block: laptop 1-12, external 13-24. Nothing here names a connector, for the
+  same reason `local.conf` doesn't.
+- **A `hyprexpo` submap** with the plugin's `number_key_mode = passthrough`.
+  The plugin enters that submap on open and resets it on close, so plain tag
+  keys (and the same keys with mod held) select tiles via `kb_selecti`, whose
+  argument is a 1-based tile *position* — in a fixed grid, the local tag.
+  `h/j/k/l` walk the grid, Return confirms. In the plugin's own `workspace`
+  digit mode a bare `1` would mean *global* workspace 1 on every screen.
+
+`toggle all` opens it on every screen at once; selecting on one screen closes
+them all and switches only that screen, matching how mod+1..f act on the
+screen holding the focused window.
+
+Same compiled-plugin caveat as hyprbars: rebuild with `hyprpm update` after
+every Hyprland upgrade. One startup quirk: the `hyprexpo:*` binds are parsed
+before `hyprpm reload` has loaded the plugin, so the first config pass logs
+"Invalid dispatcher" for them; loading the plugin makes Hyprland re-read the
+config, which clears it. A banner that *stays* means the plugin did not load.
+
 ## Electron secret storage
 
 Electron apps pick their `--password-store` backend from

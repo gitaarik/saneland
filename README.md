@@ -88,6 +88,7 @@ binding/autostart if missing):
 
 - `hyprlock` + `hypridle` — lock screen & idle policy
 - `hyprbars` — window title bars (compiled plugin, see below)
+- `hyprexpo` — workspace overview on `mod+x` (compiled plugin, see below)
 - `hyprsunset` — night-light color temperature (autostarted)
 - `hyprshot` + `satty` — screenshot capture & annotation (Print-key binds)
 - `imagemagick` — only for `wallpaper-fetch`, which measures candidate images
@@ -130,14 +131,18 @@ Then:
    ```bash
    sudo usermod -aG input "$USER"   # then log out and back in
    ```
-2. **hyprbars** (window title bars with close/maximize buttons) is a compiled
-   plugin pinned to the Hyprland ABI — install once, rebuild after every
-   Hyprland upgrade:
+2. **hyprbars** (window title bars with close/maximize buttons) and
+   **hyprexpo** (the `mod+x` workspace overview) are compiled plugins pinned
+   to the Hyprland ABI — install once, rebuild after every Hyprland upgrade:
    ```bash
    hyprpm update
    hyprpm add https://github.com/hyprwm/hyprland-plugins
    hyprpm enable hyprbars
+   hyprpm add https://github.com/sandwichfarm/hyprexpo
+   hyprpm enable hyprexpo
    ```
+   (hyprexpo comes from the sandwichfarm fork: upstream dropped it from
+   hyprland-plugins in May 2026.)
 3. Drop wallpapers into `wallpapers/dark/` and `wallpapers/light/` — or, for a
    cold start, `wallpaper-fetch` pulls freely-licensed nature photography from
    Wikimedia Commons and sorts it into the two pools by measured luminance

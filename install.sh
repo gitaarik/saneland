@@ -151,7 +151,7 @@ Done. Next steps:
      (seeded above from local.conf.example — the base config stays generic).
   4. Drop wallpapers into wallpapers/{dark,dusk,dawn,light}/, or run
      'wallpaper-fetch' to fill all four pools from Wikimedia Commons.
-  5. Enable the hyprbars plugin (see README.md → hyprbars).
+  5. Enable the hyprbars and hyprexpo plugins (see README.md → Install, step 2).
   6. Log into the "Hyprland (uwsm-managed)" session, or reload:
        hyprctl reload && eww reload
   7. Switch theme any time with:  theme dark   |   theme light
