@@ -304,6 +304,15 @@ portal exposes `org.freedesktop.appearance color-scheme = 2` — apps like Qt
 6.5+ and Telegram treat `0` ("no preference") as "don't change" and would
 otherwise stay dark.
 
+Qt apps read that same portal preference through `QT_QPA_PLATFORMTHEME=
+xdgdesktopportal` (set in `hyprland.conf`); without a platform theme Qt reports
+"no preference" and KDE apps on their "Default" color scheme always pick Breeze
+Light. KDE apps also read colors from `~/.config/kdeglobals` at startup, before
+their scheme loads, and Dolphin's file list keeps those, so `theme` copies the
+matching Breeze scheme (`config/saneland/kde-colors/`, copies of the ones built
+into libKF6ColorScheme) into `kdeglobals` the way Plasma does. Running KDE apps
+keep their colors until restarted.
+
 The eww restart is required because eww 0.5 caches its CSS provider for the
 daemon's lifetime — `eww reload` re-reads the SCSS but window background colors
 stick, so `theme` does a full `eww kill` + `eww open bar` (detached via

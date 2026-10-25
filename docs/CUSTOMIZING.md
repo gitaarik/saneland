@@ -44,7 +44,7 @@ $font-size: 13px;
 
 ### Theming extra apps — `~/.config/saneland/theme.local.sh`
 saneland's `theme` script themes only the desktop shell (eww, swaync, GTK,
-rofi, wallpaper). To theme *your* terminal / file manager / editor too, copy
+KDE/Qt apps, rofi, wallpaper). To theme *your* terminal / editor too, copy
 `~/.config/saneland/theme.local.sh.example` to `theme.local.sh`. It's sourced
 at the end of `theme` with `$COLOR_SCHEME` ("dark"/"light") set — plain shell,
 do whatever your apps need. (Apps that just read `~/.cache/current-theme`, like

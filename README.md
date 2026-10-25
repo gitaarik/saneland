@@ -27,7 +27,8 @@ one-command **light/dark theme switcher** that repaints the whole session.
 - **Start menu** popup with pinned apps + a rofi "all apps" fallback, and
   inline confirmation for power actions.
 - **One-command theming** — `theme dark` / `theme light` flips the eww bar,
-  swaync, GTK, rofi and the wallpaper together via a symlink-swap pattern.
+  swaync, GTK, KDE/Qt apps, rofi and the wallpaper together via a symlink-swap
+  pattern.
 - **Wallpaper rotation** with per-theme image pools, crossfading between images
   (awww) — plus `wallpaper-fetch` to fill an empty pool from Wikimedia Commons,
   sorting each image into dark/ or light/ by measuring it rather than trusting

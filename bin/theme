@@ -3,9 +3,9 @@
 # theme — switch the desktop between dark and light.
 #
 # Flips symlinks and reloads the desktop-shell apps that ship with this
-# project: the eww bar, swaync, GTK, rofi, and the wallpaper. The active
-# theme is recorded in ~/.cache/current-theme so anything else that wants
-# to follow it can read that file.
+# project: the eww bar, swaync, GTK, rofi, KDE/Qt apps, and the wallpaper.
+# The active theme is recorded in ~/.cache/current-theme so anything else
+# that wants to follow it can read that file.
 #
 # Usage: theme {dark|light|toggle}
 
@@ -111,6 +111,30 @@ fi
 # --- rofi — flip the color scheme include ---
 if command -v rofi &>/dev/null && [[ -d ~/.config/rofi ]]; then
     (cd ~/.config/rofi/ && ln -sf "colorSchemes/$COLOR_SCHEME.rasi" colorScheme.rasi)
+fi
+
+# --- KDE/Qt apps (Dolphin, …) — copy the Breeze scheme's colors into kdeglobals ---
+# On their "Default" color scheme, KDE apps pick Breeze Dark/Light from Qt's
+# dark/light hint (the portal platform theme set in hyprland.conf). But outside
+# Plasma nothing writes colors to kdeglobals, so the colors an app reads at
+# startup stay Breeze Light, and Dolphin's file list has already read those by
+# the time the scheme loads: dark-on-dark text and white alternate rows. So do
+# what Plasma does and put the matching scheme's colors in kdeglobals. Dolphin's
+# own scheme setting is cleared because a scheme picked in its menu has the same
+# timing problem. The .colors files are copies of the ones built into
+# libKF6ColorScheme. Running apps keep their colors until restarted.
+kde_scheme=$([[ $COLOR_SCHEME == dark ]] && echo BreezeDark || echo BreezeLight)
+kde_colors=~/.config/saneland/kde-colors/$kde_scheme.colors
+kdeglobals=~/.config/kdeglobals
+if command -v kwriteconfig6 &>/dev/null && [[ -f $kde_colors ]]; then
+    touch "$kdeglobals"
+    # Color groups to swap: [Colors:*], [ColorEffects:*] and [WM].
+    is_color_group='/^\[/ { keep = !($0 ~ /^\[(Colors:|ColorEffects:|WM\])/) }'
+    { awk "BEGIN { keep = 1 } $is_color_group keep" "$kdeglobals"
+      awk "BEGIN { keep = 1 } $is_color_group !keep" "$kde_colors"
+    } > "$kdeglobals.tmp" && mv "$kdeglobals.tmp" "$kdeglobals"
+    kwriteconfig6 --file kdeglobals --group General --key ColorScheme "$kde_scheme"
+    kwriteconfig6 --file dolphinrc --group UiSettings --key ColorScheme --delete
 fi
 
 # --- user extension hook ---------------------------------------------------
