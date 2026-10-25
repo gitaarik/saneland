@@ -86,7 +86,6 @@ fi
 # GTK apps (Firefox, Thunderbird, file dialogs) to follow the scheme.
 # Requires materia-gtk-theme + papirus-icon-theme (change the names below to
 # use different themes).
-export QT_QPA_PLATFORMTHEME=gtk2
 if [[ -d ~/.config/gtk-3.0 ]]; then
     if [[ $COLOR_SCHEME == dark ]]; then
         (cd ~/.config/gtk-3.0/ && ln -sf settings-dark.ini settings.ini && ln -sf gtk-dark.css gtk.css)
