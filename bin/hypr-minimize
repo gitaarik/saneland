@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+#
+# Minimize and restore windows. Hyprland has no minimized state, so a
+# minimized window is one parked on a hidden special workspace named after the
+# tag it came from: a window minimized from workspace 7 lives on
+# `special:min7`. The name is the whole record — nothing else remembers where
+# a window belongs, so no daemon restart or stale file can lose one.
+#
+# Usage:
+#   hypr-minimize [ADDR]           minimize ADDR (default: the focused window)
+#   hypr-minimize restore [ADDR]   put ADDR back on its tag and focus it;
+#                                  without ADDR, the most recently minimized
+#                                  window of the focused screen's current tag
+#
+# Bound to mod+z / mod+shift+z. The eww taskbar lists a tag's minimized windows
+# (dimmed) and restores on click; hypr-alttab-daemon restores one when Alt+Tab
+# lands on it. Both key off the `special:min` prefix, as does hypr-state.sh.
+
+set -uo pipefail
+
+prefix=special:min
+
+client_json() {
+    hyprctl -j clients | jq -c --arg a "$1" '.[] | select(.address == $a)'
+}
+
+focused_monitor() {
+    hyprctl -j monitors | jq -r '.[] | select(.focused) | .name'
+}
+
+minimize() {
+    local addr=$1 client ws_id ws_name mon
+    client=$(client_json "$addr")
+    [[ -z $client ]] && return 0
+    ws_id=$(jq -r '.workspace.id' <<<"$client")
+    ws_name=$(jq -r '.workspace.name' <<<"$client")
+    # Already minimized, or on a scratchpad — nothing to hide it from.
+    [[ $ws_name == special:* ]] && return 0
+
+    mon=$(focused_monitor)
+    hyprctl dispatch movetoworkspacesilent "${prefix}${ws_id},address:${addr}" >/dev/null
+    # Hiding a screen's last window hands focus to whatever the cursor is over,
+    # possibly the other screen (see hypr-keep-screen-focus) — stay here.
+    [[ $(focused_monitor) != "$mon" ]] && hyprctl dispatch focusmonitor "$mon" >/dev/null
+    return 0
+}
+
+restore() {
+    local addr=${1:-} client ws_name ws
+    if [[ -z $addr ]]; then
+        ws=$(hyprctl -j monitors | jq -r '.[] | select(.focused) | .activeWorkspace.id')
+        # A window can't be focused while minimized, so the one with the most
+        # recent focus is the one minimized last.
+        addr=$(hyprctl -j clients | jq -r --arg n "${prefix}${ws}" '
+            map(select(.workspace.name == $n)) | sort_by(.focusHistoryID)
+            | .[0].address // empty')
+        [[ -z $addr ]] && return 0
+    fi
+    client=$(client_json "$addr")
+    [[ -z $client ]] && return 0
+    ws_name=$(jq -r '.workspace.name' <<<"$client")
+    [[ $ws_name == "$prefix"* ]] || return 0
+
+    hyprctl --batch \
+        "dispatch movetoworkspacesilent ${ws_name#"$prefix"},address:${addr}; \
+         dispatch focuswindow address:${addr}" >/dev/null
+}
+
+case ${1:-} in
+    restore) restore "${2:-}" ;;
+    *)
+        addr=${1:-$(hyprctl -j activewindow | jq -r '.address // empty')}
+        [[ -n $addr ]] && minimize "$addr"
+        ;;
+esac

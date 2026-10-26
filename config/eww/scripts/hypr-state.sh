@@ -89,7 +89,10 @@ emit() {
        --argjson icon_map "$icon_map_json" \
        --arg active "$active" '
         ($clients | map({(.address): .}) | add // {}) as $by_addr
-        | ($clients | map(.workspace.id) | unique) as $populated
+        # A minimized window sits on `special:min<tag>` (see hypr-minimize);
+        # it still belongs to — and keeps visible — the tag it came from.
+        | def min_origin: (.workspace.name | capture("^special:min(?<n>[0-9]+)$")? | .n | tonumber) // null;
+          ($clients | map(.workspace.id, min_origin) | map(select(. != null)) | unique) as $populated
         | {
             monitors: (
               ($monitors | sort_by(.id) | to_entries) | map(
@@ -107,7 +110,7 @@ emit() {
                       windows: ($order | map(
                           ($by_addr[.addr] // null) as $c
                           | if $c == null then empty
-                            elif $c.workspace.id != $act then empty
+                            elif $c.workspace.id != $act and ($c | min_origin) != $act then empty
                             else {
                               id: $c.address,
                               title: $c.title,
@@ -116,6 +119,7 @@ emit() {
                                      // $icon_map[$c.class | ascii_downcase]
                                      // $c.class),
                               focused: ($c.address == $active),
+                              minimized: (($c | min_origin) != null),
                               on_tag: true
                             } end))
                     }

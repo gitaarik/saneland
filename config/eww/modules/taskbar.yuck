@@ -22,7 +22,8 @@
       (tag :n 9 :m m)  (tag :n 10 :m m) (tag :n 11 :m m) (tag :n 12 :m m))))
 
 ;; Per-tag taskbar — windows on the focused workspace, in creation order
-;; (from hypr-window-order). Click focuses the window. App icon comes from
+;; (from hypr-window-order). Click focuses the window — or, for a minimized
+;; one (listed dimmed, see hypr-minimize), restores it. App icon comes from
 ;; the GTK icon theme using app_id as the icon name; the title text is
 ;; shown next to it, truncated.
 ;;
@@ -42,9 +43,14 @@
         (button :visible {w.on_tag}
                 :hexpand true
                 :class {(w.focused ? "task active" : "task")
+                        + (w.minimized ? " minimized" : "")
                         + (scroll-switching == "true" ? " no-hover" : "")}
                 :tooltip "${w.title}"
-                :onclick "hyprctl dispatch focuswindow address:${w.id}"
+                ;; focuswindow on a minimized window would pop its whole hidden
+                ;; special workspace open instead of bringing it back.
+                :onclick {w.minimized
+                          ? "~/.local/bin/hypr-minimize restore ${w.id}"
+                          : "hyprctl dispatch focuswindow address:${w.id}"}
           (box :orientation "h" :space-evenly false :spacing 6
             (image :icon "${w.icon}" :image-width 16 :image-height 16)
             ;; No :limit-width — that capped the label at a fixed char count,

@@ -61,6 +61,10 @@
     color: $fg;
     @include cell-active;
 }
+// A minimized window (hypr-minimize) stays listed on its tag, faded out.
+.task.minimized > box {
+    opacity: 0.45;
+}
 
 // Hover: the same soft glow as .active but with a fainter fill, on every
 // interactive bar cell. :not(.active) so hovering an already-active cell keeps

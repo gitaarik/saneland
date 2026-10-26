@@ -79,8 +79,12 @@ while IFS= read -r line <&3; do
             addr=${line#closewindow>>}
             sed -i "/\t0x${addr}$/d" "$state_file" 2>/dev/null || true
             ;;
-        movewindow*)
-            data=${line#movewindow>>}
+        movewindowv2'>>'*)
+            # movewindowv2>>ADDRESS,WORKSPACE_ID,WORKSPACE_NAME. The v2 spelling
+            # for its numeric id: plain movewindow carries only the NAME, which
+            # for a minimized window is `special:min7` — not a number, and it
+            # broke the JSON hypr-state.sh builds from this file.
+            data=${line#movewindowv2>>}
             addr=${data%%,*}
             rest=${data#*,}
             ws=${rest%%,*}

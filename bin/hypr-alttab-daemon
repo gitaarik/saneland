@@ -37,6 +37,11 @@
 # If no input device can be opened, falls back to the old short timer so
 # alt-tab still works, just with the old imperfect timing.
 #
+# Minimized windows (hypr-minimize parks them on `special:min<tag>`) drop to
+# the END of the MRU when minimized, like on other desktops. Landing on one
+# mid-cycle restores it so it can be shown; tabbing on past it minimizes it
+# again, so only the window the cycle commits on stays restored.
+#
 # Exposes a UNIX control socket at
 #   $XDG_RUNTIME_DIR/hypr/$HIS/.alttab.sock
 # accepting the strings "next", "prev", "commit". See hypr-alttab.
@@ -88,6 +93,11 @@ pending_focus = {}      # target -> count of our own dispatches whose focus echo
                         # like genuine user focus changes and corrupt the MRU.
                         # We suppress exactly those echoes instead of relying on
                         # the cycling flag, which only covers the in-cycle window.
+cycle_restored = set()  # minimized windows this cycle restored to show them;
+                        # re-minimized when the cycle moves on past them.
+
+MIN_PREFIX = "special:min"
+MINIMIZE = os.path.expanduser("~/.local/bin/hypr-minimize")
 
 DEBUG = os.environ.get("HYPR_ALTTAB_DEBUG") == "1"
 
@@ -146,17 +156,52 @@ def normalize(addr_hex):
     return addr_hex if addr_hex.startswith("0x") else f"0x{addr_hex}"
 
 
+def is_minimized(addr):
+    try:
+        out = subprocess.check_output(["hyprctl", "clients", "-j"], text=True)
+        for c in json.loads(out):
+            if c.get("address") == addr:
+                return c.get("workspace", {}).get("name", "").startswith(MIN_PREFIX)
+    except Exception:
+        pass
+    return False
+
+
+def run_quiet(cmd):
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   check=False)
+
+
 def dispatch_target(target):
     # An "ws:<id>" sentinel switches to that (empty) workspace; anything else is
     # a window address we focus directly (which also pulls its workspace up).
+    # focuswindow on a minimized window would open its whole hidden special
+    # workspace, so that one is restored instead (which focuses it too).
+    # Returns True if it restored a minimized window.
     if isinstance(target, str) and target.startswith("ws:"):
-        args = ["dispatch", "workspace", target[3:]]
+        run_quiet(["hyprctl", "dispatch", "workspace", target[3:]])
+    elif is_minimized(target):
+        run_quiet([MINIMIZE, "restore", target])
+        return True
     else:
-        args = ["dispatch", "focuswindow", f"address:{target}"]
-    subprocess.run(
-        ["hyprctl", *args],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
-    )
+        run_quiet(["hyprctl", "dispatch", "focuswindow", f"address:{target}"])
+    return False
+
+
+def step_to(target, prev):
+    # Show the cycle's new target, then re-minimize the window it just left if
+    # this cycle only restored that one to show it. In this order so focus is
+    # already on the new target when the old one disappears.
+    restored = dispatch_target(target)
+    with state_lock:
+        if restored:
+            cycle_restored.add(target)
+        rehide = prev is not None and prev != target and prev in cycle_restored
+        if rehide:
+            cycle_restored.discard(prev)
+    if rehide:
+        log(f"re-minimizing {prev}")
+        run_quiet([MINIMIZE, prev])
 
 
 def seed_mru():
@@ -253,6 +298,21 @@ def handle_event(line):
             else:
                 # Workspace has a focused window; drop any stale sentinel for it.
                 log(f"workspacev2 {key} (non-empty); mru[:5]={mru[:5]}")
+    elif name == "movewindowv2":
+        # payload is "ADDR,WSID,WSNAME". A window just minimized goes to the
+        # back of the MRU. Not while cycling: the cycle's own re-minimizes
+        # would shift the indices it is walking.
+        addr_hex, _, rest = payload.partition(",")
+        ws_name = rest.partition(",")[2].strip()
+        addr = normalize(addr_hex.strip())
+        if not ws_name.startswith(MIN_PREFIX):
+            return
+        with state_lock:
+            if cycling or addr not in mru:
+                return
+            mru.remove(addr)
+            mru.append(addr)
+            log(f"movewindowv2 {addr} minimized -> mru bottom")
     elif name == "closewindow":
         addr = normalize(payload.strip())
         with state_lock:
@@ -312,7 +372,7 @@ def _auto_commit():
 
 def do_next():
     global cycling, cycle_index
-    target = None
+    target = prev = None
     with state_lock:
         if len(mru) < 2:
             log(f"do_next: mru too short ({len(mru)})")
@@ -321,29 +381,32 @@ def do_next():
             cycling = True
             cycle_index = 1
             visited.clear()
+            cycle_restored.clear()
         else:
             cycle_index = (cycle_index + 1) % len(mru)
+        prev = visited[-1] if visited else None
         target = mru[cycle_index]
         visited.append(target)
         pending_focus[target] = pending_focus.get(target, 0) + 1
         _arm_commit_timer_locked()
         log(f"do_next: ci={cycle_index} target={target} visited={visited}")
-    dispatch_target(target)
+    step_to(target, prev)
 
 
 def do_prev():
     global cycle_index
-    target = None
+    target = prev = None
     with state_lock:
         if not cycling or len(mru) < 2:
             return
         cycle_index = (cycle_index - 1) % len(mru)
+        prev = visited[-1] if visited else None
         target = mru[cycle_index]
         visited.append(target)
         pending_focus[target] = pending_focus.get(target, 0) + 1
         _arm_commit_timer_locked()
         log(f"do_prev: ci={cycle_index} target={target} visited={visited}")
-    dispatch_target(target)
+    step_to(target, prev)
 
 
 def do_commit():
@@ -371,6 +434,7 @@ def do_commit():
                 mru.remove(landed)
             mru.insert(0, landed)
         visited.clear()
+        cycle_restored.clear()  # the landed window stays restored
         log(f"do_commit: landed={landed}; mru[:5]={mru[:5]}")
 
 
