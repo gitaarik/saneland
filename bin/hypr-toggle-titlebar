@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+#
+# Show or hide the focused window's hyprbars title bar. Bound to mod+t.
+#
+# The bar is keyed off the `nobar` window tag (see hypr_chrome in
+# hypr-window-lib.sh), but flipping the tag alone does nothing visible:
+# Hyprland doesn't re-evaluate window rules on a tag change, so hyprbars never
+# hears about it. A setprop does trigger that re-evaluation, so the tag change
+# is followed by re-setting border_size to the value it already has.
+#
+# hyprbars draws the bar ABOVE the window, outside its box. A window whose top
+# sits at the top of the work area (every maximized or top-snapped window)
+# would get its bar off-screen, so showing the bar there pushes the window's
+# top edge down by the bar's height (keeping a snap's inset), and hiding it
+# again pulls it back up.
+# The next snap/maximize/center re-applies its own chrome anyway.
+
+set -uo pipefail
+source "${HOME}/.local/bin/hypr-window-lib.sh"
+
+win=$(hyprctl -j activewindow)
+addr=$(jq -r '.address' <<<"$win")
+[[ -z $addr || $addr = "null" ]] && exit 0
+
+read -r x y w h < <(jq -r '"\(.at[0]) \(.at[1]) \(.size[0]) \(.size[1])"' <<<"$win")
+has_nobar=$(jq -r 'any(.tags[]; . == "nobar")' <<<"$win")
+bar_h=$(hyprctl -j getoption plugin:hyprbars:bar_height | jq -r '.int')
+border=$(hyprctl -j getprop "address:${addr}" border_size | jq -r '.border_size')
+
+hypr_work_area_for "$addr" || exit 1
+
+geom=""
+if [[ $has_nobar = true ]]; then
+    tag=-nobar
+    if (( y - bar_h < WORK_Y )); then
+        geom="dispatch resizewindowpixel exact ${w} $(( h - bar_h )),address:${addr}; \
+              dispatch movewindowpixel exact ${x} $(( y + bar_h )),address:${addr};"
+    fi
+else
+    tag=+nobar
+    # Only undo our own push-down: a top edge one bar below the work area's
+    # top, give or take a snap's inset and fractional-scale slack.
+    d=$(( y - bar_h - WORK_Y ))
+    if (( d >= -3 && d <= HYPR_SNAP_BORDER + 3 )); then
+        geom="dispatch resizewindowpixel exact ${w} $(( h + bar_h )),address:${addr}; \
+              dispatch movewindowpixel exact ${x} $(( y - bar_h )),address:${addr};"
+    fi
+fi
+
+hyprctl --batch \
+    "${geom} \
+     dispatch tagwindow ${tag} address:${addr}; \
+     dispatch setprop address:${addr} border_size ${border}" >/dev/null
