@@ -6,8 +6,15 @@
 # something behind it.
 #
 # Usage: hypr-center-window [PCT]   (default 60)
+#        hypr-center-window tall    full-height centered column, 60% wide —
+#                                   a single window on a big screen, using its
+#                                   height without stretching lines of text
+#                                   across the whole width
 #
-# Bound to mod+c (60%) and mod+shift+c (80%) — same center, bigger frame.
+# Bound to mod+c (60%) and mod+shift+c (80%) — same center, bigger frame —
+# and mod+ctrl+c (tall), which sits with the mod+ctrl+h/j/k/l snaps: a column
+# is a snap shape (hypr_set_column), wears the snap chrome, and is redone on
+# the other screen like the halves are.
 # (Was: native centerwindow dispatcher; this adds the resize step so a
 # previously-maximized window becomes actually-floating-looking.)
 
@@ -24,6 +31,11 @@ target=$(hyprctl -j activewindow | jq -r '.address')
 # `centerwindow` dispatcher: that dispatcher centers on the focused monitor,
 # which flung the window to the other output whenever the cursor sat there.
 hypr_work_area_for "$target" || exit 1
+
+if [[ $pct == tall ]]; then
+    hypr_set_column "$target" $(( WORK_W * 60 / 100 ))
+    exit
+fi
 
 new_w=$(( WORK_W * pct / 100 ))
 new_h=$(( WORK_H * pct / 100 ))

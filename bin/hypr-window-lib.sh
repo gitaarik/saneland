@@ -328,6 +328,36 @@ hypr_set_snap() {
          $(hypr_chrome "$addr" snap)" >/dev/null
 }
 
+# A "column" is the third snap shape: full height like a left/right half, but
+# any width, centered (mod+Ctrl+c). Its width is free, so unlike a half it
+# can't be recognised by size alone — a column is a full-height window whose
+# centre sits on the work area's vertical midline. Checked AFTER
+# hypr_snap_axes wherever both apply: a half-width column is the same
+# rectangle as a half, and is taken for one.
+
+# hypr_is_column W H CX — is a window W x H whose horizontal centre is CX
+# (relative to the work area's left edge) a column of the work area last
+# measured by hypr_work_area? Same 3px slack as hypr_snap_axes.
+hypr_is_column() {
+    local bw=$HYPR_SNAP_BORDER d
+    d=$(( $2 - (WORK_H - bw - bw) )); (( ${d#-} <= 3 )) || return 1
+    (( $1 < WORK_W - bw - bw - 3 )) || return 1
+    d=$(( $3 - WORK_W / 2 )); (( ${d#-} <= 3 ))
+}
+
+# hypr_set_column ADDR W — make ADDR a W-wide column of its own monitor's work
+# area, with the "snap" chrome (it touches top and bottom like a half does).
+# W is clamped to the work area minus the snap inset.
+hypr_set_column() {
+    local addr=$1 w=$2 bw=$HYPR_SNAP_BORDER
+    hypr_work_area_for "$addr" || return 1
+    (( w > WORK_W - bw - bw )) && w=$(( WORK_W - bw - bw ))
+    hyprctl --batch \
+        "dispatch resizewindowpixel exact ${w} $(( WORK_H - bw - bw )),address:${addr}; \
+         dispatch movewindowpixel exact $(( WORK_X + (WORK_W - w) / 2 )) $(( WORK_Y + bw )),address:${addr}; \
+         $(hypr_chrome "$addr" snap)" >/dev/null
+}
+
 # Apply an explicit geometry to a window, picking the chrome to match: a
 # window that fills the work area (within a few px of scale rounding) gets
 # the borderless, square-cornered "max" look like a real maximize; anything

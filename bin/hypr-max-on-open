@@ -43,8 +43,9 @@
 #     untouched.
 #
 #   - On move to another screen: a window that was filling — or snapped to
-#     a half or quarter of — the screen it came from is given the same
-#     rectangle of the new one. Moving a window does not resize it, so it
+#     a half or quarter of, or a centered column of — the screen it came from
+#     is given the same rectangle of the new one (a column keeps its width as
+#     a share of the screen). Moving a window does not resize it, so it
 #     arrives wearing the old screen's pixels: a hole around it on a bigger
 #     screen, hanging off the edges on a smaller one. Needs no bookkeeping
 #     to spot, because both are GEOMETRIES and not states — "maximized" IS
@@ -306,7 +307,7 @@ remember_work_areas() {
 # the post-unplug pass both come through here.
 refit_window() {
     local addr=$1 client w h x y mon_id here id o horiz vert
-    local dest_w dest_h dest_x dest_y name rest
+    local dest_w dest_h dest_x dest_y name rest d
     local -a others=()
     local -A live=()
 
@@ -341,6 +342,7 @@ refit_window() {
     # the same work area.
     hypr_fills_work_area "$w" "$h" && return 0
     hypr_snap_axes "$w" "$h" && return 0
+    hypr_is_column "$w" "$h" $(( x + w / 2 - dest_x )) && return 0
 
     # The screens it may have come from: every other connected one, measured
     # now, then every remembered one that is no longer connected.
@@ -377,7 +379,28 @@ refit_window() {
         # against the midline of whichever screen is smaller on that axis — the
         # source's when the offset survived intact, this one's when the clamp is
         # what positioned it, and those are the same test.
-        hypr_snap_axes "$w" "$h" || continue
+        # A column of that screen? Hyprland carries the window across at the
+        # same offset into the monitor, so it is still centered on the
+        # source's width. Before the snap test: a column as wide as a half
+        # (mod+ctrl+c on a snapped window) is a half by size, but a half is
+        # never centered.
+        if hypr_is_column "$w" "$h" $(( x + w / 2 - dest_x )); then
+            hypr_set_column "$addr" $(( w * dest_w / WORK_W ))
+            echo "hypr-max-on-open: refit $addr as a column of ${o%% *} on $here" >&2
+            return 0
+        fi
+        if ! hypr_snap_axes "$w" "$h"; then
+            # ...unless this screen is narrower and the clamp shoved it against
+            # the right edge. A right half lands there too, but hypr_snap_axes
+            # has just claimed those.
+            d=$(( x + w - dest_x - dest_w ))
+            if (( w <= dest_w && ${d#-} <= 3 )) && hypr_is_column "$w" "$h" $(( WORK_W / 2 )); then
+                hypr_set_column "$addr" $(( w * dest_w / WORK_W ))
+                echo "hypr-max-on-open: refit $addr as a clamped column of ${o%% *} on $here" >&2
+                return 0
+            fi
+            continue
+        fi
         horiz='' vert=''
         if [[ $SNAP_AXIS_X == half ]]; then
             near_side $(( x + w / 2 - dest_x )) "$WORK_W" "$dest_w" \
