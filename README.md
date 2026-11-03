@@ -3,13 +3,27 @@
 *Sane defaults for a modern Wayland desktop — old-school simple window
 management, new-school underneath.*
 
-A complete **Hyprland desktop** built around a custom **eww bottom bar** —
-workspace switcher, per-workspace taskbar, and a keyboard-navigable systray
-(audio, network, bluetooth, battery, clock) with one-click popups — plus a
-one-command **light/dark theme switcher** that repaints the whole session.
+saneland turns [Hyprland](https://hyprland.org) into a complete desktop:
 
-> Arch Linux + Wayland. Everything is plain config + shell scripts; no
-> compiled components except the optional hyprbars plugin.
+- a custom **eww bottom bar**: workspace switcher, per-workspace taskbar, and a
+  systray (audio, network, bluetooth, battery, clock) with one-click popups;
+- **small daemons** for what a bare compositor leaves to you: MRU Alt-Tab,
+  window order that stays put, windows that reopen where you left them, and
+  windows that survive a monitor being unplugged;
+- a one-command **light/dark theme switch** that repaints the whole session.
+
+**Who it's for:** people who like what Hyprland is underneath but want a
+traditional desktop on top — floating windows, a taskbar, Alt-Tab, maximize
+and snap — without assembling it themselves. Arch Linux is the main target;
+Fedora is supported and Debian/Ubuntu is best-effort (see
+[Distro support](#distro-support)).
+
+**Built with:** Bash and Python scripts (no build step),
+[eww](https://github.com/elkowar/eww) for the bar, and Hyprland's own config.
+The only compiled parts are two optional Hyprland plugins, hyprbars and
+hyprexpo.
+
+**Status:** saneland is my daily desktop.
 
 <video src="https://github.com/user-attachments/assets/2fdd4273-38a7-4636-9558-31a910b05617" controls muted width="100%"></video>
 
@@ -31,14 +45,18 @@ one-command **light/dark theme switcher** that repaints the whole session.
   pattern.
 - **Wallpaper rotation** with per-theme image pools, crossfading between images
   (awww) — plus `wallpaper-fetch` to fill an empty pool from Wikimedia Commons,
-  sorting each image into dark/ or light/ by measuring it rather than trusting
-  its category.
+  sorting each image into its pool by measuring it rather than trusting its
+  category.
 - **Wallpapers that follow the sun** — four pools in one brightness ladder
   (`dark → dusk → dawn → light`). Your theme picks which end you live at, and
   the sun's actual elevation (`sun-phase`) moves you one rung towards the middle
   near the horizon. The theme itself never changes on its own.
+- **Windows that reopen where you left them** — each app comes back at its last
+  size and position on that screen (KWin-style), and a per-app policy decides
+  which ones open maximized (`mod+Alt+m` flips it for the focused window).
 - **Quality-of-life Hyprland scripts** — MRU Alt-Tab, window snapping /
-  centering / maximize-toggle, scroll-to-switch workspaces, a desktop
+  centering / maximize-toggle, minimize and restore, title bars toggled per
+  window, scroll-to-switch workspaces, a workspace overview, a desktop
   magnifier on super+scroll, super+-/+ or a touchpad pinch / three-finger
   swipe, brightness & battery helpers.
 - **No windows lost to a hot-plug** — unplug a screen and its windows merge
@@ -50,15 +68,19 @@ one-command **light/dark theme switcher** that repaints the whole session.
 
 ```
 config/          # → ~/.config/*  (whole-dir symlinks)
-  eww/           # the bar: eww.yuck + _eww-common.scss + per-theme SCSS + scripts/
+  eww/           # the bar: eww.yuck, modules/ (widgets), styles/ + per-theme SCSS, scripts/
   hypr/          # hyprland.conf, hyprlock.conf, hypridle.conf, window-policy.conf
   swaync/        # notification daemon (theme-integrated)
   rofi/          # launcher — the start menu's "all apps" fallback (theme-integrated)
   gtk-3.0/ gtk-4.0/   # GTK app theming, so Firefox/dialogs follow light/dark
-bin/             # → ~/.local/bin/*  (per-file symlinks): hypr-* helpers, theme, hyprsig …
+  saneland/      # the theme hook example + the KDE color schemes `theme` applies
+bin/             # → ~/.local/bin/*  (per-file symlinks): the daemons, hypr-* helpers, theme …
 greeter/         # → /etc/greetd  (OPTIONAL, needs root): the login screen
-wallpapers/      # drop your own images into dark/ and light/ (or run wallpaper-fetch)
-docs/            # ARCHITECTURE.md — the non-obvious design notes & gotchas
+local/           # your whole-file overrides, git-ignored (see docs/CUSTOMIZING.md)
+wallpapers/      # image pools dark/ dusk/ dawn/ light/ — your own, or run wallpaper-fetch
+deps/            # per-distro package maps for deps.sh
+docs/            # ARCHITECTURE.md (design notes & gotchas), CUSTOMIZING.md
+deps.sh          # installs the dependencies for your distro
 install.sh       # symlinks everything into place (backs up what's there)
 ```
 
@@ -115,7 +137,7 @@ Adding a distro is just a new `deps/<distro>.sh` mapping the IDs in
 ## Install
 
 ```bash
-git clone <your-fork-url> saneland
+git clone https://github.com/gitaarik/saneland.git
 cd saneland
 ./deps.sh             # install dependencies for your distro (or --print)
 ./install.sh          # symlink configs + scripts (--dry-run to preview)
@@ -123,8 +145,9 @@ cd saneland
 
 `install.sh` symlinks `config/*` into `~/.config/` and `bin/*` into
 `~/.local/bin/`, backing up anything already there to `*.bak-<timestamp>`. It
-also creates the default (dark) active-theme symlinks and seeds
-`~/.config/hypr/local.conf` from the example (never clobbering an existing one).
+also creates the default (dark) active-theme symlinks and seeds the local
+override files (see [Personalize](#personalize)) from their examples, never
+clobbering existing ones.
 
 Then:
 
@@ -144,10 +167,10 @@ Then:
    ```
    (hyprexpo comes from the sandwichfarm fork: upstream dropped it from
    hyprland-plugins in May 2026.)
-3. Drop wallpapers into `wallpapers/dark/` and `wallpapers/light/` — or, for a
-   cold start, `wallpaper-fetch` pulls freely-licensed nature photography from
-   Wikimedia Commons and sorts it into the two pools by measured luminance
-   (see `wallpapers/README.md`).
+3. Drop wallpapers into `wallpapers/dark/` and `wallpapers/light/` (`dusk/`
+   and `dawn/` are optional) — or, for a cold start, `wallpaper-fetch` pulls
+   freely-licensed nature photography from Wikimedia Commons and sorts it into
+   the pools by measured luminance (see `wallpapers/README.md`).
 4. Log into the **Hyprland (uwsm-managed)** session (the uwsm wrapper is what
    activates `graphical-session.target`, which the desktop portals gate on),
    or in a running session: `hyprctl reload && eww reload`.
@@ -208,28 +231,33 @@ fall back to the system light theme, and `gsettings` drives portal-aware apps
 
 ## Personalize
 
-Machine-specific settings live in **git-ignored local override files**, so the
-tracked base config stays identical for everyone and `git pull` never clobbers
-your tweaks. Full guide: **[docs/CUSTOMIZING.md](docs/CUSTOMIZING.md)**. The
-short version:
+Machine-specific settings live in **local override files**, kept apart from
+the tracked base config so it stays identical for everyone and `git pull`
+never clobbers your tweaks. Full guide:
+**[docs/CUSTOMIZING.md](docs/CUSTOMIZING.md)**. The short version:
 
 - **`~/.config/hypr/local.conf`** (seeded from `local.conf.example`) — your
   **monitors**, `$term`/`$browser`, and extra `exec-once` autostarts. It's
   `source`d after the base defaults, so your values win. This is the main
   place you'll edit.
+- **`~/.config/hypr/window-policy.local.conf`** — which apps open maximized,
+  ahead of the defaults in `window-policy.conf`. `mod+Alt+m` and
+  `hypr-window-policy` write it for you.
+- **`~/.config/eww/local.yuck`** — which browser the Start menu launches.
 - **`config/eww/_local.scss`** — override the bar's **accent color and fonts**
-  (reassign `$accent`/`$accent-tint`, set `$font-family`/`$font-size`). Ships
-  as a comment-only stub.
+  (reassign `$accent`/`$accent-tint`, set `$font-family`/`$font-size`). The
+  exception: a missing SCSS import is a hard error, so this one ships tracked,
+  as a comment-only stub, and you edit it in place.
 
-Everything else is opinionated-but-editable in the tracked files:
+The first three are git-ignored and seeded by `install.sh`. Everything else is
+opinionated-but-editable in the tracked files:
 
 - **Keybinds & window rules** — the `bind`/`windowrule` blocks in
   `hyprland.conf`.
-- **Start-menu pins** — the `start-item` rows in `config/eww/eww.yuck`.
+- **Start-menu pins** — the `start-item` rows in
+  `config/eww/modules/start-menu.yuck`.
 - **Wallpaper rotation interval** — top of `bin/hypr-wallpaper-rotate`; the
   crossfade between images is the `TRANSITION` line in `bin/hypr-wallpaper`.
-- **eww monitor** — bar windows use `:monitor 0` (first output); multi-monitor
-  users edit `config/eww/eww.yuck` (not yet a `local` tunable).
 
 ## How it works / gotchas
 
