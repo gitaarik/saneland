@@ -238,6 +238,12 @@ MRU Alt-Tab reads `/dev/input`, why the wallpaper daemon isn't hyprpaper, the st
 `HYPRLAND_INSTANCE_SIGNATURE` trap, and more — are documented in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Roadmap
+
+What's planned next — keyboard control for the bar, tests and CI, an
+uninstaller, better Fedora and Debian support — is in
+[ROADMAP.md](ROADMAP.md).
+
 ## License
 
 [MIT](LICENSE), except the two Breeze color schemes in
