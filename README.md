@@ -240,4 +240,7 @@ MRU Alt-Tab reads `/dev/input`, why the wallpaper daemon isn't hyprpaper, the st
 
 ## License
 
-[GPL-3.0](LICENSE). Contributions welcome.
+[MIT](LICENSE), except the two Breeze color schemes in
+`config/saneland/kde-colors/`: those are copies of KDE's own files and stay
+under [LGPL-2.0-or-later](LICENSES/LGPL-2.0-or-later.txt). Contributions
+welcome.
