@@ -796,7 +796,11 @@ bind(mod .. " SHIFT, equal", exec(bin .. "hypr-zoom in 1.1"),  { repeating = tru
 -- pass instead of raising "unknown config key", applied on the re-run. If the
 -- bars or the overview are missing, `hyprctl plugin list` says whether the
 -- plugin loaded at all.
-hl.on("hyprland.start", function() hl.exec_cmd("hyprpm reload -n") end)
+--
+-- hyprpm itself reports through Hyprland's notification overlay, which keeps
+-- nothing; bin/hypr-plugins-load runs `hyprpm reload` and puts a failure into
+-- swaync instead, where the panel and the bar's bell keep it.
+hl.on("hyprland.start", function() hl.exec_cmd(bin .. "hypr-plugins-load") end)
 
 local loaded = {}
 for _, p in ipairs(hl.get_loaded_plugins()) do loaded[p.name] = true end

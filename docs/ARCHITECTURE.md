@@ -711,8 +711,10 @@ hyprpm update    # re-sync headers to the new Hyprland, rebuild plugins
 hyprpm list      # confirm hyprbars is enabled
 ```
 
-`hyprpm reload -n` (a `hyprland.start` autostart in `hyprland.lua`) loads
-enabled plugins at login. Plugin option keys and the `hyprbars:no_bar` effect
+`bin/hypr-plugins-load` (a `hyprland.start` autostart in `hyprland.lua`) runs
+`hyprpm reload` to load enabled plugins at login, and turns a failure into a
+critical swaync notification — hyprpm's own message goes to Hyprland's overlay,
+which keeps nothing, so a missed "run hyprpm update" would otherwise be gone. Plugin option keys and the `hyprbars:no_bar` effect
 only exist once the plugin is loaded, so `hyprland.lua` applies them behind an
 `hl.get_loaded_plugins()` check — skipped on the first pass, applied when the
 plugin load re-runs the config. Button glyphs need JetBrainsMono Nerd Font.

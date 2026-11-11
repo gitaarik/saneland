@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Load the hyprpm plugins (hyprbars, hyprexpo) at login, reporting through
+# swaync instead of Hyprland's own notification overlay.
+#
+# Started once from hyprland.lua's hyprland.start autostart, in place of a
+# bare `hyprpm reload -n`.
+#
+# WHY. hyprpm reports through `hyprctl notify`: an overlay the compositor draws
+# for ten seconds and then forgets. Nothing records it — not swaync's panel,
+# not the bar's bell — so the one message that matters here, "plugins failed
+# to load, run hyprpm update" after a Hyprland upgrade, is gone if you weren't
+# looking at the screen during login. And hyprpm sends its FAILURE overlay
+# unconditionally (only the success one is behind -n), so it can't simply be
+# switched off.
+#
+# So: run it, and on failure hand hyprpm's own explanation to swaync as a
+# critical notification — critical so it waits in the panel until dismissed —
+# then clear the overlay copy it already put up, so the message shows once.
+# Success stays silent: a "plugins loaded" toast on every login is noise, and
+# the title bars appearing is confirmation enough.
+
+set -uo pipefail
+
+out=$(hyprpm reload 2>&1)
+status=$?
+(( status == 0 )) && exit 0
+
+# hyprpm colours its output; swaync would show the escape codes literally.
+msg=$(sed -E 's/\x1b\[[0-9;]*m//g; /^[[:space:]]*$/d' <<<"$out" | tail -n 5)
+[[ -n $msg ]] || msg="hyprpm reload exited with status $status."
+
+# The overlay hyprpm sent is the newest one, but dismissnotify can only count
+# from one end; at login it is the only overlay message there is, so clear all.
+hyprctl dismissnotify >/dev/null 2>&1
+
+notify-send -a hyprpm -u critical -i dialog-warning \
+    "Hyprland plugins didn't load" \
+    "$msg
+
+After a Hyprland upgrade, rebuild them with: hyprpm update && hyprpm reload"
+exit "$status"
