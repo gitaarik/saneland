@@ -453,6 +453,11 @@ near_side() {
 # rules in those files now — `never ^Tor Browser$`, and `leave` for the
 # blueman/pavucontrol dialogs that hyprland.lua sizes with a windowrule.
 
+# jq filter: does this client carry the `dialog` tag? A tag set by a window rule
+# shows up in `hyprctl clients` with a trailing `*` (dialog*); one set with
+# hl.dsp.window.tag doesn't. Both count.
+jq_is_dialog='any(.tags[]?; sub("\\*$"; "") == "dialog")'
+
 # Is the window at address $2 the only window of class $1 right now?
 #
 # THE ONE RULE (see the header) in one query. Both sides of the daemon use it,
@@ -486,8 +491,19 @@ alone_of_class() {
 # SIBLING_COUNT is the number of windows of the class INCLUDING this one, for
 # the poller, which already counted them in the snapshot it holds; without it
 # the count comes from hyprctl.
+#
+# Before either reading, a window tagged `dialog` is never a main window,
+# whatever its class: the `dialog` rule in hyprland.lua tags every window that
+# marks itself modal, and refused_main_size tags one that wouldn't take a main
+# window's size. IS_DIALOG (true/false) is for callers that already hold the
+# client's JSON; without it the tag is looked up by ADDRESS.
 is_main() {
-    local class=$1 addr=$2 title=$3 count=${4:-}
+    local class=$1 addr=$2 title=$3 count=${4:-} dialog=${5:-}
+    if [[ -z $dialog && -n $addr ]]; then
+        dialog=$(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr" \
+            ".[] | select(.address == \$a) | $jq_is_dialog" 2>/dev/null)
+    fi
+    [[ $dialog == true ]] && return 1
     if hypr_class_is_multi "$class"; then
         ! hypr_title_is_popup "$title"
     elif [[ -n $count ]]; then
@@ -594,6 +610,36 @@ apply_and_settle() {
     return 1
 }
 
+# After apply_and_settle gave up: did the window refuse a main window's size
+# outright, i.e. is it a dialog that slipped past is_main?
+#
+#   refused_main_size ADDRESS WANT_W WANT_H   -> 0 it refused (and was dealt
+#                                                with), 1 it didn't
+#
+# Only a SUBSTANTIALLY smaller window counts, or an app that lands a few px
+# short would be taken for a dialog over nothing. A refusing window was left
+# wherever the last attempt put it, at its own size, wearing the borderless
+# `max` chrome: stuck in a corner, and what mod+c was being used to rescue.
+# So it gets that rescue here: centred at its own size, `normal` chrome. It is
+# also tagged `dialog`, so nothing else here treats it as a main window again.
+# That matters most for a `multi` class, where the poller would otherwise
+# remember the dialog's size as the browser's.
+#
+# Sets REFUSED_W/REFUSED_H to the size it kept, for maximize_checked's log line.
+refused_main_size() {
+    local addr=$1 want_w=$2 want_h=$3
+    read -r REFUSED_W REFUSED_H < <(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr" \
+        '.[] | select(.address == $a) | "\(.size[0]) \(.size[1])"')
+    [[ -z ${REFUSED_W:-} || $REFUSED_W == null ]] && return 1      # closed again already
+    (( REFUSED_W * 10 < want_w * 9 || REFUSED_H * 10 < want_h * 9 )) || return 1
+
+    hypr_work_area_for "$addr" || return 0
+    hyprctl --batch "$(hypr_geom "$addr" "$REFUSED_W" "$REFUSED_H" \
+                        $(( WORK_X + (WORK_W - REFUSED_W) / 2 )) \
+                        $(( WORK_Y + (WORK_H - REFUSED_H) / 2 ))) ; $(hypr_chrome "$addr" normal) ; dispatch hl.dsp.window.tag({ tag = \"+dialog\", window = \"address:$addr\" })" >/dev/null
+    return 0
+}
+
 # Guess the work area a v2 geometry was saved in, given its size. Prints
 # "<width> <height>", or "0 0" if nothing fits.
 #
@@ -678,8 +724,10 @@ apply_saved_geometry() {
     # remembered geometry for this class", and there was. Whether the client
     # could be talked all the way into it is a separate matter — returning 1
     # here would send an `always` class on to maximize_checked and blow away the
-    # remembered size we just restored.
-    apply_and_settle "$addr" "$w" "$h" "$(( WORK_X + x ))" "$(( WORK_Y + y ))"
+    # remembered size we just restored. A window that refused it outright is a
+    # dialog wearing the main window's class, and refused_main_size puts it back.
+    apply_and_settle "$addr" "$w" "$h" "$(( WORK_X + x ))" "$(( WORK_Y + y ))" \
+        || refused_main_size "$addr" "$w" "$h"
     return 0
 }
 
@@ -695,7 +743,7 @@ apply_saved_geometry() {
 #
 # It will not overwrite a rule you wrote yourself — see policy_learn.
 maximize_checked() {
-    local class=$1 addr=$2 w h aw ah ax ay
+    local class=$1 addr=$2 aw ah ax ay
     hypr_work_area_for "$addr" || return 1
     aw=$WORK_W ah=$WORK_H ax=$WORK_X ay=$WORK_Y
 
@@ -704,15 +752,12 @@ maximize_checked() {
     apply_and_settle "$addr" "$aw" "$ah" "$ax" "$ay" && return 0
 
     # Every retry used up and it still isn't there. A client that was merely
-    # slow to start has long since caught up by now, so this one means it —
-    # but only treat a SUBSTANTIALLY smaller window as a refusal, or an app
-    # that lands a few px short would demote itself over nothing.
-    read -r w h < <(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr" \
-        '.[] | select(.address == $a) | "\(.size[0]) \(.size[1])"')
-    [[ -z ${w:-} || $w == null ]] && return 0        # closed again already
-    if (( w * 10 < aw * 9 || h * 10 < ah * 9 )); then
-        policy_learn "$class" "kept ${w}x${h} of ${aw}x${ah}"
-    fi
+    # slow to start has long since caught up by now, so this one means it.
+    # Never demote a `multi` class over it: there a refusal says this window
+    # is a dialog, not that the browser can't be maximized.
+    refused_main_size "$addr" "$aw" "$ah" || return 0
+    hypr_class_is_multi "$class" && return 0
+    policy_learn "$class" "kept ${REFUSED_W}x${REFUSED_H} of ${aw}x${ah}"
 }
 
 # Demote a class to `leave` in the local policy file. Only ever writes when
@@ -750,9 +795,9 @@ policy_learn() {
 # own snapshot, so is_main costs no extra hyprctl call here; it asks the same
 # question with a query at the two ends where there is no snapshot to hand.
 persist_geometry() {
-    local class=$1 title=$2 geom=$3 mon=$4 count=$5
+    local class=$1 title=$2 geom=$3 mon=$4 count=$5 dialog=$6
     [[ $(hypr_policy_for "$class") == never ]] && return 0
-    is_main "$class" "" "$title" "$count" || return 0
+    is_main "$class" "" "$title" "$count" "$dialog" || return 0
     local wh=${geom%%+*} xy=${geom#*+}         # WxH+X+Y, X may be negative
     hypr_save_geometry "$class" "${wh%%x*}" "${wh##*x}" "${xy%%+*}" "${xy##*+}" "$mon"
 }
@@ -860,7 +905,7 @@ rescue_offscreen() {
         fi
 
         cur=()
-        while IFS=$'\t' read -r a cls ttl geom mon count float fs mapped x y w h; do
+        while IFS=$'\t' read -r a cls ttl geom mon count float fs mapped x y w h dlg; do
             [[ -z $a ]] && continue
             cur[$a]=1
 
@@ -886,14 +931,15 @@ rescue_offscreen() {
             if [[ ${pend[$a]:-} != "$geom" ]]; then pend[$a]=$geom; continue; fi
             base[$a]=$geom
             unset 'pend[$a]'
-            persist_geometry "$cls" "$ttl" "$geom" "$mon" "$count"
+            persist_geometry "$cls" "$ttl" "$geom" "$mon" "$count" "$dlg"
         done < <(jq -r '
             (map(.class) | group_by(.) | map({key: .[0], value: length}) | from_entries) as $n
             | .[] | [ .address, .class, .title,
                       "\(.size[0])x\(.size[1])+\(.at[0])+\(.at[1])",
                       .monitor, $n[.class],
                       .floating, .fullscreen, .mapped,
-                      .at[0], .at[1], .size[0], .size[1] ] | @tsv' <<<"$snap")
+                      .at[0], .at[1], .size[0], .size[1],
+                      '"$jq_is_dialog"' ] | @tsv' <<<"$snap")
 
         for a in "${!base[@]}"; do
             [[ -n ${cur[$a]:-} ]] || unset 'base[$a]' 'pend[$a]'
@@ -962,9 +1008,17 @@ while IFS= read -r line <&3; do
                 #
                 # A title can still be settling 50ms in, so if the one the event
                 # carried didn't decide it, ask again for the one it has now.
+                # A browser's dialogs map with NO title and set it a moment
+                # later (Waterfox's "Opening <file>"), and an empty title is on
+                # no popup list, so keep asking while it is empty, up to half a
+                # second. A browsing window is titled before it ever maps.
                 if hypr_class_is_multi "$class" && ! hypr_title_is_popup "$title"; then
-                    title=$(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr_full" \
-                        '.[] | select(.address == $a) | .title' 2>/dev/null)
+                    for _ in 1 2 3 4 5 6 7 8 9 10; do
+                        title=$(hyprctl -j clients 2>/dev/null | jq -r --arg a "$addr_full" \
+                            '.[] | select(.address == $a) | .title' 2>/dev/null)
+                        [[ -n $title ]] && break
+                        sleep 0.05
+                    done
                 fi
                 is_main "$class" "$addr_full" "$title" || exit 0
 
@@ -1096,7 +1150,8 @@ while IFS= read -r line <&3; do
             # class every browsing window is worth keeping and only a `popup`
             # title is turned away, which is what stops a detached extension
             # window from overwriting the real size just by closing after it.
-            is_main "$class" "$addr_full" "$title" || continue
+            is_main "$class" "$addr_full" "$title" "" \
+                "$(jq -r "$jq_is_dialog" <<<"$client")" || continue
 
             w=$(echo "$client" | jq -r '.size[0]')
             h=$(echo "$client" | jq -r '.size[1]')

@@ -357,14 +357,26 @@ hl.window_rule({
     center = true,
 })
 
+-- Dialogs that say they are one. A client can mark a window modal through
+-- xdg-dialog-v1 (GTK4, libadwaita and Qt 6 do), and that is the only "this is
+-- a dialog" signal Hyprland passes on: `hyprctl clients` shows no parent window
+-- and no window type, but a rule can match `modal` and leave a tag that DOES
+-- show up there. hypr-max-on-open never sizes, remembers or maximizes a window
+-- tagged `dialog` (it also tags windows that refuse a main window's size).
+-- suppress_event refuses a modal's own set_maximized, so a confirmation prompt
+-- that remembers being maximized can't come back that way either.
+-- GTK3 apps (Firefox, Thunderbird) don't speak xdg-dialog-v1. Their dialogs
+-- set a parent window, but Hyprland only logs that. It doesn't expose it.
+hl.window_rule({ name = "dialog", match = { modal = true }, tag = "+dialog", suppress_event = "maximize" })
+
 -- Note: some clients call set_maximized() on themselves on Wayland —
 -- Thunderbird's event-details popups do it from what looks like a stale
--- "restore window state" flag. We'd block that at the protocol level with
--- a suppress_event = "maximize" rule, but there was no such windowrule field
--- in 0.56.2: it was rejected under both the old `class:` and the new
--- `match:` syntax, and nothing replaced it. (0.57's Lua rules do accept
--- suppress_event — untried here; the handler below is what's known to work.)
--- So the request reaches the compositor, and hypr-max-on-open's
+-- "restore window state" flag. suppress_event = "maximize" would block that at
+-- the protocol level, but only for windows a rule can single out at map time,
+-- and nothing tells a Thunderbird popup from Thunderbird's main window (the
+-- `dialog` rule above only catches clients that mark themselves modal).
+-- Suppressing it for every window would also kill every app's own maximize
+-- button. So the request reaches the compositor, and hypr-max-on-open's
 -- fullscreen>>1 handler converts it into the stateless maximize used
 -- everywhere else here. Since a client is free to keep asking — and one with
 -- a stale flag will re-ask every time it is unmaximized — that handler backs
