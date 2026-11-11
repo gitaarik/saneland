@@ -1,0 +1,21 @@
+;; Notification bell — swaync's history, one click away. Left-click toggles
+;; swaync's panel (the same thing mod+shift+n does), which lists every
+;; notification that hasn't been dismissed; right-click toggles Do Not Disturb.
+;; The count of waiting notifications rides next to the bell, hidden at zero.
+;;
+;; Only swaync's notifications are counted. Hyprland's own on-screen messages
+;; (`hyprctl notify`, which hyprpm uses) are drawn by the compositor and kept
+;; nowhere, so they never show up here or in the panel.
+(defwidget notifications []
+  (eventbox :onclick "swaync-client -t -sw"
+            :onrightclick "swaync-client -d -sw"
+            :tooltip {notif.dnd
+                      ? "Do Not Disturb — right-click to turn off"
+                      : notif.count == 0 ? "No notifications"
+                      : "${notif.count} notification${notif.count == 1 ? '' : 's'}"}
+    (box :class {"notifications" + (notif.count > 0 ? " unread" : "")}
+         :orientation "h" :space-evenly false :spacing 5
+      ;; FA bell (U+F0F3), bell-slash (U+F1F6) while Do Not Disturb is on.
+      (label :class "notifications-icon" :text {notif.dnd ? "" : ""})
+      (label :class "notifications-count" :visible {notif.count > 0}
+             :text {notif.count}))))

@@ -56,6 +56,12 @@
   :initial ""
   "~/.config/eww/scripts/battery-tier.sh")
 
+;; swaync notification count + Do Not Disturb, for the bar's bell. Pushed by
+;; swaync itself on every add/close/DND flip — see scripts/notifications-state.sh.
+(deflisten notif
+  :initial '{"count":0,"dnd":false}'
+  "~/.config/eww/scripts/notifications-state.sh")
+
 ;; Network (NetworkManager): connection kind (wifi / ethernet / none),
 ;; wifi radio state, current SSID, and available wifi networks. Same
 ;; reactivity pattern as bluetooth (gdbus monitor + adaptive poller).

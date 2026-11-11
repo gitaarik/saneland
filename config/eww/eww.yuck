@@ -30,6 +30,7 @@
 (include "modules/network.yuck")
 (include "modules/bluetooth.yuck")
 (include "modules/battery.yuck")
+(include "modules/notifications.yuck")
 (include "modules/clock.yuck")
 (include "modules/layout.yuck")
 (include "modules/windows.yuck")
