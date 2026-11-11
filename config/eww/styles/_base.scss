@@ -13,8 +13,11 @@ window#bar {
     // the group boxes' border-top instead — see the border-top rule after the
     // @mixin seam / cell rules.
 }
+// No left inset: the overview button owns the bottom-left corner, and a corner
+// only works as a throw-the-mouse-there target if its very last pixel is the
+// button. That cell carries the inset as its own padding instead.
 window#bar > * {
-    padding: 0 4px;
+    padding: 0 4px 0 0;
 }
 
 // ---- Faded hairline seam ----------------------------------------------------

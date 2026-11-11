@@ -25,6 +25,7 @@
 (include "modules/data-sources.yuck")
 (include "modules/shared.yuck")
 (include "modules/start-menu.yuck")
+(include "modules/overview.yuck")
 (include "modules/taskbar.yuck")
 (include "modules/audio.yuck")
 (include "modules/network.yuck")

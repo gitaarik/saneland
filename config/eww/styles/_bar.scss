@@ -4,7 +4,7 @@
 // they sit flat on the bar $bg, identical to the systray boxes. The seam border
 // and the active tint/accent-bar are re-applied by their own rules below (both
 // later in the cascade, so they win).
-.launcher, .tag, .task {
+.launcher, .overview, .tag, .task {
     background: $cell-bg;
     border: none;
     border-radius: 0;
@@ -13,18 +13,23 @@
 // Give the same $cell-bg to the group boxes (so the taskbar's empty hexpand
 // stretch is filled, not the bare window bg) and the systray/status cells, so
 // the whole bar reads as one gray surface rather than gray chips on lighter gaps.
-.tags, .taskbar, .status-group, .cat-sep,
+.corner, .tags, .taskbar, .status-group, .cat-sep,
 .tray > *, .bluetooth, .audio, .network, .battery, .notifications, .clock {
     background-color: $cell-bg;
 }
 
+// The overview button is the bottom-left corner cell. The bar's root box has
+// no left inset (window#bar > *), so this padding is the whole gap to the
+// screen edge — ~6px so the glyph sits tight-but-not-cramped in the corner,
+// while the clickable area runs right up to the edge.
+.overview {
+    color: $fg;
+    padding: 0 4px 0 6px;
+}
 .launcher {
     color: $fg;
     font-weight: bold;
-    // Small left padding on top of the bar's 4px edge inset (window#bar > *) —
-    // ~6px total so the glyph sits tight-but-not-cramped in the corner, rather
-    // than the ~10px it had at 6px. Right padding sets the gap to the first tag.
-    padding: 0 6px 0 2px;
+    padding: 0 4px;
 }
 // Highlighted while the start menu is open — mirrors .tag.active.
 .launcher.active {
@@ -78,6 +83,7 @@
 // cell (unlike the shared tags/taskbar eventbox, where a parent-hover form would
 // light every child at once — hence the direct :hover for those).
 .launcher:hover:not(.active),
+.overview:hover,
 .tag:hover:not(.active):not(.no-hover),
 .task:hover:not(.active):not(.no-hover),
 *:hover > .audio:not(.active),
@@ -95,6 +101,7 @@
 // This is a second, inner zone — distinct from the cell's own horizontal
 // padding, which stays as bar-$bg between the highlight and the seam.
 .launcher > label,
+.overview > label,
 .task > box {
     padding: 0 5px;
 }
@@ -179,11 +186,11 @@
     border-right: 1px solid transparent;
     @include seam;
 }
-// Left side: the mirror — the seam rides each cell's LEFT edge, so the launcher
-// (the first item) is the one omitted. Putting it on the left also means the
-// dynamic, right-growing taskbar never leaves a seam dangling after its last
-// window. Every tag/task touches its neighbour (:spacing 0 in the yuck boxes).
-.tag, .task {
+// Left side: the mirror — the seam rides each cell's LEFT edge, so the overview
+// button (the first item, in the corner) is the one omitted. Putting it on the
+// left also means the dynamic, right-growing taskbar never leaves a seam
+// dangling after its last window. Every tag/task touches its neighbour (:spacing 0 in the yuck boxes).
+.launcher, .tag, .task {
     border-left: 1px solid transparent;
     @include seam;
 }

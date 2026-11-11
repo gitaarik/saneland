@@ -3,7 +3,11 @@
 ;; pushing the window buttons out to the status group on the right.
 (defwidget left-side [m]
   (box :orientation "h" :space-evenly false :spacing 0 :hexpand true
-    (launcher)
+    ;; Corner group: overview in the very corner, Start beside it. One box so
+    ;; the bar's top hairline (drawn per group box) spans both.
+    (box :class "corner" :orientation "h" :space-evenly false :spacing 0
+      (overview-button)
+      (launcher))
     (box :class "cat-sep")
     (tags :m m)
     (box :class "cat-sep")

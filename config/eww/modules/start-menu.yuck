@@ -6,7 +6,7 @@
 (defwidget launcher []
   (button :class {open-popup == "start-popup" ? "launcher active" : "launcher"}
           :onclick "~/.config/eww/scripts/popup-toggle.sh start-popup"
-          ""))
+          ""))
 
 ;; One pinned-app row in the start menu: a Nerd Font glyph + label.
 ;; `cmd` is launched detached (start-launch.sh dismisses the menu first).

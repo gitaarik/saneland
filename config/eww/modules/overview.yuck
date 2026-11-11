@@ -1,0 +1,14 @@
+;; Overview button — the bottom-left corner cell, left of the Start button, so
+;; a mouse thrown into the corner lands on it. Opens the hyprexpo workspace
+;; overview on every screen, exactly what mod+x does (see the
+;; Overview section of hyprland.lua), for when a hand is on the mouse rather
+;; than the keyboard. Clicking a tile, Escape or mod+x closes it again.
+;; Plugin calls are Lua functions since Hyprland 0.57, hence `eval`, not
+;; `dispatch`. No active state: eww can't see whether the overview is open, and
+;; while it is, it covers the bar anyway. Glyph is MD view-grid (U+F0570) —
+;; four separate tiles, kept distinct from the Start button's FA bars (U+F0C9).
+(defwidget overview-button []
+  (button :class "overview"
+          :tooltip "Overview (mod+x)"
+          :onclick "hyprctl eval 'hl.plugin.hyprexpo.expo(\"toggle all\")'"
+          "󰕰"))
