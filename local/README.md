@@ -18,7 +18,7 @@ local/
 ```
 
 For *small* tweaks (keybinds, accent, extra-app theming) you usually don't need
-this — use the in-place override hooks instead (`~/.config/hypr/local.conf`,
+this — use the in-place override hooks instead (`~/.config/hypr/local.lua`,
 `config/eww/_local.scss`, `~/.config/saneland/theme.local.sh`).
 
 See [../docs/CUSTOMIZING.md](../docs/CUSTOMIZING.md) for the full picture.

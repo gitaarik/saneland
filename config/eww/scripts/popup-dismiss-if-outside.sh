@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
 # Dismiss eww popups on a click OUTSIDE them. Bound permanently in
-# hyprland.conf:
+# hyprland.lua:
 #
-#   bindrn = , mouse:272, exec, ~/.config/eww/scripts/popup-dismiss-if-outside.sh
+#   bind(", mouse:272", exec("~/.config/eww/scripts/popup-dismiss-if-outside.sh"),
+#        { release = true, non_consuming = true })
 #
 # Usage:
 #   popup-dismiss-if-outside.sh                 whichever popup is open

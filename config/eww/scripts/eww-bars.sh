@@ -28,7 +28,7 @@ set -uo pipefail
 
 # The daemon is started by ensure_daemon below and inherits this env.
 # GtkCalendar reads first-day-of-week from LC_TIME; en_GB gives a Monday-first
-# week with English names (see the autostart note in hyprland.conf). A no-op
+# week with English names (see the autostart note in hyprland.lua). A no-op
 # for later syncs — the daemon is already up by then.
 export LC_TIME=en_GB.UTF-8
 

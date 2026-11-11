@@ -5,7 +5,7 @@
 # Shape — one entry PER MONITOR (keyed by connector name) so each bar shows only
 # its OWN screen. Each monitor owns a 12-workspace block: monitors sorted by id,
 # rank r -> offset = r*12, so local tags 1..12 map to global workspaces
-# off+1..off+12 (laptop 1-12, external 13-24; see hypr-workspace / local.conf).
+# off+1..off+12 (laptop 1-12, external 13-24; see hypr-workspace / local.lua).
 #
 #   {
 #     "monitors": {

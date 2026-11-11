@@ -140,6 +140,9 @@
 ;; Cancel just clears it. Hidden (and inert) while start-confirm is "".
 ;; The ${...} on Confirm is interpolated at click time, so it resolves to
 ;; the armed action's command before the `start-confirm=\'\'` reset runs.
+;; Log out is `hyprctl dispatch 'hl.dsp.exit()'` (Hyprland 0.57 takes a Lua
+;; dispatcher). The Lua sits in $quit, set outside the ${...}: inside it the
+;; command is already a single-quoted literal, with no room for more quotes.
 (defwidget start-confirm-bar []
   (box :class "start-confirm" :orientation "v" :space-evenly false :spacing 6
        :visible {start-confirm != ""}
@@ -150,7 +153,7 @@
                   start-confirm == "logout"   ? "Log out?"   : ""})
     (box :class "start-confirm-actions" :orientation "h" :space-evenly true :spacing 6
       (button :class "start-confirm-yes"
-              :onclick "eww update start-confirm=''; ~/.config/eww/scripts/popup-dismiss.sh start-popup; ${start-confirm == 'poweroff' ? 'systemctl poweroff' : start-confirm == 'reboot' ? 'systemctl reboot' : start-confirm == 'suspend' ? 'systemctl suspend' : 'hyprctl dispatch exit'}"
+              :onclick "eww update start-confirm=''; ~/.config/eww/scripts/popup-dismiss.sh start-popup; quit='hl.dsp.exit()'; ${start-confirm == 'poweroff' ? 'systemctl poweroff' : start-confirm == 'reboot' ? 'systemctl reboot' : start-confirm == 'suspend' ? 'systemctl suspend' : 'hyprctl dispatch $quit'}"
         (box :orientation "h" :space-evenly false :spacing 6 :halign "center"
           (label :text "") (label :text "Confirm")))
       (button :class "start-confirm-no"

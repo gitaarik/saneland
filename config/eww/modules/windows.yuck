@@ -39,7 +39,7 @@
 ;; keybind, which has to be a *global* Hyprland bind because eww has no key
 ;; handler of its own and these surfaces never hold the keyboard.
 ;;
-;; Both binds live in hyprland.conf and are registered ONCE for the session —
+;; Both binds live in hyprland.lua and are registered ONCE for the session —
 ;; nothing arms or unbinds them. They name no window either; they dismiss
 ;; whatever is open. Arming them per-popup meant syncing global compositor
 ;; state with per-window state from concurrent scripts, which is where every

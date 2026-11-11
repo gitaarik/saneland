@@ -19,16 +19,21 @@ repo** and have one source of truth with zero divergence from upstream.
 For the common adjustments. Each is a file the base config *includes*, so you
 add to or override the defaults without touching the tracked file.
 
-### Hyprland — `~/.config/hypr/local.conf`
-`source`d after the base defaults and before the keybinds, so your values win.
-`install.sh` seeds it from `local.conf.example`. Put here:
+### Hyprland — `~/.config/hypr/local.lua`
+Lua (Hyprland 0.57 dropped the `.conf` format). Loaded after the base defaults
+and before the keybinds, so your values win; it receives the base config's
+table of defaults as `local v = ...`. `install.sh` seeds it from
+`local.lua.example`. Put here:
 
-- **Monitors** — `monitor = eDP-1, 2256x1504@60, 0x0, 1.5`
-- **App/var overrides** — `$browser = chromium`, `$term = alacritty`
-- **Extra keybinds / rules / autostarts** — just add `bind = …`, `windowrule = …`,
-  `exec-once = …`
-- **Override a base keybind** — rebind it: `unbind = $mod, Return` then your
-  `bind = $mod, Return, exec, …`
+- **Monitors** — `hl.monitor({ output = "eDP-1", mode = "2256x1504@60", position = "0x0", scale = 1.5666667 })`
+- **App/var overrides** — `v.browser = "chromium"`, `v.term = "alacritty"`
+- **Extra keybinds / rules / autostarts** — just add `hl.bind(…)`, `hl.window_rule({…})`,
+  `hl.on("hyprland.start", function() hl.exec_cmd("…") end)`
+- **Change what a base keybind runs** — set the `v.*` value it reads
+  (`v.term`, `v.browser`, `v.launcher`, `v.lock`). The base keybinds are
+  defined *after* local.lua runs, so an `hl.unbind` here would be undone by
+  them; rebinding a base key to something else entirely means editing
+  `hyprland.lua`.
 
 ### eww bar styling — `config/eww/_local.scss`
 Imported by `_eww-common.scss`. The active theme's palette (`$bg`, `$fg`,
@@ -90,7 +95,7 @@ locations a private repo and symlink them in — e.g.:
 
 ```bash
 # ~/dev/saneland-local is your private repo
-ln -s ~/dev/saneland-local/hypr-local.conf   ~/dev/saneland/config/hypr/local.conf
+ln -s ~/dev/saneland-local/hypr-local.lua    ~/dev/saneland/config/hypr/local.lua
 ln -s ~/dev/saneland-local/eww-local.scss    ~/dev/saneland/config/eww/_local.scss
 ln -s ~/dev/saneland-local/theme.local.sh    ~/.config/saneland/theme.local.sh
 ln -s ~/dev/saneland-local/local             ~/dev/saneland/local

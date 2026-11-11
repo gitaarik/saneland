@@ -33,8 +33,7 @@ geom=""
 if [[ $has_nobar = true ]]; then
     tag=-nobar
     if (( y - bar_h < WORK_Y )); then
-        geom="dispatch resizewindowpixel exact ${w} $(( h - bar_h )),address:${addr}; \
-              dispatch movewindowpixel exact ${x} $(( y + bar_h )),address:${addr};"
+        geom="$(hypr_geom "$addr" "$w" $(( h - bar_h )) "$x" $(( y + bar_h ))) ;"
     fi
 else
     tag=+nobar
@@ -42,12 +41,11 @@ else
     # top, give or take a snap's inset and fractional-scale slack.
     d=$(( y - bar_h - WORK_Y ))
     if (( d >= -3 && d <= HYPR_SNAP_BORDER + 3 )); then
-        geom="dispatch resizewindowpixel exact ${w} $(( h + bar_h )),address:${addr}; \
-              dispatch movewindowpixel exact ${x} $(( y - bar_h )),address:${addr};"
+        geom="$(hypr_geom "$addr" "$w" $(( h + bar_h )) "$x" $(( y - bar_h ))) ;"
     fi
 fi
 
 hyprctl --batch \
     "${geom} \
-     dispatch tagwindow ${tag} address:${addr}; \
-     dispatch setprop address:${addr} border_size ${border}" >/dev/null
+     dispatch hl.dsp.window.tag({ tag = \"${tag}\", window = \"address:${addr}\" }) ; \
+     dispatch hl.dsp.window.set_prop({ prop = \"border_size\", value = \"${border}\", window = \"address:${addr}\" })" >/dev/null

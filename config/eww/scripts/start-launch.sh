@@ -52,7 +52,7 @@ case ${1:-} in
         # "initialClass:" line. Detection and focuswindow use the same
         # regex, so they can't disagree.
         if hyprctl clients | grep -qiE "^[[:space:]]*class:[[:space:]]+${match}$"; then
-            exec hyprctl dispatch focuswindow "class:${match}"
+            exec hyprctl dispatch "hl.dsp.focus({ window = [[class:${match}]] })"
         fi
         launch "$@"
         ;;
@@ -70,7 +70,7 @@ for c in json.load(sys.stdin):
         print(c["address"]); break
 ' "$pids")
     if [[ -n $addr ]]; then
-        exec hyprctl dispatch focuswindow "address:$addr"
+        exec hyprctl dispatch "hl.dsp.focus({ window = \"address:$addr\" })"
     fi
 fi
 

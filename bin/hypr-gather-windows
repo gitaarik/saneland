@@ -95,7 +95,7 @@ plan=$(jq -n \
      curname: ($monitors | map(select(.id == $cur))[0].name)}
 ')
 
-moves=$(jq -r '.moves[] | "dispatch movetoworkspacesilent \(.ws),address:\(.addr)"' <<<"$plan")
+moves=$(jq -r '.moves[] | "dispatch hl.dsp.window.move({ workspace = \"\(.ws)\", follow = false, window = \"address:\(.addr)\" })"' <<<"$plan")
 show=$(jq -r '.show // empty' <<<"$plan")
 name=$(jq -r '.name' <<<"$plan")
 curname=$(jq -r '.curname // empty' <<<"$plan")
@@ -107,15 +107,15 @@ curname=$(jq -r '.curname // empty' <<<"$plan")
 batch=$(awk 'NR > 1 { printf " ; " } { printf "%s", $0 } END { print "" }' <<<"$moves")
 hyprctl --batch "$batch" >/dev/null 2>&1
 
-# Show the carried-over tag on the target screen. focusmonitor is the only way
-# to aim a workspace switch at a screen, and it silently no-ops when Hyprland
-# already thinks that screen is focused (e.g. an empty screen holding focus),
-# so step through the current one first.
+# Show the carried-over tag on the target screen. Focusing the monitor is the
+# only way to aim a workspace switch at a screen, and it silently no-ops when
+# Hyprland already thinks that screen is focused (e.g. an empty screen holding
+# focus), so step through the current one first.
 if [[ -n $show ]]; then
-    hyprctl --batch "dispatch focusmonitor ${curname:-$name} ; dispatch focusmonitor $name ; dispatch focusworkspaceoncurrentmonitor $show" >/dev/null 2>&1
+    hyprctl --batch "dispatch hl.dsp.focus({ monitor = \"${curname:-$name}\" }) ; dispatch hl.dsp.focus({ monitor = \"$name\" }) ; dispatch hl.dsp.focus({ workspace = \"$show\", on_current_monitor = true })" >/dev/null 2>&1
 fi
 
 # Hand focus back to the window you had — it is on the target screen now.
 addr=$(jq -r '.address // empty' <<<"$active")
-[[ -n $addr ]] && hyprctl dispatch focuswindow "address:$addr" >/dev/null
+[[ -n $addr ]] && hyprctl dispatch "hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null
 exit 0

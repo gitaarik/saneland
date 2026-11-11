@@ -150,7 +150,7 @@ pass() {
     p=$(plan) || return 0
     [[ -n $p ]] || return 0
 
-    moves=$(jq -r '.moves[] | "dispatch movetoworkspacesilent \(.ws),address:\(.addr)"' \
+    moves=$(jq -r '.moves[] | "dispatch hl.dsp.window.move({ workspace = \"\(.ws)\", follow = false, window = \"address:\(.addr)\" })"' \
                 <<<"$p" 2>/dev/null)
 
     if [[ -n $moves ]]; then

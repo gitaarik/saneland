@@ -179,12 +179,12 @@ def dispatch_target(target):
     # workspace, so that one is restored instead (which focuses it too).
     # Returns True if it restored a minimized window.
     if isinstance(target, str) and target.startswith("ws:"):
-        run_quiet(["hyprctl", "dispatch", "workspace", target[3:]])
+        run_quiet(["hyprctl", "dispatch", f'hl.dsp.focus({{ workspace = "{target[3:]}" }})'])
     elif is_minimized(target):
         run_quiet([MINIMIZE, "restore", target])
         return True
     else:
-        run_quiet(["hyprctl", "dispatch", "focuswindow", f"address:{target}"])
+        run_quiet(["hyprctl", "dispatch", f'hl.dsp.focus({{ window = "address:{target}" }})'])
     return False
 
 

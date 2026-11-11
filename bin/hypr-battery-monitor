@@ -2,7 +2,7 @@
 #
 # Battery low-charge notifier.
 #
-# Started once from hyprland.conf's exec-once. Fires a swaync notification
+# Started once from hyprland.lua's hyprland.start autostart. Fires a swaync notification
 # (notify-send) when the charge crosses a threshold *downward while
 # discharging*, and clears it again once you plug in or recover. The eww bar
 # already shows the percentage and recolors at these same tiers (low 30 /

@@ -104,7 +104,7 @@ hypr_policy_regex() {
 #
 # PREFER hypr_work_area_for (below) when you have a window address. The
 # focused *monitor* is not the window's: it follows keyboard focus (see
-# misc:mouse_move_focuses_monitor in hyprland.conf), and the caller is usually
+# misc:mouse_move_focuses_monitor in hyprland.lua), and the caller is usually
 # acting on some specific window — which may be neither the focused one nor on
 # the focused screen. Sizing a window against the wrong monitor is how windows
 # on a second output ended up wearing the laptop's work-area dimensions.
@@ -222,10 +222,13 @@ hypr_fills_work_area() {
 #   normal  2px active border + default rounding + title bar, for a free-
 #           floating sub-work-area window (dialogs, mod+c center, etc.)
 # The title bar is toggled with a `nobar` window tag that the `hyprbars:no_bar`
-# windowrule (config/hypr/hyprland.conf) keys off — max/snap add it, normal
+# window rule (config/hypr/hyprland.lua) keys off — max/snap add it, normal
 # removes it. Prints the clauses (no trailing newline) so callers can splice
 # them into an existing hyprctl --batch string; this is the single source of
 # truth for the chrome every window-management script applies.
+#
+# Since Hyprland 0.57 every `dispatch` takes a Lua dispatcher expression. They
+# never contain a `;`, which is what --batch splits on.
 hypr_chrome() {
     local addr=$1 mode=$2 border rounding nobar
     case $mode in
@@ -233,8 +236,16 @@ hypr_chrome() {
         snap) border=3 rounding=unset nobar=+nobar ;;
         *)    border=3 rounding=unset nobar=-nobar ;;
     esac
-    printf 'dispatch setprop address:%s border_size %s; dispatch setprop address:%s rounding %s; dispatch tagwindow %s address:%s' \
-        "$addr" "$border" "$addr" "$rounding" "$nobar" "$addr"
+    printf 'dispatch hl.dsp.window.set_prop({ prop = "border_size", value = "%s", window = "address:%s" }) ; ' "$border" "$addr"
+    printf 'dispatch hl.dsp.window.set_prop({ prop = "rounding", value = "%s", window = "address:%s" }) ; ' "$rounding" "$addr"
+    printf 'dispatch hl.dsp.window.tag({ tag = "%s", window = "address:%s" })' "$nobar" "$addr"
+}
+
+# hypr_geom ADDR W H X Y — the --batch clauses that give ADDR exactly this size
+# and GLOBAL position (no trailing separator), for splicing like hypr_chrome.
+hypr_geom() {
+    printf 'dispatch hl.dsp.window.resize({ x = %s, y = %s, window = "address:%s" }) ; ' "$2" "$3" "$1"
+    printf 'dispatch hl.dsp.window.move({ x = %s, y = %s, window = "address:%s" })' "$4" "$5" "$1"
 }
 
 # Maximize a window: fill ITS OWN monitor's work area and give it the
@@ -243,10 +254,7 @@ hypr_chrome() {
 hypr_set_max() {
     local addr=$1
     hypr_work_area_for "$addr" || return 1
-    hyprctl --batch \
-        "dispatch resizewindowpixel exact ${WORK_W} ${WORK_H},address:${addr}; \
-         dispatch movewindowpixel exact ${WORK_X} ${WORK_Y},address:${addr}; \
-         $(hypr_chrome "$addr" max)" >/dev/null
+    hyprctl --batch "$(hypr_geom "$addr" "$WORK_W" "$WORK_H" "$WORK_X" "$WORK_Y") ; $(hypr_chrome "$addr" max)" >/dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -322,10 +330,7 @@ hypr_set_snap() {
     local addr=$1 horiz=$2 vert=$3
     hypr_work_area_for "$addr" || return 1
     hypr_snap_geom "$horiz" "$vert"
-    hyprctl --batch \
-        "dispatch resizewindowpixel exact ${SNAP_W} ${SNAP_H},address:${addr}; \
-         dispatch movewindowpixel exact ${SNAP_X} ${SNAP_Y},address:${addr}; \
-         $(hypr_chrome "$addr" snap)" >/dev/null
+    hyprctl --batch "$(hypr_geom "$addr" "$SNAP_W" "$SNAP_H" "$SNAP_X" "$SNAP_Y") ; $(hypr_chrome "$addr" snap)" >/dev/null
 }
 
 # A "column" is the third snap shape: full height like a left/right half, but
@@ -352,10 +357,8 @@ hypr_set_column() {
     local addr=$1 w=$2 bw=$HYPR_SNAP_BORDER
     hypr_work_area_for "$addr" || return 1
     (( w > WORK_W - bw - bw )) && w=$(( WORK_W - bw - bw ))
-    hyprctl --batch \
-        "dispatch resizewindowpixel exact ${w} $(( WORK_H - bw - bw )),address:${addr}; \
-         dispatch movewindowpixel exact $(( WORK_X + (WORK_W - w) / 2 )) $(( WORK_Y + bw )),address:${addr}; \
-         $(hypr_chrome "$addr" snap)" >/dev/null
+    hyprctl --batch "$(hypr_geom "$addr" "$w" $(( WORK_H - bw - bw )) \
+                        $(( WORK_X + (WORK_W - w) / 2 )) $(( WORK_Y + bw ))) ; $(hypr_chrome "$addr" snap)" >/dev/null
 }
 
 # Apply an explicit geometry to a window, picking the chrome to match: a
@@ -372,10 +375,7 @@ hypr_apply_geom() {
     hypr_work_area_for "$addr" || return 1
     local mode=normal
     hypr_fills_work_area "$w" "$h" && mode=max
-    hyprctl --batch \
-        "dispatch resizewindowpixel exact ${w} ${h},address:${addr}; \
-         dispatch movewindowpixel exact ${x} ${y},address:${addr}; \
-         $(hypr_chrome "$addr" "$mode")" >/dev/null
+    hyprctl --batch "$(hypr_geom "$addr" "$w" "$h" "$x" "$y") ; $(hypr_chrome "$addr" "$mode")" >/dev/null
 }
 
 # ---------------------------------------------------------------------------

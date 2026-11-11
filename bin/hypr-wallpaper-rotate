@@ -2,7 +2,7 @@
 #
 # Rotate the wallpaper within the current theme's pool on a timer.
 #
-# Started once from hyprland.conf's exec-once. Every $INTERVAL it asks
+# Started once from hyprland.lua's hyprland.start autostart. Every $INTERVAL it asks
 # hypr-wallpaper to pick a fresh image from whatever theme is active at that
 # moment (~/.cache/current-theme), so it follows dark/light switches with no
 # extra wiring. The first iteration also paints the initial wallpaper at login.

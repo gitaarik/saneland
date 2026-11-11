@@ -61,4 +61,4 @@ mv "$tmpfile" "$state"
 # Touch the file so any tail-following process sees activity; the
 # hypr-state.sh emitter is event-driven, so also nudge it by sending a
 # benign hyprctl command that produces an activewindow event.
-hyprctl dispatch focuswindow "address:$addr" >/dev/null
+hyprctl dispatch "hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null

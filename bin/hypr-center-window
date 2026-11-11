@@ -42,7 +42,4 @@ new_h=$(( WORK_H * pct / 100 ))
 new_x=$(( WORK_X + (WORK_W - new_w) / 2 ))
 new_y=$(( WORK_Y + (WORK_H - new_h) / 2 ))
 
-hyprctl --batch \
-    "dispatch resizewindowpixel exact ${new_w} ${new_h},address:${target}; \
-     dispatch movewindowpixel exact ${new_x} ${new_y},address:${target}; \
-     $(hypr_chrome "$target" normal)" >/dev/null
+hyprctl --batch "$(hypr_geom "$target" "$new_w" "$new_h" "$new_x" "$new_y") ; $(hypr_chrome "$target" normal)" >/dev/null

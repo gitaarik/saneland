@@ -214,7 +214,7 @@ adopt_native_max() {
     # custom, stateless work-area maximize + stripped chrome
     # (== mod+m). Dispatching state 0 fires fullscreen>>0, which
     # the fullscreen branch ignores, so we never answer our own event.
-    hyprctl dispatch fullscreenstate "0 0,address:$addr" >/dev/null
+    hyprctl dispatch "hl.dsp.window.fullscreen_state({ internal = 0, client = 0, window = \"address:$addr\" })" >/dev/null
     sleep 0.05
 
     # Only WRITE a geometry that isn't already there. Hyprland's
@@ -451,7 +451,7 @@ near_side() {
 # hypr-window-lib.sh) reads ~/.config/hypr/window-policy{,.local}.conf and
 # answers always | leave | never. The two regexes that used to live here are
 # rules in those files now — `never ^Tor Browser$`, and `leave` for the
-# blueman/pavucontrol dialogs that hyprland.conf sizes with a windowrule.
+# blueman/pavucontrol dialogs that hyprland.lua sizes with a windowrule.
 
 # Is the window at address $2 the only window of class $1 right now?
 #
@@ -801,7 +801,7 @@ rescue_offscreen() {
     (( ny > ay + ah - reachable_h )) && ny=$(( ay + ah - reachable_h ))
 
     (( nx == x && ny == y )) && return 1
-    hyprctl dispatch movewindowpixel "exact $nx $ny,address:$addr" >/dev/null
+    hyprctl dispatch "hl.dsp.window.move({ x = $nx, y = $ny, window = \"address:$addr\" })" >/dev/null
     return 0
 }
 

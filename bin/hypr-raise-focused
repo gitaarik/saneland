@@ -33,6 +33,6 @@ trap 'exit' INT TERM
 
 while IFS= read -r line <&3; do
     case "$line" in
-        activewindow*) hyprctl dispatch alterzorder top >/dev/null ;;
+        activewindow*) hyprctl dispatch 'hl.dsp.window.alter_zorder({ mode = "top" })' >/dev/null ;;
     esac
 done

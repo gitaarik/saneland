@@ -23,6 +23,6 @@ export GDK_BACKEND=wayland
 export XDG_CURRENT_DESKTOP=Hyprland
 
 # exec, so greetd's child IS the compositor: when Hyprland exits (which it does
-# as soon as ReGreet has handed the session over — see hyprland.conf's
-# `exec-once = regreet; hyprctl dispatch exit`) greetd starts your session.
-exec Hyprland --config /etc/greetd/hyprland.conf
+# as soon as ReGreet has handed the session over — see hyprland.lua's
+# `regreet; hyprctl dispatch 'hl.dsp.exit()'`) greetd starts your session.
+exec Hyprland --config /etc/greetd/hyprland.lua

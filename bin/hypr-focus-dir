@@ -91,7 +91,7 @@ if [[ -n $active ]]; then
     ' <<<"$clients")
 
     if [[ -n $target ]]; then
-        hyprctl dispatch focuswindow "address:$target" >/dev/null
+        hyprctl dispatch "hl.dsp.focus({ window = \"address:$target\" })" >/dev/null
         exit 0
     fi
 fi
@@ -100,7 +100,7 @@ fi
 # Direction is resolved by geometry here instead of with `focusmonitor <dir>`,
 # which is relative to the FOCUSED monitor. That one used to be cursor-driven
 # and so routinely disagreed with the focused window's monitor; it now follows
-# keyboard focus (misc:mouse_move_focuses_monitor = false, see hyprland.conf),
+# keyboard focus (misc:mouse_move_focuses_monitor = false, see hyprland.lua),
 # but steering by the active window's own monitor needs no such assumption.
 # Falls back to the focused monitor when nothing is focused.
 monitors=$(hyprctl -j monitors 2>/dev/null) || exit 1
@@ -164,7 +164,7 @@ next_win=$(jq -r --arg mon "$next" --argjson mons "$monitors" '
 ' <<<"$clients")
 
 if [[ -n $next_win ]]; then
-    hyprctl dispatch focuswindow "address:$next_win" >/dev/null
+    hyprctl dispatch "hl.dsp.focus({ window = \"address:$next_win\" })" >/dev/null
     exit 0
 fi
 
@@ -172,4 +172,4 @@ fi
 # to take focus. Redirect to the current monitor first so the dispatch can't
 # hit the already-focused early return described above.
 cur_name=$(jq -r --argjson id "$cur_id" 'map(select(.id == $id))[0].name // empty' <<<"$monitors")
-hyprctl --batch "dispatch focusmonitor ${cur_name:-$next}; dispatch focusmonitor $next" >/dev/null
+hyprctl --batch "dispatch hl.dsp.focus({ monitor = \"${cur_name:-$next}\" }) ; dispatch hl.dsp.focus({ monitor = \"$next\" })" >/dev/null

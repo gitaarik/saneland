@@ -49,7 +49,7 @@ link() {
 # Format: "<relative symlink path> <target>"
 DEFAULT_THEME_LINKS=(
   "config/eww/eww.scss          eww-dark.scss"
-  "config/hypr/border-colors.conf border-colors-dark.conf"
+  "config/hypr/border-colors.lua border-colors-dark.lua"
   "config/rofi/colorScheme.rasi colorSchemes/dark.rasi"
   "config/rofi/guiSize.rasi     guiSizes/normal.rasi"
   "config/swaync/style.css      style-dark.css"
@@ -76,7 +76,7 @@ head "Local overrides (created from *.example, never clobbered)"
 # from the committed example, then yours to edit. Re-running install never
 # overwrites an existing one.
 LOCAL_FILES=(
-  "config/hypr/local.conf  config/hypr/local.conf.example"
+  "config/hypr/local.lua  config/hypr/local.lua.example"
   "config/hypr/window-policy.local.conf  config/hypr/window-policy.local.conf.example"
   "config/eww/local.yuck   config/eww/local.yuck.example"
 )
@@ -147,8 +147,8 @@ Done. Next steps:
        ./deps.sh              # or ./deps.sh --print to just see the list
   2. Add yourself to the `input` group for the Alt-Tab MRU daemon:
        sudo usermod -aG input "$USER"   # then re-login
-  3. Set your monitors / app choices in ~/.config/hypr/local.conf
-     (seeded above from local.conf.example — the base config stays generic).
+  3. Set your monitors / app choices in ~/.config/hypr/local.lua
+     (seeded above from local.lua.example — the base config stays generic).
   4. Drop wallpapers into wallpapers/{dark,dusk,dawn,light}/, or run
      'wallpaper-fetch' to fill all four pools from Wikimedia Commons.
   5. Enable the hyprbars and hyprexpo plugins (see README.md → Install, step 2).
@@ -156,6 +156,6 @@ Done. Next steps:
        hyprctl reload && eww reload
   7. Switch theme any time with:  theme dark   |   theme light
 
-Keybinds and window rules in config/hypr/hyprland.conf are opinionated
+Keybinds and window rules in config/hypr/hyprland.lua are opinionated
 defaults — adapt to taste.
 NOTE

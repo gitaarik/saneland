@@ -7,8 +7,8 @@
   (button :visible {m.tag_visible[n - 1]}
           :class {(m.tag_focused[n - 1] ? "tag active" : "tag")
                   + (scroll-switching == "true" ? " no-hover" : "")}
-          :onclick "hyprctl dispatch workspace ${m.offset + n}"
-          :onrightclick "hyprctl dispatch movetoworkspace ${m.offset + n}"
+          :onclick "hyprctl dispatch 'hl.dsp.focus({ workspace = ${m.offset + n} })'"
+          :onrightclick "hyprctl dispatch 'hl.dsp.window.move({ workspace = ${m.offset + n} })'"
           (label :text "${n}")))
 
 ;; Scroll-wheel on the tags area cycles the focused workspace through
@@ -50,7 +50,7 @@
                 ;; special workspace open instead of bringing it back.
                 :onclick {w.minimized
                           ? "~/.local/bin/hypr-minimize restore ${w.id}"
-                          : "hyprctl dispatch focuswindow address:${w.id}"}
+                          : "hyprctl dispatch 'hl.dsp.focus({ window = [[address:${w.id}]] })'"}
           (box :orientation "h" :space-evenly false :spacing 6
             (image :icon "${w.icon}" :image-width 16 :image-height 16)
             ;; No :limit-width — that capped the label at a fixed char count,

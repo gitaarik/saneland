@@ -21,7 +21,7 @@
 #      event, which fires whenever focus shifts to a different tiled window.
 #
 # THIS SCRIPT ARMS NOTHING. (1) and (2) are registered once, permanently, in
-# hyprland.conf; they cost ~1ms per click when no popup is open and are never
+# hyprland.lua; they cost ~1ms per click when no popup is open and are never
 # touched again. They used to be armed here on open and unbound on close, which
 # is the same thing as keeping global compositor state in sync with per-window
 # state from concurrent short-lived scripts — the source of every stuck-popup

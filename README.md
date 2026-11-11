@@ -69,7 +69,7 @@ hyprexpo.
 ```
 config/          # → ~/.config/*  (whole-dir symlinks)
   eww/           # the bar: eww.yuck, modules/ (widgets), styles/ + per-theme SCSS, scripts/
-  hypr/          # hyprland.conf, hyprlock.conf, hypridle.conf, window-policy.conf
+  hypr/          # hyprland.lua, hyprlock.conf, hypridle.conf, window-policy.conf
   swaync/        # notification daemon (theme-integrated)
   rofi/          # launcher — the start menu's "all apps" fallback (theme-integrated)
   gtk-3.0/ gtk-4.0/   # GTK app theming, so Firefox/dialogs follow light/dark
@@ -106,7 +106,7 @@ to install them (`./deps.sh --print` to just see the plan). The list itself:
 | Wallpaper          | `awww` ≥0.12 (the renamed `swww`; binaries are `awww`/`awww-daemon`) |
 | Fonts              | `ttf-adwaita`/Adwaita Sans, `ttf-jetbrains-mono-nerd` |
 
-Optional (referenced by `hyprland.conf` — each only affects its own
+Optional (referenced by `hyprland.lua` — each only affects its own
 binding/autostart if missing):
 
 - `hyprlock` + `hypridle` — lock screen & idle policy
@@ -195,7 +195,7 @@ output into one surface (`-m extend`), so the login box lands on the seam
 between two screens, and its only alternative (`-m last`) picks whichever
 output was connected last and blanks the others. Under Hyprland the login
 window goes on **one** screen and the rest show the wallpaper — and each
-display gets the mode and scale from your `local.conf` instead of whatever
+display gets the mode and scale from your `local.lua` instead of whatever
 its EDID prefers (a 4K TV that asks for 30Hz would otherwise render the
 greeter at 30Hz).
 
@@ -207,8 +207,8 @@ panel as the login screen by default; `--monitor DP-1` overrides that, and
 
 If the login box comes out bigger than you'd like, the knob is the scale, not
 the font: ReGreet's box is a fixed number of logical pixels wide, so a smaller
-`font_name` only shrinks the text inside it. Set `$greeter_scale` in
-`local.conf` (or pass `--scale`) to drive the login screen at its own scale —
+`font_name` only shrinks the text inside it. Set `v.greeter_scale` in
+`local.lua` (or pass `--scale`) to drive the login screen at its own scale —
 every other display keeps your session's. Hyprland wants a scale that divides
 the mode into whole logical pixels, so the values on offer depend on the panel:
 2256x1504 takes `1.3333333` or `1`, but rejects `1.25`.
@@ -236,9 +236,9 @@ the tracked base config so it stays identical for everyone and `git pull`
 never clobbers your tweaks. Full guide:
 **[docs/CUSTOMIZING.md](docs/CUSTOMIZING.md)**. The short version:
 
-- **`~/.config/hypr/local.conf`** (seeded from `local.conf.example`) — your
-  **monitors**, `$term`/`$browser`, and extra `exec-once` autostarts. It's
-  `source`d after the base defaults, so your values win. This is the main
+- **`~/.config/hypr/local.lua`** (seeded from `local.lua.example`) — your
+  **monitors**, `v.term`/`v.browser`, and extra autostarts. It's
+  loaded after the base defaults, so your values win. This is the main
   place you'll edit.
 - **`~/.config/hypr/window-policy.local.conf`** — which apps open maximized,
   ahead of the defaults in `window-policy.conf`. `mod+Alt+m` and
@@ -252,8 +252,8 @@ never clobbers your tweaks. Full guide:
 The first three are git-ignored and seeded by `install.sh`. Everything else is
 opinionated-but-editable in the tracked files:
 
-- **Keybinds & window rules** — the `bind`/`windowrule` blocks in
-  `hyprland.conf`.
+- **Keybinds & window rules** — the `bind(…)`/`hl.window_rule(…)` blocks in
+  `hyprland.lua`.
 - **Start-menu pins** — the `start-item` rows in
   `config/eww/modules/start-menu.yuck`.
 - **Wallpaper rotation interval** — top of `bin/hypr-wallpaper-rotate`; the

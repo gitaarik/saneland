@@ -13,7 +13,7 @@
 # order does change though, so cycling reflects the new order.
 #
 # Usage: hypr-move-window l|r|u|d
-# Bound from hyprland.conf via Super+Shift+{H,L,J,K}.
+# (Not bound anywhere at the moment.)
 
 set -uo pipefail
 
@@ -23,14 +23,24 @@ data=$(hyprctl -j activewindow 2>/dev/null) || exit 0
 
 fs=$(jq -r '.fullscreen' <<<"$data")
 
-# 'dispatch fullscreen N' toggles state N; calling it when state is N
-# turns it off, calling again turns it back on.
-if [[ $fs != 0 ]]; then
-    hyprctl dispatch fullscreen "$fs" >/dev/null
+# window.fullscreen with the default action toggles that mode; calling it
+# when the window is in it turns it off, calling again turns it back on.
+# .fullscreen is the internal state: 1 = maximized, 2 = fullscreen.
+case $fs in
+    1) mode=maximized ;;
+    2) mode=fullscreen ;;
+    *) mode="" ;;
+esac
+case $dir in
+    l) dir=left ;; r) dir=right ;; u) dir=up ;; d) dir=down ;;
+esac
+
+if [[ -n $mode ]]; then
+    hyprctl dispatch "hl.dsp.window.fullscreen({ mode = \"$mode\" })" >/dev/null
 fi
 
-hyprctl dispatch movewindow "$dir" >/dev/null
+hyprctl dispatch "hl.dsp.window.move({ direction = \"$dir\" })" >/dev/null
 
-if [[ $fs != 0 ]]; then
-    hyprctl dispatch fullscreen "$fs" >/dev/null
+if [[ -n $mode ]]; then
+    hyprctl dispatch "hl.dsp.window.fullscreen({ mode = \"$mode\" })" >/dev/null
 fi

@@ -11,7 +11,7 @@
 # Without a workspace it cycles the focused monitor's active one — what mod+Tab
 # wants. The bar's scroll handler passes one explicitly, because the bar being
 # scrolled may not be on the focused screen (hovering doesn't focus a monitor;
-# see misc:mouse_move_focuses_monitor in hyprland.conf).
+# see misc:mouse_move_focuses_monitor in hyprland.lua).
 
 set -uo pipefail
 
@@ -50,4 +50,4 @@ else
     next=$(( (cur + 1) % count ))
 fi
 
-hyprctl dispatch focuswindow "address:${addrs[$next]}" >/dev/null
+hyprctl dispatch "hl.dsp.focus({ window = \"address:${addrs[$next]}\" })" >/dev/null

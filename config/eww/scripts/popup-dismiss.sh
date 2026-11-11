@@ -12,7 +12,7 @@
 #                                    all" fast path — the form Escape is bound to
 #
 # THIS SCRIPT NO LONGER TOUCHES KEYBINDS, and that is the point. The dismiss
-# routes are registered once, permanently, in hyprland.conf. Before that, they
+# routes are registered once, permanently, in hyprland.lua. Before that, they
 # were armed on open and unbound on close, which meant keeping global,
 # session-wide compositor state in sync with per-window state from several
 # short-lived scripts that a single click starts concurrently — Hyprland fires

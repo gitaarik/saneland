@@ -82,7 +82,7 @@ while IFS= read -r line <&3; do
                && screen_is_empty "$cur_mon"; then
                 # cur_mon deliberately left alone — the dispatch echoes its own
                 # focusedmon, which takes the else arm and re-affirms it.
-                hyprctl dispatch focusmonitor "$cur_mon" >/dev/null
+                hyprctl dispatch "hl.dsp.focus({ monitor = \"$cur_mon\" })" >/dev/null
             else
                 cur_mon=$mon
             fi

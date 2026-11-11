@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Rofi-based power menu. Bound to XF86PowerOff in hyprland.conf so the
+# Rofi-based power menu. Bound to XF86PowerOff in hyprland.lua so the
 # laptop power button asks before doing anything. Requires logind to
 # leave the key alone (HandlePowerKey=ignore in /etc/systemd/logind.conf).
 

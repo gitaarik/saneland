@@ -1,0 +1,97 @@
+-- saneland — local Hyprland overrides
+--
+-- Loaded from hyprland.lua (end of its Variables section), AFTER the base
+-- defaults and BEFORE the keybinds — so anything set here wins and is visible
+-- to the keybinds. This file is git-ignored: your machine-specific settings
+-- live here while the tracked base config stays identical for everyone.
+-- install.sh copies this to ~/.config/hypr/local.lua on first run; edit that
+-- real file (not the .example).
+--
+-- hyprland.lua passes in its table of defaults (v.term, v.browser, ...);
+-- change fields on it to override them.
+local v = ...
+
+-- --- Monitors --------------------------------------------------------------
+-- You usually DON'T need anything here. The base config's wildcard
+-- (`output = ""`, preferred mode, auto position, scale 1) auto-detects any new
+-- output at its native mode and places it to the right — plug a monitor in and
+-- it just works. Add a line below ONLY for a monitor with a quirk the wildcard
+-- gets wrong (wrong refresh rate, wrong scale, a specific arrangement you want).
+--
+--   hl.monitor({ output = MATCH, mode = "RESOLUTION@REFRESH", position = "XxY", scale = SCALE })
+--
+-- Keep each hl.monitor({...}) call on ONE line: greeter/install.sh copies them
+-- into the login screen's config line by line.
+--
+-- MATCH BY `desc:`, NOT BY CONNECTOR NAME. A connector like DP-2 is just a
+-- physical port: unplug the TV, plug in a different monitor, and it lands on
+-- the SAME DP-2 — inheriting the TV's line and, say, being forced into a 4K
+-- mode it can't display (blank screen). `desc:` matches the actual monitor by
+-- its EDID, so the rule only ever touches the monitor it was written for, and
+-- anything else falls through to the auto wildcard. Find the string with
+-- `hyprctl monitors | grep description` (drop the trailing serial for a rule
+-- that matches any unit of that model):
+-- hl.monitor({ output = "eDP-1", mode = "2256x1504@60", position = "0x0", scale = 1.5666667 })                       -- laptop panel (by connector is fine — it's soldered in)
+-- hl.monitor({ output = "desc:Dell Inc. DELL U2312HM", mode = "1920x1080@60", position = "1440x0", scale = 1 })      -- a specific external
+--
+-- `hyprctl monitors all | grep availableModes` shows every mode an output
+-- supports.
+--
+-- Fractional-scale tip: use Hyprland's *exact* suggested scale from
+-- `hyprctl monitors`, not a rounded value — a fresh session rejects e.g. 1.5
+-- with "Invalid scale passed to monitor".
+--
+-- POSITION is in LOGICAL pixels, not physical ones. To place a second output
+-- flush to the right of the panel above, its x is the panel's logical width —
+-- 2256 / 1.5666667 = 1440 — NOT its physical 2256. Get this wrong and you
+-- either leave a dead gap the cursor crosses invisibly, or overlap the two.
+--
+-- PIN THE REFRESH RATE for displays that advertise a slow preferred mode. Many
+-- 4K TVs report 3840x2160@30 as preferred even though the link does @60 fine,
+-- so the wildcard runs them at 30Hz — a laggy cursor and stuttery scrolling
+-- rather than an obvious error. Check availableModes and state @60 explicitly.
+
+-- --- Login screen size (optional) ------------------------------------------
+-- Read by greeter/install.sh, ignored by the session. The greeter copies the
+-- monitor lines above verbatim, so the login box is drawn at the same scale as
+-- your desktop — which is set for reading text all day, and can make a single
+-- centred dialog look oversized. This scales the login screen alone; every
+-- other display keeps its line above. Lower is smaller.
+--
+-- It has to divide that monitor's mode into whole logical pixels, same rule as
+-- any scale (2256x1504 takes 1.3333333 or 1, but not 1.25). Re-run
+-- `sudo ./greeter/install.sh` to apply.
+--
+-- v.greeter_scale = 1.3333333
+
+-- --- Per-screen workspaces (multi-monitor) ---------------------------------
+-- OPTIONAL — only for multiple monitors. The base keybinds send mod+1..12 (and
+-- mod+shift+1..12) through ~/.local/bin/hypr-workspace, which gives each screen
+-- its OWN block of 12 workspaces: the monitor with the lowest Hyprland id gets
+-- global workspaces 1-12, the next gets 13-24, etc. (offset = rank * 12). The
+-- bar shows LOCAL numbers 1-12 on every screen; mod+N acts on the screen holding
+-- the focused window. On a single monitor this is a no-op (offset 0), so you
+-- need nothing here.
+--
+-- Nothing to set here: ~/.local/bin/hypr-workspace-blocks (an autostart) pins
+-- each block to its screen at runtime, off the live monitor list.
+--
+-- This used to be twenty-four `workspace = 13, monitor:DP-2` lines, and they
+-- are worth NOT going back to. A Hyprland workspace rule can only name a
+-- CONNECTOR, while the rest of the scheme goes by the monitor's RANK — so the
+-- day a screen moves to another port (a dock, the other side of the laptop) and
+-- comes up as DP-5 instead of DP-2, every one of those rules stops matching:
+-- the second screen shows no tags at all, windows move to workspaces nothing
+-- displays, and number keys act on the wrong screen. Rank doesn't change when a
+-- cable does. See the header of bin/hypr-workspace-blocks.
+
+-- --- App choices -----------------------------------------------------------
+-- Override the base defaults (v.term = "kitty", v.browser = "firefox", …):
+-- v.term = "alacritty"
+-- v.browser = "chromium"
+
+-- --- Extra autostarts ------------------------------------------------------
+-- hl.on("hyprland.start", function()
+--     hl.exec_cmd("syncthingtray-qt6 --wait")
+--     hl.exec_cmd("nm-applet --indicator")
+-- end)

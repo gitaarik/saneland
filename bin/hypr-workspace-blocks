@@ -32,8 +32,8 @@
 # known. Nothing in the config names a connector, and there is nothing to
 # update the next time a cable moves.
 #
-# `hyprctl reload` RE-READS the config from disk and drops every runtime
-# keyword with it, so `configreloaded` is watched alongside the monitor events.
+# `hyprctl reload` RE-READS the config from disk and drops every rule added
+# at runtime with it, so `configreloaded` is watched alongside the monitor events.
 # bin/theme reloads on every dark/light switch — without that case the pinning
 # would quietly disappear the first time you changed theme.
 #
@@ -58,22 +58,23 @@ apply() {
     n=${#names[@]}
     (( n )) || return 0
 
-    # Every rule in ONE round-trip, so Hyprland settles the placement once
-    # instead of re-evaluating it after each of the 12-per-screen keywords.
-    # Values contain commas but never a semicolon, which is what --batch splits on.
+    # Every rule in ONE round-trip — a single `hyprctl eval` of one Lua chunk —
+    # so Hyprland settles the placement once instead of re-evaluating it after
+    # each of the 12-per-screen rules. hl.workspace_rule replaces an existing
+    # rule for the same workspace rather than stacking a second one, so
+    # re-running a pass doesn't pile them up.
     batch=''
-    sep=''
     for (( r = 0; r < n; r++ )); do
         for (( k = 1; k <= WS_PER_MON; k++ )); do
             ws=$(( r * WS_PER_MON + k ))
-            batch+="${sep}keyword workspace $ws, monitor:${names[r]}"
+            batch+="hl.workspace_rule({ workspace = \"$ws\", monitor = \"${names[r]}\""
             # Local tag 1 is the screen's default, so a monitor that appears
             # later opens on its own block instead of grabbing a free number.
-            (( k == 1 )) && batch+=", default:true"
-            sep=' ; '
+            (( k == 1 )) && batch+=", default = true"
+            batch+=" })"$'\n'
         done
     done
-    hyprctl --batch "$batch" >/dev/null 2>&1
+    hyprctl eval "$batch" >/dev/null 2>&1
 
     # A screen Hyprland gave a workspace to BEFORE these rules existed — at
     # login, or in the instant a monitor is plugged in — is still showing it,
@@ -96,11 +97,11 @@ apply() {
         lo=$(( r * WS_PER_MON + 1 ))
         hi=$(( lo + WS_PER_MON - 1 ))
         (( act >= lo && act <= hi )) && continue
-        hyprctl dispatch focusmonitor "${names[r]}" >/dev/null
-        hyprctl dispatch focusworkspaceoncurrentmonitor "$lo" >/dev/null
+        hyprctl dispatch "hl.dsp.focus({ monitor = \"${names[r]}\" })" >/dev/null
+        hyprctl dispatch "hl.dsp.focus({ workspace = \"$lo\", on_current_monitor = true })" >/dev/null
     done
 
-    [[ -n $focused ]] && hyprctl dispatch focusmonitor "$focused" >/dev/null
+    [[ -n $focused ]] && hyprctl dispatch "hl.dsp.focus({ monitor = \"$focused\" })" >/dev/null
     return 0
 }
 
@@ -128,8 +129,8 @@ trap 'exit' INT TERM
 # of range. Neither order is wrong — both compute the destination from rank,
 # and both passes are idempotent — this just keeps the common case in order.
 #
-# `hyprctl keyword` does not itself emit configreloaded, so a pass cannot
-# retrigger this loop.
+# `hyprctl eval` of a workspace rule does not itself emit configreloaded, so a
+# pass cannot retrigger this loop.
 while IFS= read -r line <&3; do
     case "$line" in
         monitoradded'>>'*|monitorremoved'>>'*)

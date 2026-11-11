@@ -38,10 +38,10 @@ minimize() {
     [[ $ws_name == special:* ]] && return 0
 
     mon=$(focused_monitor)
-    hyprctl dispatch movetoworkspacesilent "${prefix}${ws_id},address:${addr}" >/dev/null
+    hyprctl dispatch "hl.dsp.window.move({ workspace = \"${prefix}${ws_id}\", follow = false, window = \"address:${addr}\" })" >/dev/null
     # Hiding a screen's last window hands focus to whatever the cursor is over,
     # possibly the other screen (see hypr-keep-screen-focus) — stay here.
-    [[ $(focused_monitor) != "$mon" ]] && hyprctl dispatch focusmonitor "$mon" >/dev/null
+    [[ $(focused_monitor) != "$mon" ]] && hyprctl dispatch "hl.dsp.focus({ monitor = \"$mon\" })" >/dev/null
     return 0
 }
 
@@ -62,8 +62,8 @@ restore() {
     [[ $ws_name == "$prefix"* ]] || return 0
 
     hyprctl --batch \
-        "dispatch movetoworkspacesilent ${ws_name#"$prefix"},address:${addr}; \
-         dispatch focuswindow address:${addr}" >/dev/null
+        "dispatch hl.dsp.window.move({ workspace = \"${ws_name#"$prefix"}\", follow = false, window = \"address:${addr}\" }) ; \
+         dispatch hl.dsp.focus({ window = \"address:${addr}\" })" >/dev/null
 }
 
 case ${1:-} in

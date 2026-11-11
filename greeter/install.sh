@@ -10,7 +10,7 @@
 # What it's for: the stock `cage -s -- regreet` greeter spans every connected
 # monitor as one surface, so the login box lands on the seam between screens.
 # This replaces cage with a stripped-down Hyprland that puts the login window
-# on one screen and a wallpaper on the rest. See hyprland.conf for the details.
+# on one screen and a wallpaper on the rest. See hyprland.lua for the details.
 #
 # Usage:
 #   sudo ./greeter/install.sh                     install / re-run after a monitor change
@@ -20,11 +20,11 @@
 #   sudo ./greeter/install.sh --dry-run           show what it would do
 #   sudo ./greeter/install.sh --uninstall         put the previous greeter back
 #
-# Re-run it whenever you change your monitor layout: your `monitor =` lines are
-# copied out of ~/.config/hypr/local.conf at install time, not read live (the
-# greeter runs as another user and can't see your home).
+# Re-run it whenever you change your monitor layout: your hl.monitor({...})
+# lines are copied out of ~/.config/hypr/local.lua at install time, not read
+# live (the greeter runs as another user and can't see your home).
 #
-# --scale is for trying a size out; `$greeter_scale = 1.3333333` in local.conf
+# --scale is for trying a size out; `v.greeter_scale = 1.3333333` in local.lua
 # is the persistent form, and survives the re-runs above.
 
 set -euo pipefail
@@ -55,7 +55,7 @@ run()  { if [[ $DRY == 1 ]]; then say "would: $*"; else "$@"; fi; }
 
 # did MSG — report something that actually happened. Silent under --dry-run,
 # where `run` has already printed the "would:" line: a dry run that says
-# "write /etc/greetd/hyprland.conf" reads like it wrote it.
+# "write /etc/greetd/hyprland.lua" reads like it wrote it.
 did()  { [[ $DRY == 1 ]] || say "$*"; }
 
 # write DEST < stdin — honours --dry-run, since `run` can't take a redirect.
@@ -92,8 +92,8 @@ if [[ $UNINSTALL == 1 ]]; then
   run cp -a "$ETC/config.toml.saneland-orig" "$ETC/config.toml"
   did "restored $ETC/config.toml"
   say ""
-  say "Left in place (harmless — delete if you like): $ETC/hyprland.conf,"
-  say "$ETC/machine.conf, $ETC/hyprpaper.conf, $ETC/saneland-greeter*,"
+  say "Left in place (harmless — delete if you like): $ETC/hyprland.lua,"
+  say "$ETC/machine.lua, $ETC/hyprpaper.conf, $ETC/saneland-greeter*,"
   say "$BACKGROUNDS/saneland-greeter.*"
   say ""
   say "Apply with:  sudo systemctl restart greetd     (ends your session!)"
@@ -117,36 +117,47 @@ GREETER_USER=${GREETER_USER:-greeter}
 id "$GREETER_USER" >/dev/null 2>&1 || die "greeter user '$GREETER_USER' does not exist."
 say "ok    greeter user: $GREETER_USER"
 
+# lua_str S — S as a double-quoted Lua string literal.
+lua_str() {
+  local s=${1//\\/\\\\}
+  printf '"%s"' "${s//\"/\\\"}"
+}
+
+# lua_field LINE KEY — the value of `KEY = ...` inside a one-line Lua table
+# call such as hl.monitor({ output = "eDP-1", scale = 1.5 }): a quoted
+# string's contents, or a bare number/word as written. Empty if absent.
+lua_field() {
+  sed -n -E "s/.*[{,][[:space:]]*$2[[:space:]]*=[[:space:]]*(\"([^\"]*)\"|([^,}[:space:]]+)).*/\2\3/p" <<< "$1"
+}
+
 # --- which screen gets the login window ------------------------------------
 hdr "Monitors"
-LOCAL_CONF="$USER_HOME/.config/hypr/local.conf"
+LOCAL_LUA="$USER_HOME/.config/hypr/local.lua"
 
+# Your session config is Lua too, so the lines go across verbatim: every
+# hl.monitor({...}) call that sits on ONE line of local.lua (which is why
+# local.lua.example asks for one per line). A call spread over several lines
+# is skipped, and the greeter falls back to auto-detecting that display.
 MONITOR_LINES=""
-if [[ -r $LOCAL_CONF ]]; then
-  MONITOR_LINES=$(grep -E '^[[:space:]]*monitor[[:space:]]*=' "$LOCAL_CONF" || true)
+if [[ -r $LOCAL_LUA ]]; then
+  MONITOR_LINES=$(grep -E '^[[:space:]]*hl\.monitor[[:space:]]*\(.*\)' "$LOCAL_LUA" |
+                  sed -E 's/^[[:space:]]+//' || true)
 fi
 if [[ -z $MONITOR_LINES ]]; then
-  say "no monitor lines in $LOCAL_CONF — the greeter will auto-detect."
+  say "no hl.monitor lines in $LOCAL_LUA — the greeter will auto-detect."
   say "(fine for one screen; add them there if a display needs a specific mode)"
 else
-  say "copying $(printf '%s\n' "$MONITOR_LINES" | wc -l) monitor line(s) from $LOCAL_CONF"
+  say "copying $(printf '%s\n' "$MONITOR_LINES" | wc -l) monitor line(s) from $LOCAL_LUA"
 fi
 
-# monitor_match LINE — the match field of a `monitor =` line (its first
-# comma-separated argument), whitespace trimmed.
-monitor_match() {
-  local m=${1#*=}
-  m=${m%%,*}
-  m=${m#"${m%%[![:space:]]*}"}
-  m=${m%"${m##*[![:space:]]}"}
-  printf '%s' "$m"
-}
+# monitor_match LINE — the output a hl.monitor line matches (its `output`).
+monitor_match() { lua_field "$1" output; }
 
 # Preference order for the login screen: --monitor, then the first internal
 # panel (eDP-*) named in your monitor lines, then the first connector-named
 # line, then a live query of your running session, then the eDP-1 default.
 #
-# `desc:` matches are skipped on purpose: the windowrule that pins the login
+# `desc:` matches are skipped on purpose: the window rule that pins the login
 # window wants a connector name, and there's no guarantee a desc: string
 # resolves to one at greeter time.
 if [[ -z $MONITOR && -n $MONITOR_LINES ]]; then
@@ -174,21 +185,21 @@ say "(override with --monitor NAME; the others just show the wallpaper)"
 # and 11 render the same box, only with smaller text in it). What decides how
 # large it LOOKS is the scale of the screen it's on — which the greeter takes
 # from your session, where it's set for reading text all day rather than for
-# one centred dialog. `$greeter_scale` in local.conf (or --scale) overrides it
+# one centred dialog. `v.greeter_scale` in local.lua (or --scale) overrides it
 # for the login screen alone; every other display keeps its session scale.
 #
 # Hyprland only accepts a scale that divides the mode into a whole number of
 # logical pixels, so the useful values are panel-specific — 2256x1504 takes
 # 1.3333333 (1692x1128) and 1 but rejects 1.25. The check below says so before
 # you find out from a greeter that ignored the line.
-if [[ -z $SCALE && -r $LOCAL_CONF ]]; then
-  SCALE=$(sed -n 's/^[[:space:]]*\$greeter_scale[[:space:]]*=[[:space:]]*\([^#[:space:]]*\).*/\1/p' \
-            "$LOCAL_CONF" | tail -1)
+if [[ -z $SCALE && -r $LOCAL_LUA ]]; then
+  SCALE=$(sed -n -E 's/^[[:space:]]*v\.greeter_scale[[:space:]]*=[[:space:]]*([0-9.]+).*/\1/p' \
+            "$LOCAL_LUA" | tail -1)
 fi
 
 # The override repeats the main monitor's own rule with only the scale field
 # swapped, so its mode and position survive; Hyprland applies the last matching
-# rule, and machine.conf emits this one after the copied layout.
+# rule, and machine.lua emits this one after the copied layout.
 SCALE_LINE=""
 if [[ -n $SCALE ]]; then
   base=""
@@ -196,12 +207,12 @@ if [[ -n $SCALE ]]; then
     [[ $(monitor_match "$line") == "$MONITOR" ]] && base=$line
   done <<< "$MONITOR_LINES"
 
-  if [[ -n $base ]]; then
-    SCALE_LINE=$(awk -F, -v OFS=, -v s=" $SCALE" '{ $4 = s; print }' <<< "$base")
+  if [[ -n $base && -n $(lua_field "$base" scale) ]]; then
+    SCALE_LINE=$(sed -E "s/([{,][[:space:]]*scale[[:space:]]*=[[:space:]]*)(\"[^\"]*\"|[^,}[:space:]]+)/\1$SCALE/" <<< "$base")
 
     # Warn, don't fail: the mode may be `preferred`, in which case there's
     # nothing to divide here and only the greeter itself can tell.
-    mode=$(awk -F, '{ print $2 }' <<< "$base" | tr -d '[:space:]')
+    mode=$(lua_field "$base" mode)
     if [[ $mode =~ ^([0-9]+)x([0-9]+) ]]; then
       # Whole number within a hair: a "clean" fractional scale is never exact
       # in decimal (2256 / 1.3333333 is 1692.00008, and Hyprland takes it).
@@ -212,7 +223,7 @@ if [[ -n $SCALE ]]; then
             "Hyprland may reject it"
     fi
   else
-    SCALE_LINE="monitor = $MONITOR, preferred, auto, $SCALE"
+    SCALE_LINE="hl.monitor({ output = $(lua_str "$MONITOR"), mode = \"preferred\", position = \"auto\", scale = $SCALE })"
   fi
   say "login UI scale: $SCALE (your session's value applies everywhere else)"
 fi
@@ -223,31 +234,34 @@ fi
 SCALE_BLOCK=""
 if [[ -n $SCALE_LINE ]]; then
   printf -v SCALE_BLOCK '\n%s\n%s\n%s\n%s\n' \
-    '# $greeter_scale: the rule above for $main_monitor, repeated with only the' \
-    '# scale changed — the login box is a fixed size in LOGICAL pixels, so this' \
-    '# is what decides how big it comes out. The last matching rule wins.' \
+    '-- v.greeter_scale: the rule above for main_monitor, repeated with only the' \
+    '-- scale changed — the login box is a fixed size in LOGICAL pixels, so this' \
+    '-- is what decides how big it comes out. The last matching rule wins.' \
     "$SCALE_LINE"
 fi
 
 # --- keyboard layout -------------------------------------------------------
 # Copied from your session config so the password you type at the greeter is
-# the password you think you're typing. local.conf wins over the base config.
+# the password you think you're typing. local.lua wins over the base config.
+# Both are Lua, so a line is `kb_layout = "us",` with maybe a `--` comment.
 hdr "Keyboard"
 KB=""
-for f in "$USER_HOME/.config/hypr/hyprland.conf" "$LOCAL_CONF"; do
+for f in "$USER_HOME/.config/hypr/hyprland.lua" "$LOCAL_LUA"; do
   [[ -r $f ]] || continue
   while IFS= read -r line; do
-    line=${line%%#*}                                   # strip inline comment
+    line=${line%%--*}                                  # strip trailing comment
     line=${line#"${line%%[![:space:]]*}"}
     line=${line%"${line##*[![:space:]]}"}
+    line=${line%,}
     [[ -z $line ]] && continue
     key=${line%%=*}; key=${key%"${key##*[![:space:]]}"}
-    KB=$(printf '%s\n' "$KB" | grep -v "^    $key = " || true)   # later file wins
-    KB="${KB:+$KB$'\n'}    $line"
+    val=${line#*=}; val=${val#"${val%%[![:space:]]*}"}
+    KB=$(printf '%s\n' "$KB" | grep -v "^        $key = " || true)   # later file wins
+    KB="${KB:+$KB$'\n'}        $key = $val,"
   done < <(grep -E '^[[:space:]]*kb_(layout|variant|options)[[:space:]]*=' "$f" || true)
 done
 if [[ -n $KB ]]; then
-  printf '%s\n' "$KB" | while IFS= read -r l; do say "copy ${l#    }"; done
+  printf '%s\n' "$KB" | while IFS= read -r l; do say "copy ${l#        }"; done
 else
   say "none found — the greeter will use the X11 default (us)"
 fi
@@ -287,30 +301,44 @@ fi
 # --- write the greeter -----------------------------------------------------
 hdr "Installing to $ETC"
 
-# machine.conf — everything that differs per machine, generated so the tracked
+# machine.lua — everything that differs per machine, generated so the tracked
 # config next to this script stays identical for everyone.
-write "$ETC/machine.conf" <<EOF
-# Generated by saneland's greeter/install.sh on $(date '+%Y-%m-%d %H:%M:%S').
-# DO NOT EDIT — re-run \`sudo ./greeter/install.sh\` instead; every change here
-# is overwritten. Source: $LOCAL_CONF
-#
-# Sourced from /etc/greetd/hyprland.conf.
+write "$ETC/machine.lua" <<EOF
+-- Generated by saneland's greeter/install.sh on $(date '+%Y-%m-%d %H:%M:%S').
+-- DO NOT EDIT — re-run \`sudo ./greeter/install.sh\` instead; every change here
+-- is overwritten. Source: $LOCAL_LUA
+--
+-- Loaded from /etc/greetd/hyprland.lua with dofile(); returns the values that
+-- file needs, and applies the monitor and keyboard settings itself.
 
-# The screen the login window goes on. Everything else shows only wallpaper.
-\$main_monitor = $MONITOR
-
-# Your session's monitor layout, so the greeter uses the same modes, scales and
-# positions (cage ran every display at its EDID-preferred mode).
-${MONITOR_LINES:-# (none — the wildcard in hyprland.conf auto-detects)}
+-- Your session's monitor layout, so the greeter uses the same modes, scales and
+-- positions (cage ran every display at its EDID-preferred mode).
+${MONITOR_LINES:--- (none — the wildcard in hyprland.lua auto-detects)}
 ${SCALE_BLOCK}
-input {
-${KB:-    # (no kb_* settings found in your session config)}
+hl.config({
+    input = {
+${KB:-        -- (no kb_* settings found in your session config)}
+    },
+})
+
+return {
+    -- The screen the login window goes on. Everything else shows only wallpaper.
+    main_monitor = $(lua_str "$MONITOR"),
 }
 EOF
 
-back_up "$ETC/hyprland.conf"
-run install -m 644 "$SRC/hyprland.conf" "$ETC/hyprland.conf"
-did "write $ETC/hyprland.conf"
+# The pre-0.57 hyprlang pair. Hyprland can't read them any more, and a stray
+# hyprland.conf next to hyprland.lua only invites pointing at the wrong one.
+for old in "$ETC/hyprland.conf" "$ETC/machine.conf"; do
+  [[ -e $old ]] || continue
+  back_up "$old"
+  run rm -f "$old"
+  did "rm    $old (hyprlang; superseded by ${old%.conf}.lua)"
+done
+
+back_up "$ETC/hyprland.lua"
+run install -m 644 "$SRC/hyprland.lua" "$ETC/hyprland.lua"
+did "write $ETC/hyprland.lua"
 
 back_up "$ETC/hyprpaper.conf"
 run install -m 644 "$SRC/hyprpaper.conf" "$ETC/hyprpaper.conf"
@@ -381,10 +409,10 @@ hdr "Verifying"
 if [[ $DRY == 1 ]]; then
   say "skipped (--dry-run)"
 else
-  result=$(Hyprland --verify-config --config "$ETC/hyprland.conf" 2>&1 |
+  result=$(Hyprland --verify-config --config "$ETC/hyprland.lua" 2>&1 |
            sed -n '/Config parsing result/,$p')
   if printf '%s' "$result" | grep -q 'config ok'; then
-    say "ok    $ETC/hyprland.conf parses cleanly"
+    say "ok    $ETC/hyprland.lua parses cleanly"
   else
     printf '%s\n' "$result" >&2
     die "the greeter config has errors (above). greetd still points at the new

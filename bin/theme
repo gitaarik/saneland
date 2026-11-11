@@ -55,12 +55,12 @@ if [[ -d ~/.config/eww ]] && pgrep -x eww >/dev/null; then
 fi
 
 # --- Hyprland — flip the theme-aware border palette symlink, then reload ---
-# border-colors.conf (sourced by hyprland.conf) points at
-# border-colors-{dark,light}.conf. Active border contrasts with the wallpaper,
+# border-colors.lua (sourced by hyprland.lua) points at
+# border-colors-{dark,light}.lua. Active border contrasts with the wallpaper,
 # inactive blends in — so the flip keeps "active = most noticeable" on both
 # themes rather than leaving dark-theme borders on a light background.
 if [[ -d ~/.config/hypr ]]; then
-    (cd ~/.config/hypr/ && ln -sf "border-colors-$COLOR_SCHEME.conf" border-colors.conf)
+    (cd ~/.config/hypr/ && ln -sf "border-colors-$COLOR_SCHEME.lua" border-colors.lua)
 fi
 if pgrep -x Hyprland >/dev/null; then
     hyprctl reload &>/dev/null
@@ -115,7 +115,7 @@ fi
 
 # --- KDE/Qt apps (Dolphin, …) — copy the Breeze scheme's colors into kdeglobals ---
 # On their "Default" color scheme, KDE apps pick Breeze Dark/Light from Qt's
-# dark/light hint (the portal platform theme set in hyprland.conf). But outside
+# dark/light hint (the portal platform theme set in hyprland.lua). But outside
 # Plasma nothing writes colors to kdeglobals, so the colors an app reads at
 # startup stay Breeze Light, and Dolphin's file list has already read those by
 # the time the scheme loads: dark-on-dark text and white alternate rows. So do

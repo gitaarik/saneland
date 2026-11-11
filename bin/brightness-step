@@ -10,7 +10,7 @@
 # to 0 (visible-only-when-plugged-in territory) by an unlucky scroll.
 #
 # Usage: brightness-step up|down
-# Bound from hyprland.conf via the XF86MonBrightness* keys, and from
+# Bound from hyprland.lua via the XF86MonBrightness* keys, and from
 # the eww battery widget's :onscroll while the battery popup is open
 # (eww's :onscroll `{}` substitution emits `up`/`down`, which is what
 # this script natively takes — no translation needed).

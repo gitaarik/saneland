@@ -13,7 +13,7 @@ from `gsettings`. Log into the "Hyprland (uwsm-managed)" session.
 
 ## The eww bar
 
-- Launched from `hyprland.conf` via `eww-bars.sh --watch`, which opens one bar
+- Launched from `hyprland.lua` via `eww-bars.sh --watch`, which opens one bar
   per monitor and re-syncs the set on hot-plug. Layout is `eww.yuck`; shared
   styling in `_eww-common.scss`, per-theme palettes in `eww-{dark,light}.scss`
   selected via the `eww.scss` symlink (flipped by `theme`). Reload with
@@ -32,7 +32,7 @@ from `gsettings`. Log into the "Hyprland (uwsm-managed)" session.
 - The workspace switcher (`tag`/`tags`) and per-workspace taskbar
   (`taskbar`/`task`) are both driven by `scripts/hypr-state.sh`, which reads
   the **`hypr-window-order` daemon's** state file. That daemon (started from
-  `hyprland.conf`) is what keeps window order stable instead of letting it
+  `hyprland.lua`) is what keeps window order stable instead of letting it
   reshuffle on focus — the taskbar is not self-contained without it.
 
 ## Systray popups: no keyboard grab, one-click switching
@@ -205,7 +205,7 @@ screen, but nothing computes offset 12 any more:
 | bar tags / taskbar | both blocks | 1-12 |
 | bar scroll | within either block | within 1-12 |
 
-The windows are alive and one `hyprctl dispatch workspace 13` away, but no
+The windows are alive and one `hyprctl dispatch 'hl.dsp.focus({ workspace = 13 })'` away, but no
 binding gets you there. Only Alt-Tab still finds them — its MRU spans every
 client regardless of workspace — and once you land on ws 13 the bar shows no
 tag focused, because the workspace is out of its range.
@@ -305,7 +305,7 @@ portal exposes `org.freedesktop.appearance color-scheme = 2` — apps like Qt
 otherwise stay dark.
 
 Qt apps read that same portal preference through `QT_QPA_PLATFORMTHEME=
-xdgdesktopportal` (set in `hyprland.conf`); without a platform theme Qt reports
+xdgdesktopportal` (set in `hyprland.lua`); without a platform theme Qt reports
 "no preference" and KDE apps on their "Default" color scheme always pick Breeze
 Light. KDE apps also read colors from `~/.config/kdeglobals` at startup, before
 their scheme loads, and Dolphin's file list keeps those, so `theme` copies the
@@ -328,7 +328,7 @@ Per-theme image pools live in `~/.config/hypr/wallpapers/{dark,light}/`.
 - `hypr-wallpaper [scheme]` picks a random image from that pool and crossfades
   to it, avoiding an immediate repeat.
 - `hypr-wallpaper-rotate` is a flock singleton timer (started from
-  `hyprland.conf`) that re-runs `hypr-wallpaper` every interval for whatever
+  `hyprland.lua`) that re-runs `hypr-wallpaper` every interval for whatever
   theme is active, and paints once at login.
 - `hypr-wallpaper-rotate next` (**mod+b**) jumps to the next image now. It
   signals the loop rather than painting directly, so the interval restarts from
@@ -346,7 +346,7 @@ Per-theme image pools live in `~/.config/hypr/wallpapers/{dark,light}/`.
   already looking at.
 - `theme` calls `hypr-wallpaper "$scheme"` on each switch to repaint at once.
 
-The daemon is `awww-daemon` (`exec-once` in `hyprland.conf`); there is no config
+The daemon is `awww-daemon` (a `hyprland.start` autostart in `hyprland.lua`); there is no config
 file — the fade lives in the `TRANSITION` array at the top of `hypr-wallpaper`
 and is passed per-call.
 
@@ -623,7 +623,7 @@ serialized `hyprctl` per event was correct but measured 153ms for 16 events,
 i.e. a visible catch-up after every flick. Between bursts (0.5s of quiet, the
 same timeout libinput and Hyprland use for their own scroll accumulators) the
 script re-reads the compositor, so `hyprctl reload`, super+0 or a manual
-`hyprctl keyword` can't leave it zooming from a factor that no longer exists.
+`zoom_factor` change can't leave it zooming from a factor that no longer exists.
 
 **Speed comes from the gap between events, smoothness from the compositor.**
 The same timestamp that decides the re-read is also the velocity signal: the
@@ -633,9 +633,11 @@ flat out), so a flick crosses the range while a slow turn still lands on an
 aimable level. This works because the wheel reports at a fixed rate and encodes
 speed as bigger v120 fractions per report — spinning faster means more events
 per second, not more events per notch. The gliding between levels is none of
-the script's doing: `hyprctl keyword cursor:zoom_factor` assigns to an animated
-variable (`HyprCtl.cpp`, the `zoom_factor` branch), so it is `animation =
-zoomFactor, 1, 2, default` in the animations block that interpolates, and
+the script's doing: setting `cursor.zoom_factor` (`hyprctl eval
+'hl.config({ cursor = { zoom_factor = N } })'`; 0.57 removed `hyprctl keyword`)
+assigns to an animated variable (each monitor's `m_cursorZoom`, via the
+`REFRESH_CURSOR_ZOOMS` prop refresh), so it is the `zoomFactor` `hl.animation`
+in `hyprland.lua` that interpolates, and
 without that line the node inherits `global` at speed 0 and every step snaps.
 200ms is deliberately short: each event re-aims the goal mid-flight, so a long
 curve keeps travelling after you stop scrolling and reads as lag.
@@ -669,8 +671,8 @@ The touchpad uses trackpad gestures instead, in two flavours:
 **The keyboard binds are spelled `equal`, not `plus`.** Bind matching resolves
 a keycode through an xkb state that `CKeybindManager` creates fresh and never
 feeds modifier updates to, so it always sees the unshifted symbol —
-`$mod SHIFT, plus` can't fire, while `$mod SHIFT, equal` does. They are `binde`
-(repeat) with a per-press step of 1.1, which also lands outside the velocity
+`SUPER SHIFT, plus` can't fire, while `SUPER SHIFT, equal` does. They are
+`repeating` binds with a per-press step of 1.1, which also lands outside the velocity
 boost: repeats arrive 40ms apart at the default 25/s rate, slower than the 25ms
 knee, so a held key zooms at a constant rate while a flicked wheel accelerates.
 
@@ -681,8 +683,8 @@ whatever the wheel path last knew. super+0 resets either one.
 
 ## hyprbars
 
-Hyprland draws no title bars by default. The `plugin { hyprbars { … } }` block
-adds a per-window bar with clickable close/maximize buttons (touchpad-friendly
+Hyprland draws no title bars by default. The `plugin.hyprbars` table (plus
+`hl.plugin.hyprbars.add_button` calls) in `hyprland.lua` adds a per-window bar with clickable close/maximize buttons (touchpad-friendly
 window closing).
 
 The bar shows **only on free-floating windows** — snapped and maximized windows
@@ -692,10 +694,10 @@ the screen anyway, and on bottom snaps it used to appear as a stray mid-screen
 titlebar. To make it deterministic, the window-management helpers tag snapped
 and maximized windows `nobar` (via `hypr_chrome` in `bin/hypr-window-lib.sh` —
 the `max` and `snap` looks add the tag, the `normal` look removes it), and this
-windowrule hides the bar on anything carrying it:
+window rule hides the bar on anything carrying it:
 
 ```
-windowrule = hyprbars:no_bar 1, match:tag nobar
+hl.window_rule({ name = "nobar", match = { tag = "nobar" }, ["hyprbars:no_bar"] = true })
 ```
 
 So: bar on free floats (dialogs, `mod+c` center), no bar on snapped
@@ -709,8 +711,11 @@ hyprpm update    # re-sync headers to the new Hyprland, rebuild plugins
 hyprpm list      # confirm hyprbars is enabled
 ```
 
-`exec-once = hyprpm reload -n` in `hyprland.conf` loads enabled plugins at
-login. Button glyphs need JetBrainsMono Nerd Font.
+`hyprpm reload -n` (a `hyprland.start` autostart in `hyprland.lua`) loads
+enabled plugins at login. Plugin option keys and the `hyprbars:no_bar` effect
+only exist once the plugin is loaded, so `hyprland.lua` applies them behind an
+`hl.get_loaded_plugins()` check — skipped on the first pass, applied when the
+plugin load re-runs the config. Button glyphs need JetBrainsMono Nerd Font.
 
 ## Workspace overview (hyprexpo)
 
@@ -719,7 +724,7 @@ own block of 12 tags as a 4x3 grid of live thumbnails. Click a tile to switch,
 drag a window thumbnail onto another tile to move it, Escape to back out. It is
 the `hyprexpo` plugin — from the **sandwichfarm/hyprexpo** fork, since upstream
 dropped it from hyprwm/hyprland-plugins in May 2026 — configured in the
-`plugin { hyprexpo { … } }` block.
+`plugin.hyprexpo` table in `hyprland.lua`.
 
 Three choices make it fit the per-screen tag scheme instead of fighting it:
 
@@ -731,11 +736,11 @@ Three choices make it fit the per-screen tag scheme instead of fighting it:
   openings and break the key ↔ tile mapping.
 - **`workspace_method = center current`**, which bounds a screen's grid to the
   workspaces that exist on it plus the ids *reserved* for it by
-  `workspace = N, monitor:X` rules. Those are exactly the rules
+  workspace rules that name a monitor. Those are exactly the rules
   `hypr-workspace-blocks` issues at runtime ("Which screen a workspace block
   belongs to" above), so a 12-tile grid over a 12-id range is pinned to the
   block: laptop 1-12, external 13-24. Nothing here names a connector, for the
-  same reason `local.conf` doesn't.
+  same reason `local.lua` doesn't.
 - **A `hyprexpo` submap** with the plugin's `number_key_mode = passthrough`.
   The plugin enters that submap on open and resets it on close, so plain tag
   keys (and the same keys with mod held) select tiles via `kb_selecti`, whose
@@ -748,10 +753,11 @@ them all and switches only that screen, matching how mod+1..f act on the
 screen holding the focused window.
 
 Same compiled-plugin caveat as hyprbars: rebuild with `hyprpm update` after
-every Hyprland upgrade. One startup quirk: the `hyprexpo:*` binds are parsed
-before `hyprpm reload` has loaded the plugin, so the first config pass logs
-"Invalid dispatcher" for them; loading the plugin makes Hyprland re-read the
-config, which clears it. A banner that *stays* means the plugin did not load.
+every Hyprland upgrade. Its keys call `hl.plugin.hyprexpo.*` from inside a
+function, so the lookup happens on keypress rather than while the config is
+parsed — before `hyprpm reload` has loaded the plugin, that table doesn't
+exist yet. If mod+x does nothing, `hyprctl plugin list` says whether the
+plugin loaded.
 
 ## Electron secret storage
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Send a command to hypr-alttab-daemon. Invoked from hyprland.conf
+# Send a command to hypr-alttab-daemon. Invoked from hyprland.lua
 # bindings; see the daemon's header for the protocol.
 
 import os

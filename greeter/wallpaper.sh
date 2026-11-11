@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # saneland — paint the greeter's wallpaper. Installed to
-# /etc/greetd/saneland-greeter-wallpaper, run from the greeter's hyprland.conf.
+# /etc/greetd/saneland-greeter-wallpaper, run from the greeter's hyprland.lua.
 #
 # The session has ~/.local/bin/hypr-wallpaper for this; the greeter can't use
 # it (different user, no access to your home, no theme cache) and doesn't want

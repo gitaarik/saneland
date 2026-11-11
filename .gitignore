@@ -2,7 +2,7 @@
 # flipped by the `theme` script). The tracked sources are the -dark/-light
 # variants; the active symlink is machine state, not source.
 /config/eww/eww.scss
-/config/hypr/border-colors.conf
+/config/hypr/border-colors.lua
 /config/rofi/colorScheme.rasi
 /config/rofi/guiSize.rasi
 /config/swaync/style.css
@@ -11,7 +11,7 @@
 
 # Per-machine overrides — seeded from *.example by install.sh, then yours to
 # edit. Keeps the tracked base config byte-identical for everyone.
-/config/hypr/local.conf
+/config/hypr/local.lua
 /config/hypr/window-policy.local.conf
 /config/eww/local.yuck
 /config/saneland/theme.local.sh

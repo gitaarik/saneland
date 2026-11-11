@@ -14,14 +14,16 @@
 #   - Hyprland applies it per output, so on a second screen it magnifies the
 #     screen the cursor sits on and leaves the other at 1:1.
 #
-# Bound to super+scroll, with super+0 to snap back to 1:1 (hyprland.conf). The
-# touchpad gets super+pinch instead, via a `gesture` line there — scroll binds
+# Bound to super+scroll, with super+0 to snap back to 1:1 (hyprland.lua). The
+# touchpad gets super+pinch instead, via an hl.gesture there — scroll binds
 # never fire for touchpad scroll; see the comment on that gesture.
 #
-# The MOTION between steps is not done here: `hyprctl keyword` assigns to an
-# animated variable inside the compositor (HyprCtl.cpp, the zoom_factor branch),
-# so the smoothness is whatever `animation = zoomFactor, …` says in
-# hyprland.conf. This script only ever names a target.
+# The MOTION between steps is not done here: setting cursor.zoom_factor
+# (`hyprctl eval 'hl.config(...)'` — 0.57 dropped `hyprctl keyword`) assigns to
+# an animated variable inside the compositor (each monitor's m_cursorZoom, via
+# the REFRESH_CURSOR_ZOOMS prop refresh), so the smoothness is whatever the
+# zoomFactor hl.animation says in hyprland.lua. This script only ever names a
+# target.
 #
 # Steps are MULTIPLICATIVE (× / ÷ STEP) rather than a fixed increment, for the
 # reason brightness-step spends two bands on: +0.25 is an enormous jump at 1.0
@@ -30,7 +32,7 @@
 # STEP IS PER EVENT, NOT PER DETENT, and a high-resolution wheel sends several
 # events per physical detent (the Logitech here has REL_WHEEL_HI_RES; libinput
 # then delivers v120 fractions, typically 8-15 of them per notch, and Hyprland
-# runs this script for every one — binds:scroll_event_delay = 0 in hyprland.conf
+# runs this script for every one — binds.scroll_event_delay = 0 in hyprland.lua
 # is deliberate, see the note there). Hence a default well under what a
 # per-notch step would be: ~1.05^8 ≈ 1.48 per notch. A plain non-hi-res wheel
 # gets ONE event per notch and wants roughly 1.4 passed in the bind instead.
@@ -38,7 +40,7 @@
 # cursor:zoom_rigid is left at its default (false): the cursor roams inside the
 # magnified view and pans at the edges, which reads better than dragging a
 # cursor-locked viewport around. If you prefer the cursor pinned to the centre,
-# put `cursor { zoom_rigid = true }` in local.conf.
+# put `cursor { zoom_rigid = true }` in local.lua.
 
 set -uo pipefail
 
@@ -89,7 +91,7 @@ case "$dir" in
         # moves the monitor's real zoom WITHOUT updating cursor:zoom_factor
         # (it's compositor-internal state — nothing exposes it, not even
         # `hyprctl monitors`). But a stale cache is worse: `hyprctl reload`,
-        # super+0 and any manual `hyprctl keyword` all reset the zoom, and we'd
+        # super+0 and any manual zoom_factor change all reset the zoom, and we'd
         # happily keep zooming from a factor that no longer exists.
         #
         # So: re-read after $resync seconds of quiet, i.e. once per gesture
@@ -156,6 +158,6 @@ while :; do
     flock -u 9
 
     [[ $want == "$pushed" ]] && break
-    hyprctl keyword cursor:zoom_factor "$want" >/dev/null
+    hyprctl eval "hl.config({ cursor = { zoom_factor = $want } })" >/dev/null
     pushed=$want
 done

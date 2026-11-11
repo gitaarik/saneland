@@ -10,7 +10,7 @@
 # Both actions apply to the screen whose bar is being scrolled — the one under
 # the CURSOR, which is not necessarily the focused one: hovering a screen no
 # longer focuses it (misc:mouse_move_focuses_monitor = false, see
-# hyprland.conf), so asking Hyprland for the focused monitor would scroll the
+# hyprland.lua), so asking Hyprland for the focused monitor would scroll the
 # workspaces of whichever screen last took keyboard focus.
 #
 # Workspace scrolling cycles ONLY within that screen's own 12-workspace block
@@ -90,9 +90,9 @@ case "$target" in
     (( ${#ring[@]} > 1 )) || exit 0
     idx=0; for i in "${!ring[@]}"; do [[ ${ring[i]} == "$cur" ]] && idx=$i; done
     if [[ $direction == up ]]; then
-        hyprctl dispatch workspace "${ring[$(( (idx - 1 + ${#ring[@]}) % ${#ring[@]} ))]}"
+        hyprctl dispatch "hl.dsp.focus({ workspace = \"${ring[$(( (idx - 1 + ${#ring[@]}) % ${#ring[@]} ))]}\" })"
     else
-        hyprctl dispatch workspace "${ring[$(( (idx + 1) % ${#ring[@]} ))]}"
+        hyprctl dispatch "hl.dsp.focus({ workspace = \"${ring[$(( (idx + 1) % ${#ring[@]} ))]}\" })"
     fi
     ;;
   window)

@@ -95,7 +95,7 @@
 
 ;; UI preference: start the clock-popup calendar's week on Monday instead
 ;; of Sunday (shares the generic pref seeder). Defaults on because the
-;; daemon is launched with LC_TIME=en_GB.UTF-8 (see hyprland.conf) purely
+;; daemon is launched with LC_TIME=en_GB.UTF-8 (see hyprland.lua) purely
 ;; to get a Monday-first GtkCalendar — this preserves that out of the box.
 ;; cal.sh reads the same state file to lay out its columns.
 (deflisten clock-monday-first
