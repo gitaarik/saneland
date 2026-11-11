@@ -13,7 +13,8 @@
                       ? "Do Not Disturb — right-click to turn off"
                       : notif.count == 0 ? "No notifications"
                       : "${notif.count} notification${notif.count == 1 ? '' : 's'}"}
-    (box :class {"notifications" + (notif.count > 0 ? " unread" : "")}
+    (box :class {"notifications" + (notif.count > 0 ? " unread" : "")
+                 + (notif.dnd ? " dnd" : "")}
          :orientation "h" :space-evenly false :spacing 5
       ;; FA bell (U+F0F3), bell-slash (U+F1F6) while Do Not Disturb is on.
       (label :class "notifications-icon" :text {notif.dnd ? "" : ""})

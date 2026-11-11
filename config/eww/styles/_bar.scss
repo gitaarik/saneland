@@ -115,6 +115,12 @@
 .notifications.unread .notifications-icon {
     color: $accent;
 }
+// Like the wifi/audio glyphs, the bell paints past its 8.4px advance (11.3px
+// wide; the Do Not Disturb bell-slash 16.2px), so it spills into the right
+// padding. Right padding equal to the overflow restores the 6px gap; .dnd
+// widens the cell to fit the broader slash.
+.notifications-icon { padding-right: 3px; }
+.notifications.dnd .notifications-icon { padding-right: 8px; }
 // The optional bar date rides behind the time; dim it so the time still
 // reads as the primary figure (toggled by the clock popup's Options).
 .clock-date {
@@ -166,11 +172,10 @@
     @include cell-hover;
 }
 // Right side: each cell carries the seam on its RIGHT edge; cells touch
-// (:spacing 0) so a single hairline sits between each pair. .notifications
-// (the bell) is the last item in the row and is omitted, so no seam closes off
-// the right edge.
+// (:spacing 0) so a single hairline sits between each pair. .clock is the last
+// item in the row and is omitted, so no seam closes off the right edge.
 .tray > *,
-.bluetooth, .audio, .network, .battery, .clock {
+.bluetooth, .audio, .network, .battery, .notifications {
     border-right: 1px solid transparent;
     @include seam;
 }

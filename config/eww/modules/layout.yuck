@@ -23,8 +23,8 @@
     (audio)
     (network)
     (battery)
-    (clock)
-    (notifications)))
+    (notifications)
+    (clock)))
 
 ;; Plain box, not centerbox: left-side is :hexpand so it eats the middle and
 ;; pushes right-side flush to the edge (the taskbar inside left-side fills that
