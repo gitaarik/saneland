@@ -104,6 +104,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd(bin .. "hypr-window-order")             -- track window creation order (for mod+Tab cycle)
     hl.exec_cmd(bin .. "hypr-alttab-daemon")            -- MRU window stack for ALT+Tab
     hl.exec_cmd(bin .. "hypr-keep-screen-focus")        -- stay on a screen whose last window just closed
+    hl.exec_cmd(bin .. "hypr-notify-focus")             -- clicking a notification focuses its app's window
     hl.exec_cmd(bin .. "hypr-workspace-blocks --watch") -- pin each screen's block of 12 workspaces to it, by rank (survives a cable moving to another port)
     hl.exec_cmd(bin .. "hypr-adopt-orphans --watch")    -- unplug a screen -> its windows merge into the same tag on the one that's left
 end)
@@ -152,14 +153,15 @@ hl.config({
         -- cursor's monitor for exactly this reason.
         mouse_move_focuses_monitor = false,
 
-        -- Let an app that asks to be focused actually get focus. Clicking a
-        -- notification works this way: swaync tells the app its notification
-        -- was clicked, and the app asks the compositor to activate its window
-        -- (xdg-activation, or _NET_ACTIVE_WINDOW under XWayland). With this
-        -- off — Hyprland's default — the request only marks the window urgent
-        -- (CWindow::activate), so the click closed the notification and
-        -- nothing came forward. Same path brings Firefox up when another app
-        -- opens a link in it.
+        -- Let an app that asks to be focused actually get focus: an
+        -- xdg-activation request carrying a valid token, or _NET_ACTIVE_WINDOW
+        -- under XWayland. With this off — Hyprland's default — the request
+        -- only marks the window urgent (CWindow::activate). It's what brings
+        -- Firefox up when another app opens a link in it.
+        --
+        -- Clicking a NOTIFICATION needs more than this: swaync's tokens carry
+        -- no input serial, so Hyprland never grants them focus whatever this
+        -- says. bin/hypr-notify-focus covers that case (see its header).
         --
         -- The cost is that an app can pull focus to itself whenever it asks.
         -- If one abuses that, opt it out with a rule instead of turning this

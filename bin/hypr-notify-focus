@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+#
+# Clicking a notification brings its app's window forward — switching to its
+# tag (and screen), restoring it if it was minimized.
+#
+# WHY THIS EXISTS. The normal path is: swaync tells the app its notification
+# was clicked (D-Bus ActionInvoked), handing it an xdg-activation token first
+# (ActivationToken), and the app presents its window with that token. Hyprland
+# 0.57 only lets a token FOCUS if it was requested with the serial of a recent
+# input event — proof a real click asked for it. swaync 0.12.6 requests its
+# token with set_surface alone, never set_serial (src/xdg_activation.vala), so
+# every token it hands out is logged as
+#
+#     new xdg activation token ... has no activation rights, will be urgent-only
+#
+# and the click just marks the window urgent. misc:focus_on_activate can't help:
+# it only applies once a token HAS rights. (XWayland apps go through
+# _NET_ACTIVE_WINDOW instead, which focus_on_activate does cover.)
+#
+# THE WORKAROUND keys off what Hyprland still does with a rightless token:
+# mark the window urgent, which it announces on the event socket as
+#
+#     urgent>>ADDR
+#
+# An urgent window by itself means nothing (a chat app flags a new message the
+# same way), so it only counts when it lands within a moment of a notification
+# action being invoked. That pair is the click: focus that window. The two
+# arrive over different channels (D-Bus vs Hyprland's socket), so either order
+# is accepted.
+#
+# SOME APPS NEVER ASK AT ALL. WhatsDesk (Electron) gets the click — swaync's
+# ActionInvoked and token both reach it — but sends Hyprland no activation
+# request, so there is no urgent mark to pair with. For those, swaync also runs
+#
+#     hypr-notify-focus clicked
+#
+# on every notification click (a "run-on": "action" script in
+# config/swaync/config.json), with the notification's app in its environment.
+# It gives the app and the daemon half a second, then — if no window of that
+# app has focus by then — focuses the app's most recently used window itself.
+# That's coarser than the urgent route (it can't tell which of an app's
+# windows sent the notification), which is why it's only the fallback.
+#
+# Drop the daemon once swaync sends a serial with its token — the app's own
+# request will then just work. The fallback stays useful for apps like
+# WhatsDesk either way.
+
+set -uo pipefail
+
+focus_window() {
+    local addr=$1 ws
+    ws=$(hyprctl -j clients 2>/dev/null \
+         | jq -r --arg a "$addr" 'map(select(.address == $a))[0].workspace.name // empty')
+    [[ -n $ws ]] || return 0                # window closed in the meantime
+    if [[ $ws == special:min* ]]; then
+        hypr-minimize restore "$addr"       # puts it back on its tag and focuses it
+    else
+        hyprctl dispatch "hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null
+    fi
+}
+
+# --- Fallback: run by swaync on a click -------------------------------------
+if [[ ${1:-} == clicked ]]; then
+    # swaync's names for the app. The desktop entry is usually the window class
+    # (waterfox, org.telegram.desktop, whatsdesk); the app name is a backup.
+    entry=${SWAYNC_DESKTOP_ENTRY:-}
+    names=$(printf '%s\n' "${entry%.desktop}" "${SWAYNC_APP_NAME:-}" \
+            | tr '[:upper:]' '[:lower:]' | grep -v '^$' | jq -Rsc 'split("\n") | map(select(. != ""))')
+    [[ $names == '[]' ]] && exit 0
+
+    sleep 0.5                               # the app's own activation, or the daemon's
+
+    # The app's windows, most recently used first; nothing if one already has
+    # focus (focusHistoryID 0), or if the app has no window at all (a script's
+    # notify-send, hyprpm).
+    addr=$(hyprctl -j clients 2>/dev/null | jq -r --argjson n "$names" '
+        map(select(((.class | ascii_downcase) as $c | $n | index($c))
+                or ((.initialClass | ascii_downcase) as $c | $n | index($c))))
+        | sort_by(.focusHistoryID)
+        | if length == 0 or .[0].focusHistoryID == 0 then empty else .[0].address end')
+    [[ -n $addr ]] && focus_window "$addr"
+    exit 0
+fi
+
+# --- Daemon: pair a click with the urgent mark it causes --------------------
+sock=${XDG_RUNTIME_DIR:-/run/user/$UID}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock
+
+if [[ ! -S $sock ]]; then
+    echo "hypr-notify-focus: Hyprland event socket not found: $sock" >&2
+    exit 1
+fi
+
+# How close the click and the urgent mark must be, in microseconds. The app
+# reacts within a few ms; the slack covers an app that is busy when clicked.
+window_us=2000000
+
+now_us() { echo $(( ${EPOCHREALTIME/./} )); }
+
+# Both event streams merged onto one fd, one tagged line per event: Hyprland's
+# lines as they come, and a bare ACTION per notification action invoked. Read
+# over a fd rather than piped into `while` so the daemon can be stopped — see
+# the "killable event loops" note in docs/ARCHITECTURE.md.
+exec 3< <(
+    ncat -U "$sock" &
+    dbus-monitor --session \
+        "type='signal',interface='org.freedesktop.Notifications',member='ActionInvoked'" \
+        | sed -un 's/.*member=ActionInvoked.*/ACTION/p' &
+    wait
+)
+reader_pid=$!
+trap 'pkill -P $reader_pid 2>/dev/null; kill $reader_pid 2>/dev/null' EXIT
+trap 'exit' INT TERM
+
+last_action=0
+last_urgent=0 urgent_addr=
+
+while IFS= read -r line <&3; do
+    case "$line" in
+        ACTION)
+            last_action=$(now_us)
+            if [[ -n $urgent_addr ]] && (( last_action - last_urgent < window_us )); then
+                focus_window "0x$urgent_addr"
+                urgent_addr= last_action=0
+            fi
+            ;;
+        urgent'>>'*)
+            last_urgent=$(now_us)
+            urgent_addr=${line#urgent>>}
+            if (( last_urgent - last_action < window_us )); then
+                focus_window "0x$urgent_addr"
+                urgent_addr= last_action=0
+            fi
+            ;;
+    esac
+done

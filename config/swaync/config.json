@@ -24,6 +24,13 @@
     "hide-on-clear": false,
     "hide-on-action": true,
 
+    "scripts": {
+        "focus-app": {
+            "exec": "hypr-notify-focus clicked",
+            "run-on": "action"
+        }
+    },
+
     "widgets": [
         "title",
         "dnd",
