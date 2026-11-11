@@ -151,6 +151,20 @@ hl.config({
         -- ask which monitor is focused; eww/scripts/hypr-scroll.sh reads the
         -- cursor's monitor for exactly this reason.
         mouse_move_focuses_monitor = false,
+
+        -- Let an app that asks to be focused actually get focus. Clicking a
+        -- notification works this way: swaync tells the app its notification
+        -- was clicked, and the app asks the compositor to activate its window
+        -- (xdg-activation, or _NET_ACTIVE_WINDOW under XWayland). With this
+        -- off — Hyprland's default — the request only marks the window urgent
+        -- (CWindow::activate), so the click closed the notification and
+        -- nothing came forward. Same path brings Firefox up when another app
+        -- opens a link in it.
+        --
+        -- The cost is that an app can pull focus to itself whenever it asks.
+        -- If one abuses that, opt it out with a rule instead of turning this
+        -- off: hl.window_rule({ match = { class = "..." }, focus_on_activate = false }).
+        focus_on_activate = true,
     },
 })
 
