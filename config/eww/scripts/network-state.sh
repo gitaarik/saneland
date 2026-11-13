@@ -237,7 +237,10 @@ emit_locked
     done
 ) &
 poller_pid=$!
-trap 'kill $poller_pid 2>/dev/null; rm -f "$pid_file"' EXIT INT TERM
+# Cleanup on EXIT only; INT/TERM must exit too — a trap that merely cleaned
+# up left the script running, and old copies piled up across eww restarts.
+trap 'kill $poller_pid 2>/dev/null; rm -f "$pid_file"' EXIT
+trap 'exit' INT TERM
 
 # NetworkManager fires PropertiesChanged on the device/connection
 # interfaces when wifi connects, scans complete, etc. Wrap gdbus in an
