@@ -74,8 +74,10 @@ emit() {
     monitors=$(hyprctl -j monitors 2>/dev/null) || monitors='[]'
 
     # Window creation order: the hypr-window-order daemon appends
-    # "workspace_id<TAB>addr" per line — read it into a JSON array.
-    order_json=$(awk -F'\t' 'BEGIN{print "["} NR>1{print ","} {printf "{\"ws\":%s,\"addr\":\"%s\"}", $1, $2} END{print "]"}' "$state_file" 2>/dev/null)
+    # "workspace_id<TAB>addr" per line — read it into a JSON array. Only the
+    # address is taken (the workspace comes from hyprctl), and as a string, so
+    # a malformed line can't make the JSON invalid — that froze the taskbar.
+    order_json=$(awk -F'\t' 'BEGIN{print "["} NR>1{print ","} {printf "{\"addr\":\"%s\"}", $2} END{print "]"}' "$state_file" 2>/dev/null)
     [[ -z $order_json ]] && order_json='[]'
 
     # One state object per monitor (keyed by connector name). offset = rank*12,

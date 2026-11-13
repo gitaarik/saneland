@@ -22,13 +22,29 @@ if [[ ! -S $sock ]]; then
 fi
 
 # Seed the file with existing windows in hyprctl-native order.
-hyprctl -j clients | jq -r '.[] | "\(.workspace.id)\t\(.address)"' > "$state_file"
+# A special workspace has no id in 0.57; its name never matches a numeric id.
+hyprctl -j clients | jq -r '.[] | "\(.workspace.id // .workspace.name)\t\(.address)"' > "$state_file"
 
 # Track the last two focused windows so an openwindow event can insert
 # the new window after whichever was focused right BEFORE the new one
 # (sometimes the new window auto-focuses by the time openwindow fires).
 last_focused=""
 current_focused=$(hyprctl -j activewindow 2>/dev/null | jq -r '.address // ""')
+
+# The file's first column is the numeric workspace id that hypr-cycle-maximize
+# and hypr-reorder-window match against. Events don't reliably carry one —
+# openwindow gives the workspace NAME — so anything non-numeric is looked up
+# from hyprctl. A special workspace (`special:min7` for a minimized window) has
+# no id at all in 0.57, so it keeps its name, which matches no tag.
+ws_id() { # ws_id FIELD ADDR
+    if [[ $1 =~ ^-?[0-9]+$ ]]; then
+        echo "$1"
+    else
+        hyprctl -j clients 2>/dev/null \
+            | jq -r --arg a "$2" --arg f "$1" \
+                'first(.[] | select(.address == $a) | .workspace | .id // .name) // $f'
+    fi
+}
 
 # Read the event stream over a fd rather than piping it into `while`, so the
 # daemon can actually be stopped — see the "killable event loops" note in
@@ -53,8 +69,8 @@ while IFS= read -r line <&3; do
             data=${line#openwindow>>}
             addr=${data%%,*}
             rest=${data#*,}
-            ws=${rest%%,*}
             new_addr="0x${addr}"
+            ws=$(ws_id "${rest%%,*}" "$new_addr")
 
             # Pick insertion point: current_focused unless that IS the new
             # window (auto-focused), in which case use the prior focus.
@@ -87,7 +103,7 @@ while IFS= read -r line <&3; do
             data=${line#movewindowv2>>}
             addr=${data%%,*}
             rest=${data#*,}
-            ws=${rest%%,*}
+            ws=$(ws_id "${rest%%,*}" "0x${addr}")
             sed -i "s|^[^\t]*\t0x${addr}$|${ws}\t0x${addr}|" "$state_file" 2>/dev/null || true
             ;;
     esac
